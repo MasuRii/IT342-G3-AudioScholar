@@ -1,4 +1,4 @@
-# AudioScholar
+# IT342 - AudioScholar
 
 # TEAM MEMBERS:
 

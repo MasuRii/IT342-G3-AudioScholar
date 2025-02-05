@@ -7,4 +7,4 @@ NAME: Math Lee L. Biacolo
 
 COURSE & YEAR: BSIT-3
 
-Hi everyone, my name is Math Lee L. Biacolo, and I'm excited to be part of this course! I'm from Minglanilla, and I'm currently enrolled in the BSIT program at CIT-U. What I really like about the field of IT is my interest with technology, both the older systems and the cutting-edge innovations. It's something that constantly impress me. Outside of academics, I spend a lot of time on my computer, whether it's for programming projects, keeping my schedule organized, or just relaxing with some video games or movies. My dream in the future is, I'm really interested in areas like internet security and even video game development.
+Hello! I'm Math Lee L. Biacolo, a BSIT-3 student from Minglanilla. I'm enthusiastic about this course and fascinated by the ever-evolving world of IT, from its established systems to the latest innovations. Outside of academics, I enjoy spending time on personal coding projects, organization, and gaming/movies. My long-term interests lie in internet security and video game development.

@@ -1,4 +1,3 @@
-
 # System Name: AudioScholar
 
 # Product Description: 
@@ -15,7 +14,7 @@ AudioScholar is a multiuser application designed to assist students in transform
 
 ## Links
 
-- Figma: [Figma Link Here]
+- Figma: [\[Figma Link Here\]](https://www.figma.com/design/hls8FshndFxjfDPsp0gtUx/AudioScholar?t=w9EJx5euTzgAh522-1)
 - Diagram: [Diagram Link Here]
 
 ## Developers Profile

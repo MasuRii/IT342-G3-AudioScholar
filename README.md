@@ -138,9 +138,9 @@ AudioScholar provides a comprehensive suite of features across its mobile and we
 
   
 
-*  **Diagrams (Use Case, Activity):** (https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
+*  **Diagrams (Use Case, Activity):** ![Alt Tag](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
 
-*  **Wireframes:** (https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
+*  **Wireframes:** ![Alt Tag](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
 
   
 

@@ -19,9 +19,6 @@ target/
 *.iml
 *.ipr
 
-# Firebase
-src/main/resources/firebase-service-account.json
-
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/

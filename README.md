@@ -138,11 +138,9 @@ AudioScholar provides a comprehensive suite of features across its mobile and we
 
   
 
-*  **Figma Design:** [Link](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=0-1&t=s7EFMAS4i0fpALiL-1)
+*  **Diagrams (Use Case, Activity):** (https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
 
-*  **Diagrams (Use Case, Activity):** [Link to Diagram Repository (Placeholder - Replace with actual link, e.g., Google Drive Folder, GitHub Wiki)]
-
-*  **Wireframes:** [Link to Wireframe Collection (Placeholder - Replace with actual link, e.g., Google Drive Folder, GitHub Wiki)]
+*  **Wireframes:** (https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
 
   
 

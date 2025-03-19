@@ -1,4 +1,4 @@
-package main.java.edu.cit.audioscholar.service;
+package edu.cit.audioscholar.service;
 
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.Firestore;

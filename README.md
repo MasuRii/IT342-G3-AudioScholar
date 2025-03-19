@@ -1,17 +1,21 @@
-# IT342 - AudioScholar
+# System Name: AudioScholar
 
-# TEAM MEMBERS:
+# Product Description: 
+AudioScholar is a multiuser application designed to assist students in transforming lecture audio into valuable learning resources. It is compatible with various academic subjects and enables students to record lectures, receive automated summaries, and get suggestions for relevant study materials. The application aims to solve the challenges students face in note-taking, concept extraction, and finding supplementary resources by automating audio recording, summarization, and resource recommendation.
 
-# Member 1
-NAME: Math Lee L. Biacolo
+## List of Features
 
-COURSE & YEAR: BSIT-3
+1. **Real-Time Audio Recording:** Upload pre-recorded audio files (e.g., lecture recordings, meeting minutes).
+2. **Automated Summarization:** Process uploaded files to generate text summaries, highlighting key points.
+3. **Content Recommendations:** Provide tailored suggestions for further learning materials, similar to the mobile app.
+4. **Login:** Requires user account creation and login for feature access, supporting username/password and third-party authentication (Google, Facebook).
 
-Hello! I'm Math Lee L. Biacolo, a BSIT-3 student from Minglanilla. I'm enthusiastic about this course and fascinated by the ever-evolving world of IT, from its established systems to the latest innovations. Outside of academics, I enjoy spending time on personal coding projects, organization, and gaming/movies. My long-term interests lie in internet security and video game development.
 
-# Member 2
-NAME: Terence John N. Duterte
+## Links
 
-COURSE & YEAR: BSIT-3
+- Figma: [Figma Link Here]
+- Diagram: [Diagram Link Here]
 
-Hello!goiansgoiagnioagoaingaofasfasfa
+## Developers Profile
+
+1. Terence John N. Duterte

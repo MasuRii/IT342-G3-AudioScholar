@@ -58,7 +58,7 @@ AudioScholar provides a comprehensive suite of features across its mobile and we
 
 *  **Lecture Recording (Mobile):**
 
-	* Start/Stop Lecture Recording: Capture high-quality audio lectures in real-time, both online and offline.
+	- Start/Stop Lecture Recording: Capture high-quality audio lectures in real-time, both online and offline.
 
 	* Background Recording (Premium Feature): Continue recording even when the app is in the background (for premium users).
 
@@ -138,7 +138,7 @@ AudioScholar provides a comprehensive suite of features across its mobile and we
 
   
 
-*  **Figma Design:** [Figma Project Link ([Link](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=0-1&t=s7EFMAS4i0fpALiL-1))]
+*  **Figma Design:** [Link](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=0-1&t=s7EFMAS4i0fpALiL-1)
 
 *  **Diagrams (Use Case, Activity):** [Link to Diagram Repository (Placeholder - Replace with actual link, e.g., Google Drive Folder, GitHub Wiki)]
 
@@ -180,37 +180,37 @@ AudioScholar is built using a modern and robust technology stack:
 
 *  **Mobile Application:**
 
-*  **Kotlin:** Native Android development language.
+	*  **Kotlin:** Native Android development language.
 
-*  **Firebase SDKs:** For Android integration with Firebase services.
+	*  **Firebase SDKs:** For Android integration with Firebase services.
 
 *  **Web Interface:**
 
-*  **ReactJS:** JavaScript library for building interactive user interfaces.
+	*  **ReactJS:** JavaScript library for building interactive user interfaces.
 
 *  **Server-side Application:**
 
-*  **Spring Boot (Java):** Framework for building robust and scalable server-side applications.
+	*  **Spring Boot (Java):** Framework for building robust and scalable server-side applications.
 
-*  **Firebase SDKs:** For Server-side integration with Firebase services.
+	*  **Firebase SDKs:** For Server-side integration with Firebase services.
 
 *  **AI & APIs:**
 
-*  **Google Gemini AI API:** For audio processing and summarization.
+	*  **Google Gemini AI API:** For audio processing and summarization.
 
-*  **YouTube Data API:** For learning material recommendations.
+	*  **YouTube Data API:** For learning material recommendations.
 
-*  **Google OAuth 2.0 & GitHub OAuth 2.0 APIs:** For federated login.
+	*  **Google OAuth 2.0 & GitHub OAuth 2.0 APIs:** For federated login.
 
 *  **Database & Cloud Services:**
 
-*  **Firebase:** Comprehensive mobile and web application development platform.
+	*  **Firebase:** Comprehensive mobile and web application development platform.
 
-*  **Firebase Authentication:** For user authentication and account management.
+		*  **Firebase Authentication:** For user authentication and account management.
 
-*  **Firebase Firestore/Realtime Database:** For storing user data, recordings metadata, summaries, and recommendations.
+		*  **Firebase Firestore/Realtime Database:** For storing user data, recordings metadata, summaries, and recommendations.
 
-*  **Firebase Storage:** For optional cloud storage of audio recordings and summaries.
+		*  **Firebase Storage:** For optional cloud storage of audio recordings and summaries.
 
   
 

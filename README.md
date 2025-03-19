@@ -5,17 +5,27 @@ AudioScholar is a multiuser application designed to assist students in transform
 
 ## List of Features
 
-1. **Real-Time Audio Recording:** Upload pre-recorded audio files (e.g., lecture recordings, meeting minutes).
-2. **Automated Summarization:** Process uploaded files to generate text summaries, highlighting key points.
-3. **Content Recommendations:** Provide tailored suggestions for further learning materials, similar to the mobile app.
-4. **Login:** Requires user account creation and login for feature access, supporting username/password and third-party authentication (Google, Facebook).
 
+1. **Real-Time Audio Recording:** Allows users to record lectures in real-time, supporting formats like MP3 and AAC.
+2. **Automated Summarization:** Automatically generates summaries of recorded audio using NLP, with adjustable summarization levels (short, medium, long).
+3. **Content Recommendations:** Provides personalized recommendations for supplementary learning materials (articles, videos, research papers) based on lecture content and user learning history.
+4. **Pause and Resume Recording:** Enables seamless pausing and resuming of audio recording while maintaining audio quality.
+5. **Login:** Requires user account creation and login for feature access, supporting username/password and third-party authentication (Google, Facebook).
+6. **Audio Playback:** Allows users to playback recorded audio with controls for play, pause, stop, rewind, and fast forward.
 
 ## Links
 
-- Figma: [Figma Link Here]
+- Figma: [\[Figma Link Here\]](https://www.figma.com/design/hls8FshndFxjfDPsp0gtUx/AudioScholar?t=w9EJx5euTzgAh522-1)
 - Diagram: [Diagram Link Here]
 
 ## Developers Profile
 
-1. Terence John N. Duterte
+1. Math Lee L. Biacolo
+
+2. Terence John N. Duterte
+
+Hello!goiansgoiagnioagoaingaofasfasfa
+
+3. Nathan John G. Orlanes
+
+Hello there! I'm Nathan John G. Orlanes, I'm a BSIT-3 student from Mandaue City!

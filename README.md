@@ -5,6 +5,7 @@ AudioScholar is a multiuser application designed to assist students in transform
 
 ## List of Features
 
+
 1. **Real-Time Audio Recording:** Allows users to record lectures in real-time, supporting formats like MP3 and AAC.
 2. **Automated Summarization:** Automatically generates summaries of recorded audio using NLP, with adjustable summarization levels (short, medium, long).
 3. **Content Recommendations:** Provides personalized recommendations for supplementary learning materials (articles, videos, research papers) based on lecture content and user learning history.
@@ -21,11 +22,7 @@ AudioScholar is a multiuser application designed to assist students in transform
 
 1. Math Lee L. Biacolo
 
-Hello! I'm Math Lee L. Biacolo, a BSIT-3 student from Minglanilla. I'm enthusiastic about this course and fascinated by the ever-evolving world of IT, from its established systems to the latest innovations. Outside of academics, I enjoy spending time on personal coding projects, organization, and gaming/movies. My long-term interests lie in internet security and video game development.
-
 2. Terence John N. Duterte
-
-COURSE & YEAR: BSIT-3
 
 Hello!goiansgoiagnioagoaingaofasfasfa
 

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        input { width: 80%; padding: 10px; margin: 10px 0; }
+        button { padding: 10px; }
+        pre { background: #f4f4f4; padding: 10px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h2>Test Gemini API</h2>
+    <input type="text" id="prompt" placeholder="Enter your prompt here">
+    <button onclick="sendRequest()">Send</button>
+    <h3>Response:</h3>
+    <pre id="response"></pre>
+
+    <script>
+        function sendRequest() {
+            const prompt = document.getElementById("prompt").value;
+            if (!prompt) {
+                alert("Please enter a prompt");
+                return;
+            }
+
+            fetch(`http://localhost:8080/test?prompt=${encodeURIComponent(prompt)}`)
+                .then(response => response.text()) // First, read the response as text
+                .then(text => {
+                    try {
+                        console.log("Raw response:", text); // Log the raw response
+                        
+                        // Check if the response is in valid JSON format
+                        let jsonData;
+                        try {
+                            jsonData = JSON.parse(text); // Try to parse it as JSON
+                        } catch (error) {
+                            // If JSON parsing fails, return raw response
+                            document.getElementById("response").textContent = text;
+                            return;
+                        }
+
+                        // Handle valid JSON response
+                        if (jsonData.candidates && jsonData.candidates.length > 0) {
+                            const responseText = jsonData.candidates[0].content.parts.map(part => part.text).join("\n");
+                            document.getElementById("response").textContent = responseText;
+                        } else {
+                            document.getElementById("response").textContent = "Unexpected response format";
+                        }
+                    } catch (error) {
+                        document.getElementById("response").textContent = "Invalid JSON Response:\n" + text;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById("response").textContent = "Error: " + error;
+                });
+        }
+    </script>
+</body>
+</html>

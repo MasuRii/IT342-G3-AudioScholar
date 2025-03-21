@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Upload Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        input, button { display: block; margin: 10px 0; padding: 10px; }
+        pre { background: #f4f4f4; padding: 10px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h2>Upload Audio File</h2>
+    <input type="file" id="audioFile" accept="audio/*">
+    <button onclick="uploadAudio()">Upload</button>
+    <h3>Response:</h3>
+    <pre id="response"></pre>
+
+    <script>
+        function uploadAudio() {
+            const fileInput = document.getElementById("audioFile");
+            if (!fileInput.files.length) {
+                alert("Please select an audio file");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            fetch("http://localhost:8080/api/audio/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.text()) // Get raw text response
+            .then(text => {
+                try {
+                    const jsonData = JSON.parse(text); // Try to parse JSON
+                    document.getElementById("response").textContent = JSON.stringify(jsonData, null, 2);
+                } catch (error) {
+                    document.getElementById("response").textContent = text;
+                }
+            })
+            .catch(error => {
+                document.getElementById("response").textContent = "Error: " + error;
+            });
+
+        }
+    </script>
+</body>
+</html>

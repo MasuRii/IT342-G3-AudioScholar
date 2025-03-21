@@ -1,18 +1,18 @@
 package edu.cit.audioscholar.service;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.Map;
-import java.util.List;
 
-@Service
+import java.util.List;
+import java.util.Map;
+
+@CrossOrigin(origins = "*") // Allow cross-origin requests
 @RestController
 public class GeminiService {
 
@@ -27,34 +27,48 @@ public class GeminiService {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
     
-        // Correct request body format
+        // Request body format
         Map<String, Object> requestBody = Map.of(
             "contents", List.of(Map.of("parts", List.of(Map.of("text", inputText))))
         );
     
-        // Create request entity
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
     
         try {
-            // Send request
-            ResponseEntity<String> response = restTemplate.exchange(API_URL + "?key=" + apiKey, HttpMethod.POST, requestEntity, String.class);
+            ResponseEntity<String> response = restTemplate.exchange(
+                API_URL + "?key=" + apiKey, HttpMethod.POST, requestEntity, String.class
+            );
+
             String rawResponse = response.getBody();
-    
-            // Convert response to valid JSON
             JsonNode jsonNode = objectMapper.readTree(rawResponse);
-    
-            // Extract text from the response
+
+            // Validate response structure
+            if (!jsonNode.has("candidates") || jsonNode.path("candidates").isEmpty()) {
+                return "{\"error\": \"No valid response from Gemini API\"}";
+            }
+
             JsonNode contentNode = jsonNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
-            return contentNode.asText();  // This will return just "9 + 10 = 19"
-        } catch (Exception e) {
-            // Handle errors gracefully
-            return "{\"error\": \"Failed to process response\", \"details\": \"" + e.getMessage() + "\"}";
+
+            if (contentNode.isMissingNode()) {
+                return "{\"error\": \"Unexpected response format\"}";
+            }
+
+            return "{\"text\": \"" + contentNode.asText() + "\"}";  // Ensure valid JSON response
+        } 
+        catch (HttpStatusCodeException e) {
+            return "{\"error\": \"API Request Failed\", \"status\": \"" + e.getStatusCode() + "\", \"message\": \"" + e.getResponseBodyAsString() + "\"}";
+        } 
+        catch (ResourceAccessException e) { // Handles timeout or unreachable server
+            return "{\"error\": \"Timeout or Network Issue\", \"details\": \"Failed to reach Gemini API. Please check your internet or try again later.\"}";
+        } 
+        catch (Exception e) {
+            return "{\"error\": \"Internal Server Error\", \"details\": \"" + e.getMessage() + "\"}";
         }
     }
 
-    // REST endpoint for testing Gemini API
     @GetMapping("/test")
-    public String testGemini(@RequestParam String prompt) {
-        return callGeminiAPI(prompt);
+    public ResponseEntity<String> testGemini(@RequestParam String prompt) {
+        String response = callGeminiAPI(prompt);
+        return ResponseEntity.ok(response);
     }
 }

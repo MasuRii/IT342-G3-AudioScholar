@@ -27,34 +27,29 @@
             }
 
             fetch(`http://localhost:8080/test?prompt=${encodeURIComponent(prompt)}`)
-                .then(response => response.text()) // First, read the response as text
-                .then(text => {
-                    try {
-                        console.log("Raw response:", text); // Log the raw response
-                        
-                        // Check if the response is in valid JSON format
-                        let jsonData;
-                        try {
-                            jsonData = JSON.parse(text); // Try to parse it as JSON
-                        } catch (error) {
-                            // If JSON parsing fails, return raw response
-                            document.getElementById("response").textContent = text;
-                            return;
-                        }
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    return response.json(); // Parse response as JSON
+                })
+                .then(jsonData => {
+                    console.log("Raw response:", jsonData);
 
-                        // Handle valid JSON response
-                        if (jsonData.candidates && jsonData.candidates.length > 0) {
-                            const responseText = jsonData.candidates[0].content.parts.map(part => part.text).join("\n");
-                            document.getElementById("response").textContent = responseText;
-                        } else {
-                            document.getElementById("response").textContent = "Unexpected response format";
-                        }
-                    } catch (error) {
-                        document.getElementById("response").textContent = "Invalid JSON Response:\n" + text;
+                    if (jsonData.error) {
+                        document.getElementById("response").textContent = `Error: ${jsonData.error}\nDetails: ${jsonData.details || "No additional details"}`;
+                        return;
+                    }
+
+                    // Ensure response has a valid structure
+                    if (jsonData.text) {
+                        document.getElementById("response").textContent = jsonData.text;
+                    } else {
+                        document.getElementById("response").textContent = "Unexpected response format";
                     }
                 })
                 .catch(error => {
-                    document.getElementById("response").textContent = "Error: " + error;
+                    document.getElementById("response").textContent = "Network Error: " + error.message + ". Please check your connection and try again.";
                 });
         }
     </script>

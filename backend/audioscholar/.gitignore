@@ -19,6 +19,9 @@ target/
 *.iml
 *.ipr
 
+### Security Keys
+src/main/resources/firebase-service-account.json
+
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/

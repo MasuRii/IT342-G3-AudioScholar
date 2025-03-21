@@ -33,4 +33,4 @@ build/
 .vscode/
 
 
-src\main\resources\uploads
+src/main/resources/uploads/

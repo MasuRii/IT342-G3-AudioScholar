@@ -8,6 +8,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.Map;
@@ -44,25 +45,59 @@ public class GeminiService {
 
             // Validate response structure
             if (!jsonNode.has("candidates") || jsonNode.path("candidates").isEmpty()) {
-                return "{\"error\": \"No valid response from Gemini API\"}";
+                // Create error response using ObjectMapper
+                ObjectNode errorResponse = objectMapper.createObjectNode();
+                errorResponse.put("error", "No valid response from Gemini API");
+                return objectMapper.writeValueAsString(errorResponse);
             }
 
             JsonNode contentNode = jsonNode.path("candidates").get(0).path("content").path("parts").get(0).path("text");
 
             if (contentNode.isMissingNode()) {
-                return "{\"error\": \"Unexpected response format\"}";
+                // Create error response using ObjectMapper
+                ObjectNode errorResponse = objectMapper.createObjectNode();
+                errorResponse.put("error", "Unexpected response format");
+                return objectMapper.writeValueAsString(errorResponse);
             }
 
-            return "{\"text\": \"" + contentNode.asText() + "\"}";  // Ensure valid JSON response
+            // Create success response using ObjectMapper
+            ObjectNode successResponse = objectMapper.createObjectNode();
+            successResponse.put("text", contentNode.asText());
+            return objectMapper.writeValueAsString(successResponse); // Properly escaped JSON
         } 
         catch (HttpStatusCodeException e) {
-            return "{\"error\": \"API Request Failed\", \"status\": \"" + e.getStatusCode() + "\", \"message\": \"" + e.getResponseBodyAsString() + "\"}";
+            // Create error response using ObjectMapper
+            ObjectNode errorResponse = objectMapper.createObjectNode();
+            errorResponse.put("error", "API Request Failed");
+            errorResponse.put("status", e.getStatusCode().toString());
+            errorResponse.put("message", e.getResponseBodyAsString());
+            try {
+                return objectMapper.writeValueAsString(errorResponse);
+            } catch (Exception ex) {
+                return "{\"error\": \"Failed to serialize error response\"}";
+            }
         } 
         catch (ResourceAccessException e) { // Handles timeout or unreachable server
-            return "{\"error\": \"Timeout or Network Issue\", \"details\": \"Failed to reach Gemini API. Please check your internet or try again later.\"}";
+            // Create error response using ObjectMapper
+            ObjectNode errorResponse = objectMapper.createObjectNode();
+            errorResponse.put("error", "Timeout or Network Issue");
+            errorResponse.put("details", "Failed to reach Gemini API. Please check your internet or try again later.");
+            try {
+                return objectMapper.writeValueAsString(errorResponse);
+            } catch (Exception ex) {
+                return "{\"error\": \"Failed to serialize error response\"}";
+            }
         } 
         catch (Exception e) {
-            return "{\"error\": \"Internal Server Error\", \"details\": \"" + e.getMessage() + "\"}";
+            // Create error response using ObjectMapper
+            ObjectNode errorResponse = objectMapper.createObjectNode();
+            errorResponse.put("error", "Internal Server Error");
+            errorResponse.put("details", e.getMessage());
+            try {
+                return objectMapper.writeValueAsString(errorResponse);
+            } catch (Exception ex) {
+                return "{\"error\": \"Failed to serialize error response\"}";
+            }
         }
     }
 

@@ -49,6 +49,7 @@
                     }
                 })
                 .catch(error => {
+                    // Optional: Improve error handling for JSON parsing issues
                     document.getElementById("response").textContent = "Network Error: " + error.message + ". Please check your connection and try again.";
                 });
         }

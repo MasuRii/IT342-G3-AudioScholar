@@ -1,4 +1,4 @@
-package edu.cit.audioscholar.ui.recording // Adjust package name as needed
+package edu.cit.audioscholar.ui.recording
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,12 +11,10 @@ import java.util.concurrent.TimeUnit
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
-// Define a simple UI state data class (optional but good practice)
 data class RecordingUiState(
     val isRecording: Boolean = false,
     val elapsedTimeMillis: Long = 0L,
     val elapsedTimeFormatted: String = "00:00:00"
-    // Add other state properties here later (e.g., error messages, save status)
 )
 
 @HiltViewModel
@@ -38,29 +36,25 @@ class RecordingViewModel @Inject constructor() : ViewModel() {
     }
 
     private fun startRecording() {
-        // TODO: Add actual MediaRecorder start logic here later
-        // TODO: Handle permissions check before starting
 
         _uiState.update { it.copy(isRecording = true) }
         startTimer()
-        println("DEBUG: ViewModel - Start Recording Action") // Temporary Log
+        println("DEBUG: ViewModel - Start Recording Action")
     }
 
     private fun stopRecording() {
-        // TODO: Add actual MediaRecorder stop & save logic here later
 
         _uiState.update { it.copy(isRecording = false) }
         stopTimer()
-        // Optionally reset timer immediately or wait for save confirmation
         resetTimerDisplay()
-        println("DEBUG: ViewModel - Stop Recording Action") // Temporary Log
+        println("DEBUG: ViewModel - Stop Recording Action")
     }
 
     private fun startTimer() {
-        stopTimer() // Ensure any existing timer is stopped
+        stopTimer()
         recordingStartTime = System.currentTimeMillis()
-        timerJob = viewModelScope.launch(Dispatchers.Main) { // Use Main dispatcher for UI updates
-            while (isActive) { // Loop while the coroutine is active
+        timerJob = viewModelScope.launch(Dispatchers.Main) {
+            while (isActive) {
                 val elapsedMillis = System.currentTimeMillis() - recordingStartTime
                 _uiState.update {
                     it.copy(
@@ -68,7 +62,7 @@ class RecordingViewModel @Inject constructor() : ViewModel() {
                         elapsedTimeFormatted = formatElapsedTime(elapsedMillis)
                     )
                 }
-                delay(1000L) // Update every second
+                delay(1000L)
             }
         }
     }
@@ -76,11 +70,10 @@ class RecordingViewModel @Inject constructor() : ViewModel() {
     private fun stopTimer() {
         timerJob?.cancel()
         timerJob = null
-        println("DEBUG: ViewModel - Timer Stopped") // Temporary Log
+        println("DEBUG: ViewModel - Timer Stopped")
     }
 
     private fun resetTimerDisplay() {
-        // Reset the timer part of the state after stopping
         _uiState.update {
             it.copy(
                 elapsedTimeMillis = 0L,
@@ -98,8 +91,7 @@ class RecordingViewModel @Inject constructor() : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        stopTimer() // Ensure timer is stopped if ViewModel is cleared
-        // TODO: Add cleanup logic if recording is in progress when ViewModel is cleared (e.g., discard recording)
-        println("DEBUG: ViewModel - onCleared") // Temporary Log
+        stopTimer()
+        println("DEBUG: ViewModel - onCleared")
     }
 }

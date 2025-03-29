@@ -2,12 +2,21 @@
 <resources>
     <string name="app_name">AudioScholar</string>
 
+    <!-- Your existing strings -->
     <string name="recording_screen_title">Record Lecture</string>
-    <string name="initial_timer_value">00:00:00</string>
+    <string name="initial_timer_value">00:00:00</string> <!-- Note: This wasn't used directly in the code, elapsedTimeFormatted is generated -->
     <string name="status_tap_to_record">Tap the button to start recording</string>
     <string name="status_recording">Recording...</string>
-    <string name="cd_record_button">Record Button</string> <!-- Content Description -->
-    <string name="cd_stop_button">Stop Button</string> <!-- Content Description -->
-    <string name="cd_back_button">Back</string> <!-- Content Description -->
+    <string name="cd_record_button">Record Button</string>
+    <string name="cd_stop_button">Stop Button</string>
+    <string name="cd_back_button">Back</string>
+
+    <!-- Add these missing strings -->
+    <string name="status_saved">Recording Saved</string>
+    <string name="status_permission_needed">Microphone permission needed</string>
+    <string name="permission_denied_message">Microphone permission denied.</string>
+    <string name="recording_saved_message">Recording saved: %s</string> <!-- %s is a placeholder for the file path -->
+    <string name="stop_recording_before_leaving">Please stop recording before leaving the screen.</string>
+    <string name="action_open_settings">Open Settings</string>
 
 </resources>

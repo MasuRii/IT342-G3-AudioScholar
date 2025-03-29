@@ -3,6 +3,7 @@ package edu.cit.audioscholar.data.local.file // Adjust package name if needed
 import android.content.Context
 import android.media.MediaRecorder
 import android.util.Log
+import dagger.hilt.android.qualifiers.ApplicationContext // <-- Import this
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -39,7 +40,7 @@ private const val TAG = "RecordingFileHandler" // For logging
  */
 class RecordingFileHandler @Inject constructor(
     // Use @ApplicationContext if using Hilt to ensure the application context is injected
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
 
     /**

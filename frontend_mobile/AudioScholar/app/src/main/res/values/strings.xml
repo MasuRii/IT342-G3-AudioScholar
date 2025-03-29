@@ -1,3 +1,13 @@
+<!-- res/values/strings.xml -->
 <resources>
     <string name="app_name">AudioScholar</string>
+
+    <string name="recording_screen_title">Record Lecture</string>
+    <string name="initial_timer_value">00:00:00</string>
+    <string name="status_tap_to_record">Tap the button to start recording</string>
+    <string name="status_recording">Recording...</string>
+    <string name="cd_record_button">Record Button</string> <!-- Content Description -->
+    <string name="cd_stop_button">Stop Button</string> <!-- Content Description -->
+    <string name="cd_back_button">Back</string> <!-- Content Description -->
+
 </resources>

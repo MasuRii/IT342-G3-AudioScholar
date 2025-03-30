@@ -60,7 +60,7 @@ fun UploadScreenContent(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = stringResource(R.string.upload_screen_title),
+            text = stringResource(id = R.string.upload_screen_title),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center
         )
@@ -71,13 +71,13 @@ fun UploadScreenContent(
             onClick = onSelectFileClick,
             enabled = !state.isUploading
         ) {
-            Text(stringResource(R.string.button_select_file))
+            Text(stringResource(id = R.string.button_select_file))
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = state.selectedFileName ?: stringResource(R.string.text_no_file_selected),
+            text = state.selectedFileName ?: stringResource(id = R.string.text_no_file_selected),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp)
@@ -87,14 +87,12 @@ fun UploadScreenContent(
 
         Button(
             onClick = onUploadClick,
-            enabled = state.selectedFileUri != null && !state.isUploading,
+            enabled = state.isUploadEnabled && !state.isUploading,
             modifier = Modifier.height(48.dp)
         ) {
             if (state.isUploading) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                    modifier = Modifier.fillMaxWidth()
                 ) {
                     CircularProgressIndicator(
                         progress = { state.progress / 100f },
@@ -109,20 +107,30 @@ fun UploadScreenContent(
                     )
                 }
             } else {
-                Text(stringResource(R.string.button_upload))
+                Text(stringResource(id = R.string.button_upload))
             }
         }
 
-
         Spacer(modifier = Modifier.height(16.dp))
+
         Text(
             text = state.uploadMessage ?: "",
             style = MaterialTheme.typography.bodyMedium,
-            color = if (state.uploadMessage?.startsWith("Error:") == true) MaterialTheme.colorScheme.error else LocalContentColor.current,
+            color = if (state.uploadMessage?.startsWith(stringResource(id = R.string.upload_error_generic_prefix, "")) == true ||
+                state.uploadMessage == stringResource(id = R.string.upload_error_no_file) ||
+                state.uploadMessage == stringResource(id = R.string.upload_error_read_details) ||
+                state.uploadMessage?.contains("Unsupported file format") == true ||
+                state.uploadMessage == stringResource(id = R.string.upload_error_determine_size) ||
+                state.uploadMessage == stringResource(id = R.string.upload_error_empty_file) ||
+                state.uploadMessage?.contains("exceeds the limit") == true ||
+                state.uploadMessage == stringResource(id = R.string.upload_error_reverify_details)
+            )
+                MaterialTheme.colorScheme.error
+            else
+                LocalContentColor.current,
             textAlign = TextAlign.Center,
             modifier = Modifier.heightIn(min = 18.dp)
         )
-
 
         Spacer(modifier = Modifier.weight(1f))
 
@@ -130,7 +138,7 @@ fun UploadScreenContent(
             onClick = onNavigateToRecording,
             enabled = !state.isUploading
         ) {
-            Text(stringResource(R.string.button_back_to_recording))
+            Text(stringResource(id = R.string.button_back_to_recording))
         }
     }
 }

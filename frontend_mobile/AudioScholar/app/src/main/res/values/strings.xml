@@ -21,12 +21,22 @@
     <string name="stop_recording_before_navigating">Please stop recording before navigating.</string>
 
     <string name="upload_screen_title">Upload Audio</string>
-    <string name="button_select_file">Select Audio File (.m4a, .mp3, .wav)</string>
+    <string name="button_select_file">Select Audio File</string>
     <string name="text_no_file_selected">No file selected</string>
     <string name="button_upload">Upload</string>
     <string name="text_uploading">Uploading…</string>
     <string name="upload_success_message">Upload successful!</string>
+
     <string name="upload_error_no_file">Error: No file selected.</string>
+    <string name="upload_error_read_details">Error: Could not read file details.</string>
+    <string name="upload_error_unsupported_format">Error: Unsupported file format (%1$s). Supported: WAV, MP3, AIFF, AAC, OGG, FLAC.</string>
+    <string name="upload_error_determine_size">Error: Could not determine file size.</string>
+    <string name="upload_error_empty_file">Error: File appears to be empty.</string>
+    <string name="upload_error_size_exceeded">Error: File size (%1$.1f MB) exceeds the limit (%2$.0f MB).</string>
+    <string name="upload_error_reverify_details">Error: Could not re-verify file details before upload.</string>
+    <string name="upload_error_generic_prefix">Error: %1$s</string>
     <string name="upload_error_failed">Error: Upload failed.</string>
+
+    <string name="upload_info_starting">Starting upload…</string>
 
 </resources>

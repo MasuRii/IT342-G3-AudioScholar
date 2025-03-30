@@ -1,22 +1,32 @@
-<!-- res/values/strings.xml -->
 <resources>
     <string name="app_name">AudioScholar</string>
 
-    <!-- Your existing strings -->
     <string name="recording_screen_title">Record Lecture</string>
-    <string name="initial_timer_value">00:00:00</string> <!-- Note: This wasn't used directly in the code, elapsedTimeFormatted is generated -->
+    <string name="initial_timer_value">00:00:00</string>
     <string name="status_tap_to_record">Tap the button to start recording</string>
-    <string name="status_recording">Recording...</string>
-    <string name="cd_record_button">Record Button</string>
-    <string name="cd_stop_button">Stop Button</string>
-    <string name="cd_back_button">Back</string>
-
-    <!-- Add these missing strings -->
+    <string name="status_recording">Recording…</string>
     <string name="status_saved">Recording Saved</string>
     <string name="status_permission_needed">Microphone permission needed</string>
+    <string name="recording_saved_message">Recording saved: %s</string>
+
+    <string name="cd_record_button">Start Recording</string>
+    <string name="cd_stop_button">Stop Recording</string>
+    <string name="cd_back_button">Back</string>
+    <string name="button_go_to_upload">Upload Recordings</string>
+    <string name="button_back_to_recording">Back to Recording</string>
+
     <string name="permission_denied_message">Microphone permission denied.</string>
-    <string name="recording_saved_message">Recording saved: %s</string> <!-- %s is a placeholder for the file path -->
-    <string name="stop_recording_before_leaving">Please stop recording before leaving the screen.</string>
     <string name="action_open_settings">Open Settings</string>
+    <string name="stop_recording_before_leaving">Please stop recording before leaving the screen.</string>
+    <string name="stop_recording_before_navigating">Please stop recording before navigating.</string>
+
+    <string name="upload_screen_title">Upload Audio</string>
+    <string name="button_select_file">Select Audio File (.m4a, .mp3, .wav)</string>
+    <string name="text_no_file_selected">No file selected</string>
+    <string name="button_upload">Upload</string>
+    <string name="text_uploading">Uploading…</string>
+    <string name="upload_success_message">Upload successful!</string>
+    <string name="upload_error_no_file">Error: No file selected.</string>
+    <string name="upload_error_failed">Error: Upload failed.</string>
 
 </resources>

@@ -1,8 +1,6 @@
-// File: java/edu/cit/audioscholar/ui/recording/RecordingViewModel.kt
-
 package edu.cit.audioscholar.ui.recording
 
-import android.Manifest // Required for permission constant
+import android.Manifest
 import android.app.Application
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
@@ -11,7 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import edu.cit.audioscholar.data.local.file.RecordingFileHandler // Import your handler
+import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,7 +20,6 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
-// --- UI State Data Class ---
 data class RecordingUiState(
     val isRecording: Boolean = false,
     val elapsedTimeMillis: Long = 0L,
@@ -30,33 +27,27 @@ data class RecordingUiState(
     val permissionGranted: Boolean = false,
     val requiresPermissionRationale: Boolean = false,
     val error: String? = null,
-    val recordingFilePath: String? = null // To show confirmation/path after saving
+    val recordingFilePath: String? = null
 )
 
 @HiltViewModel
 class RecordingViewModel @Inject constructor(
-    // Inject Application context (needed for MediaRecorder on S+ and permissions)
     private val application: Application,
-    // Inject your RecordingFileHandler
     private val recordingFileHandler: RecordingFileHandler
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RecordingUiState())
     val uiState: StateFlow<RecordingUiState> = _uiState.asStateFlow()
 
-    // MediaRecorder instance
     private var mediaRecorder: MediaRecorder? = null
-    private var currentRecordingFile: File? = null // Keep track of the file being written
+    private var currentRecordingFile: File? = null
 
-    // Timer variables
     private var timerJob: Job? = null
     private var recordingStartTime: Long = 0L
 
     init {
         checkInitialPermission()
     }
-
-    // --- Permission Handling ---
 
     private fun checkInitialPermission() {
         val granted = ContextCompat.checkSelfPermission(
@@ -67,27 +58,22 @@ class RecordingViewModel @Inject constructor(
         println("DEBUG: Initial permission granted: $granted")
     }
 
-    // Call this from your Composable after requesting permission
     fun onPermissionResult(granted: Boolean, shouldShowRationale: Boolean) {
         _uiState.update {
             it.copy(
                 permissionGranted = granted,
                 requiresPermissionRationale = !granted && shouldShowRationale,
-                // Clear permission-related error if granted, otherwise set permanent denial message if needed
-                error = if (granted) null else if (!shouldShowRationale) "Audio permission permanently denied. Please enable it in settings." else it.error
+                error = if (granted) null else if (!shouldShowRationale && !granted) "Audio permission permanently denied. Please enable it in settings." else it.error
             )
         }
         println("DEBUG: Permission result - Granted: $granted, Rationale: $shouldShowRationale")
     }
 
-    // --- Recording Control ---
 
     fun toggleRecording() {
         if (_uiState.value.isRecording) {
             stopRecording()
         } else {
-            // Clear previous errors/file paths before attempting to start
-            // Keep permission status as is
             _uiState.update { it.copy(error = null, recordingFilePath = null) }
             startRecording()
         }
@@ -95,149 +81,129 @@ class RecordingViewModel @Inject constructor(
 
     private fun startRecording() {
         if (!_uiState.value.permissionGranted) {
-            // Call non-suspend handleError
             handleError("Microphone permission required to start recording.")
-            println("DEBUG: Start recording blocked - permission not granted.")
-            // The UI should prompt the user to grant permission via the button's logic
             return
         }
-
-        // Check if already recording (safety check)
         if (_uiState.value.isRecording) {
-            // Call non-suspend handleError
             handleError("Recording already in progress.")
             return
         }
 
         println("DEBUG: ViewModel - Attempting to start recording...")
-        viewModelScope.launch(Dispatchers.IO) { // Use IO dispatcher for file/media operations
+        viewModelScope.launch(Dispatchers.IO) {
+            var recorderInstance: MediaRecorder? = null
             try {
-                // Create MediaRecorder instance
-                val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                recorderInstance = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     MediaRecorder(application)
                 } else {
                     @Suppress("DEPRECATION")
                     MediaRecorder()
                 }
 
-                // Use RecordingFileHandler to configure and get the output file
-                recordingFileHandler.setupMediaRecorderOutputFile(recorder)
+                recordingFileHandler.setupMediaRecorderOutputFile(recorderInstance)
                     .onSuccess { outputFile ->
-                        currentRecordingFile = outputFile // Store the file reference
-                        mediaRecorder = recorder // Store the recorder instance
+                        println("DEBUG: File handler setup successful.")
 
-                        // Prepare and start the recorder
-                        recorder.prepare()
-                        recorder.start()
+                        mediaRecorder = recorderInstance
+                        currentRecordingFile = outputFile
 
-                        // Update UI state on the main thread
+                        recorderInstance.prepare()
+                        println("DEBUG: MediaRecorder prepared.")
+                        recorderInstance.start()
+                        println("DEBUG: MediaRecorder started.")
+
                         withContext(Dispatchers.Main) {
                             _uiState.update {
                                 it.copy(
                                     isRecording = true,
-                                    elapsedTimeMillis = 0L, // Reset timer display
+                                    elapsedTimeMillis = 0L,
                                     elapsedTimeFormatted = formatElapsedTime(0L),
-                                    error = null, // Clear previous errors
-                                    recordingFilePath = null // Clear previous file path
+                                    error = null,
+                                    recordingFilePath = null
                                 )
                             }
-                            startTimer() // Start the timer on the main thread
-                            println("DEBUG: ViewModel - Recording started successfully. File: ${outputFile.absolutePath}")
+                            startTimer()
+                            println("DEBUG: ViewModel - Recording started successfully on UI thread. File: ${outputFile.absolutePath}")
                         }
                     }
                     .onFailure { exception ->
-                        // Handle errors from setupMediaRecorderOutputFile
-                        // Call non-suspend handleError
-                        handleError("Failed to setup recording: ${exception.message}", exception)
-                        releaseMediaRecorder() // Clean up recorder if setup failed
+                        handleError("Failed to setup recording file: ${exception.message}", exception)
+                        recorderInstance?.release()
                     }
 
             } catch (e: IOException) {
-                // Call non-suspend handleError
-                handleError("MediaRecorder prepare() failed: ${e.message}", e)
-                releaseMediaRecorder()
+                handleError("MediaRecorder setup failed (IO): ${e.message}", e)
+                recorderInstance?.release()
+                mediaRecorder = null
+                currentRecordingFile = null
             } catch (e: IllegalStateException) {
-                // Call non-suspend handleError
-                handleError("MediaRecorder start() failed: ${e.message}", e)
-                releaseMediaRecorder()
+                handleError("MediaRecorder state error during start: ${e.message}", e)
+                recorderInstance?.release()
+                mediaRecorder = null
+                currentRecordingFile = null
             } catch (e: SecurityException) {
-                // Call non-suspend handleError
                 handleError("Security error during recording setup. Check permissions.", e)
-                releaseMediaRecorder()
+                recorderInstance?.release()
+                mediaRecorder = null
+                currentRecordingFile = null
             } catch (e: Exception) {
-                // Call non-suspend handleError
                 handleError("An unexpected error occurred during startRecording: ${e.message}", e)
-                releaseMediaRecorder()
+                recorderInstance?.release()
+                mediaRecorder = null
+                currentRecordingFile = null
             }
         }
     }
 
     private fun stopRecording() {
         if (!_uiState.value.isRecording) {
-            // Call non-suspend handleError
-            handleError("No recording in progress to stop.") // A1 Stop Error
+            println("DEBUG: Stop recording called but not currently recording.")
             return
         }
 
         println("DEBUG: ViewModel - Attempting to stop recording...")
-        // Stop the timer first (runs on Main thread)
         stopTimer()
 
-        viewModelScope.launch(Dispatchers.IO) { // Use IO for potential file finalization
+        viewModelScope.launch(Dispatchers.IO) {
+            var savedFilePath: String? = null
             try {
                 mediaRecorder?.apply {
                     stop()
-                    // release() is called in releaseMediaRecorder()
                 }
-                val savedFilePath = currentRecordingFile?.absolutePath
+                savedFilePath = currentRecordingFile?.absolutePath
                 println("DEBUG: ViewModel - Recording stopped successfully. File saved: $savedFilePath")
 
-                // Update UI state on the main thread
                 withContext(Dispatchers.Main) {
                     _uiState.update {
                         it.copy(
                             isRecording = false,
-                            recordingFilePath = savedFilePath, // Show the path
-                            error = null // Clear any previous transient errors
+                            recordingFilePath = savedFilePath,
+                            error = null
                         )
                     }
                 }
-                // TODO: Handle Insufficient Local Storage Error on Save (A2 Stop)
-                // This typically manifests as an IOException during prepare() or sometimes stop().
-
+            } catch (e: IOException) {
+                handleError("Failed to save recording. Insufficient storage space or I/O error.", e)
             } catch (e: IllegalStateException) {
-                // Call non-suspend handleError
                 handleError("Failed to stop MediaRecorder properly: ${e.message}", e)
-                // State update (isRecording=false) is handled within handleError now
-            } catch (e: RuntimeException) { // stop() can throw RuntimeException
-                // Call non-suspend handleError
+            } catch (e: RuntimeException) {
                 handleError("Runtime error stopping recording: ${e.message}", e)
             } catch (e: Exception) {
-                // Call non-suspend handleError
                 handleError("An unexpected error occurred during stopRecording: ${e.message}", e)
             } finally {
-                // Ensure recorder is released regardless of success/failure
                 releaseMediaRecorder()
-                // Reset timer display after stopping and releasing (needs Main thread)
                 withContext(Dispatchers.Main) { resetTimerDisplay() }
             }
         }
     }
 
-    // --- Timer Logic ---
-
     private fun startTimer() {
-        stopTimer() // Ensure any previous timer is stopped
+        stopTimer()
         recordingStartTime = System.currentTimeMillis()
-        timerJob = viewModelScope.launch(Dispatchers.Main) { // Timer updates UI, run on Main
+        timerJob = viewModelScope.launch(Dispatchers.Main) {
             println("DEBUG: ViewModel - Timer Started")
-            while (isActive) { // Coroutine scope manages cancellation
-                if (!_uiState.value.isRecording) {
-                    println("DEBUG: ViewModel - Timer loop exiting (isRecording is false)")
-                    break // Exit loop if recording stopped externally
-                }
+            while (isActive && _uiState.value.isRecording) {
                 val elapsedMillis = System.currentTimeMillis() - recordingStartTime
-                // Update state only if still recording
                 if (_uiState.value.isRecording) {
                     _uiState.update {
                         it.copy(
@@ -245,12 +211,16 @@ class RecordingViewModel @Inject constructor(
                             elapsedTimeFormatted = formatElapsedTime(elapsedMillis)
                         )
                     }
+                } else {
+                    println("DEBUG: ViewModel - Timer loop exiting (isRecording became false)")
+                    break
                 }
-                delay(1000L) // Update every second
+                delay(1000L)
             }
             println("DEBUG: ViewModel - Timer loop finished.")
         }
     }
+
 
     private fun stopTimer() {
         timerJob?.cancel()
@@ -259,7 +229,6 @@ class RecordingViewModel @Inject constructor(
     }
 
     private fun resetTimerDisplay() {
-        // Only reset if not currently recording
         if (!_uiState.value.isRecording) {
             _uiState.update {
                 it.copy(
@@ -278,47 +247,48 @@ class RecordingViewModel @Inject constructor(
         return String.format("%02d:%02d:%02d", hours, minutes, seconds)
     }
 
-    // --- Helper Functions ---
-
     private fun releaseMediaRecorder() {
         println("DEBUG: Attempting to release MediaRecorder.")
         mediaRecorder?.apply {
             try {
-                // No need to call stop() again here
-                // reset() // Optional: Usually not needed if creating a new instance each time
+                reset()
                 release()
-                println("DEBUG: MediaRecorder released successfully.")
+                println("DEBUG: MediaRecorder reset and released successfully.")
             } catch (e: Exception) {
                 System.err.println("Error releasing MediaRecorder: ${e.message}")
                 e.printStackTrace()
             }
         }
-        mediaRecorder = null // Nullify the reference
-        currentRecordingFile = null // Nullify file reference
+        mediaRecorder = null
+        currentRecordingFile = null
     }
 
-    /**
-     * Handles errors by logging and updating the UI state on the Main thread.
-     * Sets isRecording to false when an error occurs during recording operations.
-     */
     private fun handleError(message: String, throwable: Throwable? = null) {
-        System.err.println("RecordingViewModel Error: $message") // Log to console/Logcat
+        System.err.println("RecordingViewModel Error: $message")
         throwable?.printStackTrace()
-        // Launch a coroutine on the Main dispatcher to update the UI state
         viewModelScope.launch(Dispatchers.Main) {
-            _uiState.update { it.copy(error = message, isRecording = false) } // Stop recording state on error
+            _uiState.update { it.copy(error = message, isRecording = false) }
+            stopTimer()
+            resetTimerDisplay()
         }
     }
 
-    // --- Lifecycle ---
+    fun consumeSavedMessage() {
+        _uiState.update { it.copy(recordingFilePath = null) }
+        println("DEBUG: Consumed saved message.")
+    }
 
-    // Ensure resources are released if ViewModel is destroyed
+    fun consumeErrorMessage() {
+        _uiState.update { it.copy(error = null) }
+        println("DEBUG: Consumed error message.")
+    }
+
     override fun onCleared() {
         super.onCleared()
         if (_uiState.value.isRecording) {
             println("WARN: ViewModel cleared while recording was active. Attempting cleanup.")
-            stopTimer() // Stop timer immediately
-            releaseMediaRecorder() // Release recorder
+            stopTimer()
+            releaseMediaRecorder()
         }
         println("DEBUG: ViewModel - onCleared")
     }

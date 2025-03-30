@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import edu.cit.audioscholar.R
 import edu.cit.audioscholar.domain.repository.AudioRepository
 import edu.cit.audioscholar.domain.repository.UploadResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import java.util.Locale
 import javax.inject.Inject
 
 data class UploadScreenState(
@@ -21,7 +23,8 @@ data class UploadScreenState(
     val selectedFileUri: Uri? = null,
     val isUploading: Boolean = false,
     val uploadMessage: String? = null,
-    val progress: Int = 0
+    val progress: Int = 0,
+    val isUploadEnabled: Boolean = false
 )
 
 @HiltViewModel
@@ -29,6 +32,18 @@ class UploadViewModel @Inject constructor(
     private val application: Application,
     private val audioRepository: AudioRepository
 ) : ViewModel() {
+
+    companion object {
+        private val SUPPORTED_MIME_TYPES = setOf(
+            "audio/wav", "audio/x-wav",
+            "audio/mp3", "audio/mpeg",
+            "audio/aiff", "audio/x-aiff",
+            "audio/aac", "audio/mp4",
+            "audio/ogg",
+            "audio/flac", "audio/x-flac"
+        )
+        private const val MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
+    }
 
     private val _uiState = MutableStateFlow(UploadScreenState())
     val uiState: StateFlow<UploadScreenState> = _uiState.asStateFlow()
@@ -41,44 +56,145 @@ class UploadViewModel @Inject constructor(
     fun onFileSelected(uri: Uri?) {
         if (uri != null) {
             var fileName: String? = null
-            application.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) {
-                        fileName = cursor.getString(nameIndex)
+            var fileSize: Long? = null
+            var fileMimeType: String? = null
+
+            try {
+                application.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) {
+                            fileName = cursor.getString(nameIndex)
+                        }
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+                            fileSize = cursor.getLong(sizeIndex)
+                        }
                     }
                 }
-            }
-            if (fileName == null) {
-                fileName = uri.path?.substringAfterLast('/') ?: "Unknown File"
-            }
+                if (fileName == null) {
+                    fileName = uri.path?.substringAfterLast('/') ?: "Unknown File"
+                }
+                fileMimeType = application.contentResolver.getType(uri)
 
-            _uiState.update {
-                it.copy(
-                    selectedFileName = fileName,
-                    selectedFileUri = uri,
-                    uploadMessage = null,
-                    progress = 0
-                )
+                println("File Selected: Name=$fileName, Size=$fileSize, Type=$fileMimeType, Uri=$uri")
+
+                val validationError = validateFile(uri, fileMimeType, fileSize)
+
+                _uiState.update {
+                    it.copy(
+                        selectedFileName = fileName,
+                        selectedFileUri = uri,
+                        uploadMessage = validationError,
+                        progress = 0,
+                        isUploadEnabled = validationError == null
+                    )
+                }
+
+            } catch (e: Exception) {
+                println("Error getting file details: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        selectedFileName = "Error",
+                        selectedFileUri = uri,
+                        uploadMessage = application.getString(R.string.upload_error_read_details),
+                        progress = 0,
+                        isUploadEnabled = false
+                    )
+                }
             }
-            println("File Selected: $fileName, Uri: $uri")
         } else {
             println("File selection cancelled.")
+            _uiState.update {
+                it.copy(
+                    selectedFileName = null,
+                    selectedFileUri = null,
+                    uploadMessage = null,
+                    progress = 0,
+                    isUploadEnabled = false
+                )
+            }
         }
+    }
+
+    private fun validateFile(uri: Uri?, mimeType: String?, size: Long?): String? {
+        if (uri == null) {
+            return application.getString(R.string.upload_error_no_file)
+        }
+
+        val lowerCaseMimeType = mimeType?.lowercase(Locale.ROOT)
+        if (lowerCaseMimeType == null || lowerCaseMimeType !in SUPPORTED_MIME_TYPES) {
+            println("Validation Error: Unsupported MIME Type: $mimeType")
+            return application.getString(R.string.upload_error_unsupported_format, mimeType ?: "unknown")
+        }
+
+        if (size == null) {
+            println("Validation Warning: Could not determine file size.")
+            return application.getString(R.string.upload_error_determine_size)
+        }
+        if (size == 0L) {
+            println("Validation Error: File appears to be empty.")
+            return application.getString(R.string.upload_error_empty_file)
+        }
+        if (size > MAX_FILE_SIZE_BYTES) {
+            println("Validation Error: File size ($size bytes) exceeds limit ($MAX_FILE_SIZE_BYTES bytes).")
+            val sizeInMB = size / (1024.0 * 1024.0)
+            val maxSizeInMB = MAX_FILE_SIZE_BYTES / (1024.0 * 1024.0)
+            return application.getString(R.string.upload_error_size_exceeded, sizeInMB, maxSizeInMB)
+        }
+
+        return null
     }
 
 
     fun onUploadClicked() {
         val currentUri = _uiState.value.selectedFileUri
+        val currentFileName = _uiState.value.selectedFileName
+
         if (currentUri == null) {
-            _uiState.update { it.copy(uploadMessage = "Error: No file selected.") }
-            return
-        }
-        if (_uiState.value.isUploading) {
+            _uiState.update { it.copy(uploadMessage = application.getString(R.string.upload_error_no_file)) }
+            println("Upload Error: No file URI present.")
             return
         }
 
-        println("Upload Clicked for file: ${_uiState.value.selectedFileName} (Uri: $currentUri)")
+        var fileSize: Long? = null
+        var fileMimeType: String? = null
+        try {
+            application.contentResolver.query(currentUri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (sizeIndex != -1 && !cursor.isNull(sizeIndex)) {
+                        fileSize = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+            fileMimeType = application.contentResolver.getType(currentUri)
+
+            val validationError = validateFile(currentUri, fileMimeType, fileSize)
+            if (validationError != null) {
+                _uiState.update { it.copy(uploadMessage = validationError, isUploading = false) }
+                println("Upload Error: Validation failed - $validationError")
+                return
+            }
+
+        } catch (e: Exception) {
+            println("Error re-validating file details before upload: ${e.message}")
+            _uiState.update {
+                it.copy(
+                    uploadMessage = application.getString(R.string.upload_error_reverify_details),
+                    isUploading = false,
+                    isUploadEnabled = false
+                )
+            }
+            return
+        }
+
+        if (_uiState.value.isUploading) {
+            println("Upload Info: Upload already in progress.")
+            return
+        }
+
+        println("Upload Clicked: Starting upload for file: $currentFileName (Uri: $currentUri)")
 
         audioRepository.uploadAudioFile(currentUri)
             .onEach { result ->
@@ -87,7 +203,7 @@ class UploadViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isUploading = true,
-                                uploadMessage = "Starting upload...",
+                                uploadMessage = application.getString(R.string.upload_info_starting),
                                 progress = 0
                             )
                         }
@@ -103,22 +219,26 @@ class UploadViewModel @Inject constructor(
                         }
                     }
                     is UploadResult.Success -> {
+                        println("VM: Upload Successful")
                         _uiState.update {
                             it.copy(
                                 isUploading = false,
-                                uploadMessage = "Upload successful!",
+                                uploadMessage = application.getString(R.string.upload_success_message),
                                 selectedFileName = null,
                                 selectedFileUri = null,
-                                progress = 0
+                                progress = 0,
+                                isUploadEnabled = false
                             )
                         }
                     }
                     is UploadResult.Error -> {
+                        println("VM: Upload Error: ${result.message}")
                         _uiState.update {
                             it.copy(
                                 isUploading = false,
-                                uploadMessage = "Error: ${result.message}",
-                                progress = 0
+                                uploadMessage = application.getString(R.string.upload_error_generic_prefix, result.message),
+                                progress = 0,
+                                isUploadEnabled = true
                             )
                         }
                     }

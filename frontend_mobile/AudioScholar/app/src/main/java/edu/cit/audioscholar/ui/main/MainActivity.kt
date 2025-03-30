@@ -13,6 +13,7 @@ import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
+import edu.cit.audioscholar.ui.upload.UploadScreen
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -32,6 +33,14 @@ class MainActivity : ComponentActivity() {
                         composable(route = RecordingScreenRoute) {
                             RecordingScreen(navController = navController)
                         }
+
+                        composable(route = UploadScreenRoute) {
+                            UploadScreen(
+                                onNavigateToRecording = {
+                                    navController.popBackStack()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -40,3 +49,4 @@ class MainActivity : ComponentActivity() {
 }
 
 const val RecordingScreenRoute = "recording_screen"
+const val UploadScreenRoute = "upload_screen"

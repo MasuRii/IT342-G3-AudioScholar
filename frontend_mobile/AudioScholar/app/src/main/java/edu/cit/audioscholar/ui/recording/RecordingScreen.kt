@@ -1,8 +1,6 @@
 package edu.cit.audioscholar.ui.recording
 
-// --- Imports ---
-import android.Manifest // Needed for permission constant
-import android.app.Activity
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -19,20 +17,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope // Needed for snackbar scope
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext // Needed for permission rationale check and opening settings
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.rememberNavController
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.ui.main.UploadScreenRoute
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
-import kotlinx.coroutines.launch // Needed for snackbar scope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,25 +38,19 @@ fun RecordingScreen(
     viewModel: RecordingViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current // Get context for checking rationale and opening settings
-    val snackbarHostState = remember { SnackbarHostState() } // State for Snackbar messages
-    val scope = rememberCoroutineScope() // Coroutine scope for launching snackbar
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    // --- Permission Handling ---
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { isGranted ->
-            // Determine if rationale should be shown (this check is often done *before* launching again)
-            // For simplicity here, we pass 'false' as shouldShowRationale,
-            // relying on the ViewModel's logic for permanent denial message.
-            // A more robust implementation might check shouldShowRequestPermissionRationale(context as Activity, Manifest.permission.RECORD_AUDIO)
-            // *before* launching the request if permission was previously denied.
-            viewModel.onPermissionResult(granted = isGranted, shouldShowRationale = false) // Let ViewModel handle the logic
+            viewModel.onPermissionResult(granted = isGranted, shouldShowRationale = false)
 
             if (!isGranted) {
                 scope.launch {
                     snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.permission_denied_message), // Add this string resource
+                        message = context.getString(R.string.permission_denied_message),
                         duration = SnackbarDuration.Short
                     )
                 }
@@ -67,52 +58,47 @@ fun RecordingScreen(
         }
     )
 
-    // --- Effect for Snackbar Messages ---
     LaunchedEffect(uiState.error) {
         uiState.error?.let { errorMessage ->
+            val isPermanentDenial = errorMessage.contains("permanently denied")
             val result = snackbarHostState.showSnackbar(
                 message = errorMessage,
-                actionLabel = if (errorMessage.contains("permanently denied")) context.getString(R.string.action_open_settings) else null, // Add string resource
+                actionLabel = if (isPermanentDenial) context.getString(R.string.action_open_settings) else null,
                 duration = SnackbarDuration.Long
             )
-            if (result == SnackbarResult.ActionPerformed) {
-                // User clicked "Open Settings"
+            if (result == SnackbarResult.ActionPerformed && isPermanentDenial) {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.fromParts("package", context.packageName, null)
                 }
                 context.startActivity(intent)
             }
-            // Optional: Clear the error in the ViewModel after showing it
-            // viewModel.clearError() // You would need to add this function to the ViewModel
+            viewModel.consumeErrorMessage()
         }
     }
 
     LaunchedEffect(uiState.recordingFilePath) {
         uiState.recordingFilePath?.let { path ->
             snackbarHostState.showSnackbar(
-                message = context.getString(R.string.recording_saved_message, path), // Add string resource
+                message = context.getString(R.string.recording_saved_message, path),
                 duration = SnackbarDuration.Short
             )
-            // Optional: Clear the path in the ViewModel after showing confirmation
-            // viewModel.clearRecordingPath() // Add this function to ViewModel
+            viewModel.consumeSavedMessage()
         }
     }
 
-    // --- UI ---
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }, // Add SnackbarHost
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(id = R.string.recording_screen_title)) },
                 navigationIcon = {
                     IconButton(onClick = {
-                        // Prevent navigating back while recording? Optional.
                         if (!uiState.isRecording) {
                             navController.navigateUp()
                         } else {
                             scope.launch {
                                 snackbarHostState.showSnackbar(
-                                    message = context.getString(R.string.stop_recording_before_leaving), // Add string resource
+                                    message = context.getString(R.string.stop_recording_before_leaving),
                                     duration = SnackbarDuration.Short
                                 )
                             }
@@ -133,50 +119,46 @@ fun RecordingScreen(
                 .fillMaxSize()
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceAround // Pushes elements apart
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Spacer(modifier = Modifier.height(64.dp)) // Pushes timer down a bit
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(modifier = Modifier.height(32.dp))
 
-            // Timer Display
-            Text(
-                text = uiState.elapsedTimeFormatted,
-                style = MaterialTheme.typography.displayMedium,
-                color = if (uiState.isRecording) MaterialTheme.colorScheme.primary else LocalContentColor.current
-            )
+                Text(
+                    text = uiState.elapsedTimeFormatted,
+                    style = MaterialTheme.typography.displayMedium,
+                    color = if (uiState.isRecording) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                )
 
-            // Status Text
-            Text(
-                text = when {
-                    uiState.isRecording -> stringResource(R.string.status_recording)
-                    uiState.recordingFilePath != null -> stringResource(R.string.status_saved) // Show "Saved" after stopping
-                    !uiState.permissionGranted -> stringResource(R.string.status_permission_needed) // Prompt for permission
-                    else -> stringResource(R.string.status_tap_to_record)
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
+                Text(
+                    text = when {
+                        uiState.isRecording -> stringResource(R.string.status_recording)
+                        !uiState.permissionGranted -> stringResource(R.string.status_permission_needed)
+                        uiState.recordingFilePath != null && !uiState.isRecording -> stringResource(R.string.status_saved)
+                        else -> stringResource(R.string.status_tap_to_record)
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
 
-            // Record/Stop Button
-            Button( // Using Button instead of IconButton for better visibility/accessibility
+            Button(
                 onClick = {
                     if (uiState.isRecording) {
-                        // Stop recording
                         viewModel.toggleRecording()
                     } else {
-                        // Start recording or request permission
                         if (uiState.permissionGranted) {
                             viewModel.toggleRecording()
                         } else {
-                            // Request permission
                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     }
                 },
                 modifier = Modifier
-                    .size(100.dp) // Larger button
+                    .size(100.dp)
                     .padding(16.dp),
-                shape = MaterialTheme.shapes.extraLarge, // Circular button
-                contentPadding = PaddingValues(0.dp) // Remove default padding for icon
+                shape = MaterialTheme.shapes.extraLarge,
+                contentPadding = PaddingValues(0.dp)
             ) {
                 Icon(
                     imageVector = if (uiState.isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
@@ -185,125 +167,28 @@ fun RecordingScreen(
                     } else {
                         stringResource(R.string.cd_record_button)
                     },
-                    modifier = Modifier.size(48.dp), // Adjust icon size
-                    tint = MaterialTheme.colorScheme.onPrimary // Icon color on button background
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
 
-            // Placeholder for potential future elements like waveform visualizer
-            Spacer(modifier = Modifier.height(64.dp)) // Pushes button up a bit
-        }
-    }
-}
-
-// --- Preview (Remains mostly the same, but add SnackbarHostState) ---
-@OptIn(ExperimentalMaterial3Api::class)
-@Preview(showBackground = true, name = "Recording Screen Preview (Not Recording)")
-@Composable
-fun RecordingScreenPreviewNotRecording() {
-    AudioScholarTheme {
-        val previewState = RecordingUiState(
-            isRecording = false,
-            elapsedTimeFormatted = "00:00:00",
-            permissionGranted = true // Assume permission granted for this preview state
-        )
-        val dummyNavController = rememberNavController()
-        val snackbarHostState = remember { SnackbarHostState() }
-
-        Scaffold(
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            topBar = { /* ... TopAppBar as before ... */ }
-        ) { paddingValues ->
-            // Column layout as before, using previewState
-            Column(
-                modifier = Modifier
-                    .padding(paddingValues)
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceAround
+            Button(
+                onClick = {
+                    if (!uiState.isRecording) {
+                        navController.navigate(UploadScreenRoute)
+                    } else {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                message = context.getString(R.string.stop_recording_before_navigating),
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    }
+                },
+                enabled = !uiState.isRecording,
+                modifier = Modifier.padding(bottom = 16.dp)
             ) {
-                Spacer(modifier = Modifier.height(64.dp))
-                Text(
-                    text = previewState.elapsedTimeFormatted,
-                    style = MaterialTheme.typography.displayMedium,
-                    color = LocalContentColor.current // Default color when not recording
-                )
-                Text(
-                    text = stringResource(R.string.status_tap_to_record),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-                Button(
-                    onClick = { }, // No action in preview
-                    modifier = Modifier.size(100.dp).padding(16.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Mic,
-                        contentDescription = stringResource(R.string.cd_record_button),
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                Spacer(modifier = Modifier.height(64.dp))
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Preview(showBackground = true, name = "Recording Screen Preview (Recording)")
-@Composable
-fun RecordingScreenPreviewRecording() {
-    AudioScholarTheme {
-        val previewState = RecordingUiState(
-            isRecording = true,
-            elapsedTimeFormatted = "00:10:35",
-            permissionGranted = true
-        )
-        val dummyNavController = rememberNavController()
-        val snackbarHostState = remember { SnackbarHostState() }
-
-        Scaffold(
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-            topBar = { /* ... TopAppBar as before ... */ }
-        ) { paddingValues ->
-            // Column layout as before, using previewState
-            Column(
-                modifier = Modifier
-                    .padding(paddingValues)
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceAround
-            ) {
-                Spacer(modifier = Modifier.height(64.dp))
-                Text(
-                    text = previewState.elapsedTimeFormatted,
-                    style = MaterialTheme.typography.displayMedium,
-                    color = MaterialTheme.colorScheme.primary // Primary color when recording
-                )
-                Text(
-                    text = stringResource(R.string.status_recording),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-                Button(
-                    onClick = { }, // No action in preview
-                    modifier = Modifier.size(100.dp).padding(16.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    contentPadding = PaddingValues(0.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Stop,
-                        contentDescription = stringResource(R.string.cd_stop_button),
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                Spacer(modifier = Modifier.height(64.dp))
+                Text(stringResource(R.string.button_go_to_upload))
             }
         }
     }

@@ -5,9 +5,10 @@
     <string name="initial_timer_value">00:00:00</string>
     <string name="status_tap_to_record">Tap the button to start recording</string>
     <string name="status_recording">Recording…</string>
+    <string name="status_saving">Saving…</string>
     <string name="status_saved">Recording Saved</string>
     <string name="status_permission_needed">Microphone permission needed</string>
-    <string name="recording_saved_message">Recording saved: %s</string>
+    <string name="recording_saved_message">Recording saved: %1$s</string>
 
     <string name="cd_record_button">Start Recording</string>
     <string name="cd_stop_button">Stop Recording</string>
@@ -15,10 +16,16 @@
     <string name="button_go_to_upload">Upload Recordings</string>
     <string name="button_back_to_recording">Back to Recording</string>
 
-    <string name="permission_denied_message">Microphone permission denied.</string>
+    <string name="permission_denied_message">Microphone permission is required to record audio.</string>
     <string name="action_open_settings">Open Settings</string>
     <string name="stop_recording_before_leaving">Please stop recording before leaving the screen.</string>
     <string name="stop_recording_before_navigating">Please stop recording before navigating.</string>
+
+    <string name="dialog_title_prompt_title">Save Recording</string>
+    <string name="dialog_title_prompt_label">Optional Title</string>
+    <string name="dialog_title_prompt_placeholder">e.g., Lecture Week 5</string>
+    <string name="dialog_action_save">Save</string>
+    <string name="dialog_action_skip">Skip Title</string>
 
     <string name="upload_screen_title">Upload Audio</string>
     <string name="button_select_file">Select Audio File</string>
@@ -26,6 +33,10 @@
     <string name="button_upload">Upload</string>
     <string name="text_uploading">Uploading…</string>
     <string name="upload_success_message">Upload successful!</string>
+    <string name="upload_label_title">Title (Optional)</string>
+    <string name="upload_placeholder_title">e.g., Lecture Week 5 - Part 1</string>
+    <string name="upload_label_description">Description (Optional)</string>
+    <string name="upload_placeholder_description">Brief summary or keywords</string>
 
     <string name="upload_error_no_file">Error: No file selected.</string>
     <string name="upload_error_read_details">Error: Could not read file details.</string>

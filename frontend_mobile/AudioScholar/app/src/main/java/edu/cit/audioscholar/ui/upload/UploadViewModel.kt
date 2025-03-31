@@ -21,6 +21,8 @@ import javax.inject.Inject
 data class UploadScreenState(
     val selectedFileName: String? = null,
     val selectedFileUri: Uri? = null,
+    val title: String = "",
+    val description: String = "",
     val isUploading: Boolean = false,
     val uploadMessage: String? = null,
     val progress: Int = 0,
@@ -43,6 +45,10 @@ class UploadViewModel @Inject constructor(
             "audio/flac", "audio/x-flac"
         )
         private const val MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
+    }
+
+    fun consumeUploadMessage() {
+        _uiState.update { it.copy(uploadMessage = null) }
     }
 
     private val _uiState = MutableStateFlow(UploadScreenState())
@@ -87,7 +93,7 @@ class UploadViewModel @Inject constructor(
                         selectedFileUri = uri,
                         uploadMessage = validationError,
                         progress = 0,
-                        isUploadEnabled = validationError == null
+                        isUploadEnabled = validationError == null,
                     )
                 }
 
@@ -99,7 +105,9 @@ class UploadViewModel @Inject constructor(
                         selectedFileUri = uri,
                         uploadMessage = application.getString(R.string.upload_error_read_details),
                         progress = 0,
-                        isUploadEnabled = false
+                        isUploadEnabled = false,
+                        title = "",
+                        description = ""
                     )
                 }
             }
@@ -146,10 +154,19 @@ class UploadViewModel @Inject constructor(
         return null
     }
 
+    fun onTitleChanged(newTitle: String) {
+        _uiState.update { it.copy(title = newTitle) }
+    }
+
+    fun onDescriptionChanged(newDescription: String) {
+        _uiState.update { it.copy(description = newDescription) }
+    }
 
     fun onUploadClicked() {
-        val currentUri = _uiState.value.selectedFileUri
-        val currentFileName = _uiState.value.selectedFileName
+        val currentState = _uiState.value
+        val currentUri = currentState.selectedFileUri
+        val currentTitle = currentState.title.trim()
+        val currentDescription = currentState.description.trim()
 
         if (currentUri == null) {
             _uiState.update { it.copy(uploadMessage = application.getString(R.string.upload_error_no_file)) }
@@ -189,14 +206,19 @@ class UploadViewModel @Inject constructor(
             return
         }
 
-        if (_uiState.value.isUploading) {
+        if (currentState.isUploading) {
             println("Upload Info: Upload already in progress.")
             return
         }
 
-        println("Upload Clicked: Starting upload for file: $currentFileName (Uri: $currentUri)")
+        println("Upload Clicked: Starting upload for file: ${currentState.selectedFileName} (Uri: $currentUri)")
+        println("With Title: '$currentTitle', Description: '$currentDescription'")
 
-        audioRepository.uploadAudioFile(currentUri)
+        audioRepository.uploadAudioFile(
+            fileUri = currentUri,
+            title = currentTitle.takeIf { it.isNotEmpty() },
+            description = currentDescription.takeIf { it.isNotEmpty() }
+        )
             .onEach { result ->
                 when (result) {
                     is UploadResult.Loading -> {
@@ -226,6 +248,8 @@ class UploadViewModel @Inject constructor(
                                 uploadMessage = application.getString(R.string.upload_success_message),
                                 selectedFileName = null,
                                 selectedFileUri = null,
+                                title = "",
+                                description = "",
                                 progress = 0,
                                 isUploadEnabled = false
                             )

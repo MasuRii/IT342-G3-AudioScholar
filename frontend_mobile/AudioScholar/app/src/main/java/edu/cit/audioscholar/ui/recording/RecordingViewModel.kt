@@ -5,17 +5,21 @@ import android.app.Application
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.os.Build
+import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.data.local.file.RecordingFileHandler
+import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -27,13 +31,16 @@ data class RecordingUiState(
     val permissionGranted: Boolean = false,
     val requiresPermissionRationale: Boolean = false,
     val error: String? = null,
-    val recordingFilePath: String? = null
+    val recordingFilePath: String? = null,
+    val showTitleDialog: Boolean = false
 )
+
 
 @HiltViewModel
 class RecordingViewModel @Inject constructor(
     private val application: Application,
-    private val recordingFileHandler: RecordingFileHandler
+    private val recordingFileHandler: RecordingFileHandler,
+    private val gson: Gson
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RecordingUiState())
@@ -41,6 +48,7 @@ class RecordingViewModel @Inject constructor(
 
     private var mediaRecorder: MediaRecorder? = null
     private var currentRecordingFile: File? = null
+    private var finalDurationMillis: Long = 0L
 
     private var timerJob: Job? = null
     private var recordingStartTime: Long = 0L
@@ -69,10 +77,9 @@ class RecordingViewModel @Inject constructor(
         println("DEBUG: Permission result - Granted: $granted, Rationale: $shouldShowRationale")
     }
 
-
     fun toggleRecording() {
         if (_uiState.value.isRecording) {
-            stopRecording()
+            requestStopRecording()
         } else {
             _uiState.update { it.copy(error = null, recordingFilePath = null) }
             startRecording()
@@ -119,7 +126,8 @@ class RecordingViewModel @Inject constructor(
                                     elapsedTimeMillis = 0L,
                                     elapsedTimeFormatted = formatElapsedTime(0L),
                                     error = null,
-                                    recordingFilePath = null
+                                    recordingFilePath = null,
+                                    showTitleDialog = false
                                 )
                             }
                             startTimer()
@@ -155,44 +163,100 @@ class RecordingViewModel @Inject constructor(
         }
     }
 
-    private fun stopRecording() {
+    private fun requestStopRecording() {
         if (!_uiState.value.isRecording) {
-            println("DEBUG: Stop recording called but not currently recording.")
+            println("DEBUG: Stop recording requested but not currently recording.")
             return
         }
 
-        println("DEBUG: ViewModel - Attempting to stop recording...")
+        println("DEBUG: ViewModel - Requesting stop recording...")
         stopTimer()
+        finalDurationMillis = _uiState.value.elapsedTimeMillis
 
         viewModelScope.launch(Dispatchers.IO) {
-            var savedFilePath: String? = null
             try {
                 mediaRecorder?.apply {
                     stop()
+                    println("DEBUG: MediaRecorder stopped.")
                 }
-                savedFilePath = currentRecordingFile?.absolutePath
-                println("DEBUG: ViewModel - Recording stopped successfully. File saved: $savedFilePath")
 
                 withContext(Dispatchers.Main) {
                     _uiState.update {
                         it.copy(
                             isRecording = false,
-                            recordingFilePath = savedFilePath,
-                            error = null
+                            showTitleDialog = true
                         )
                     }
+                    println("DEBUG: ViewModel - Show title dialog requested.")
                 }
-            } catch (e: IOException) {
-                handleError("Failed to save recording. Insufficient storage space or I/O error.", e)
             } catch (e: IllegalStateException) {
                 handleError("Failed to stop MediaRecorder properly: ${e.message}", e)
-            } catch (e: RuntimeException) {
-                handleError("Runtime error stopping recording: ${e.message}", e)
-            } catch (e: Exception) {
-                handleError("An unexpected error occurred during stopRecording: ${e.message}", e)
-            } finally {
                 releaseMediaRecorder()
                 withContext(Dispatchers.Main) { resetTimerDisplay() }
+            } catch (e: RuntimeException) {
+                handleError("Runtime error stopping recording: ${e.message}", e)
+                releaseMediaRecorder()
+                withContext(Dispatchers.Main) { resetTimerDisplay() }
+            } catch (e: Exception) {
+                handleError("An unexpected error occurred during requestStopRecording: ${e.message}", e)
+                releaseMediaRecorder()
+                withContext(Dispatchers.Main) { resetTimerDisplay() }
+            }
+        }
+    }
+
+    fun finalizeRecording(title: String?) {
+        val savedAudioFile = currentRecordingFile ?: run {
+            handleError("Cannot finalize recording: Recording file is null.")
+            releaseMediaRecorder()
+            _uiState.update { it.copy(showTitleDialog = false) }
+            return
+        }
+        val savedFilePath = savedAudioFile.absolutePath
+        val savedFileName = savedAudioFile.name
+        val timestamp = System.currentTimeMillis()
+
+        val metadata = RecordingMetadata(
+            filePath = savedFilePath,
+            fileName = savedFileName,
+            title = title?.takeIf { it.isNotBlank() },
+            timestampMillis = timestamp,
+            durationMillis = finalDurationMillis
+        )
+
+        println("DEBUG: ViewModel - Finalizing recording...")
+        Log.d("RecordingMetadata", "Preparing Metadata: $metadata")
+
+        viewModelScope.launch(Dispatchers.IO) {
+            var metadataSavedSuccessfully = false
+            try {
+                val metadataJson = gson.toJson(metadata)
+                val metadataFileName = savedFileName.substringBeforeLast('.') + ".json"
+                val metadataFile = File(savedAudioFile.parent, metadataFileName)
+
+                FileOutputStream(metadataFile).use { outputStream ->
+                    outputStream.write(metadataJson.toByteArray())
+                }
+                metadataSavedSuccessfully = true
+                Log.d("RecordingMetadata", "Metadata saved successfully to: ${metadataFile.absolutePath}")
+
+            } catch (e: IOException) {
+                Log.e("RecordingMetadata", "Failed to save metadata JSON file", e)
+            } catch (e: Exception) {
+                Log.e("RecordingMetadata", "Unexpected error saving metadata JSON", e)
+            }
+
+            releaseMediaRecorder()
+            withContext(Dispatchers.Main) {
+                _uiState.update {
+                    it.copy(
+                        recordingFilePath = savedFilePath,
+                        showTitleDialog = false,
+                        error = null
+                    )
+                }
+                resetTimerDisplay()
+                println("DEBUG: ViewModel - Recording finalized. File: $savedFilePath, Title: '${metadata.title ?: "None"}', Metadata Saved: $metadataSavedSuccessfully")
             }
         }
     }
@@ -229,7 +293,7 @@ class RecordingViewModel @Inject constructor(
     }
 
     private fun resetTimerDisplay() {
-        if (!_uiState.value.isRecording) {
+        if (!_uiState.value.isRecording && !_uiState.value.showTitleDialog) {
             _uiState.update {
                 it.copy(
                     elapsedTimeMillis = 0L,
@@ -251,9 +315,8 @@ class RecordingViewModel @Inject constructor(
         println("DEBUG: Attempting to release MediaRecorder.")
         mediaRecorder?.apply {
             try {
-                reset()
                 release()
-                println("DEBUG: MediaRecorder reset and released successfully.")
+                println("DEBUG: MediaRecorder released successfully.")
             } catch (e: Exception) {
                 System.err.println("Error releasing MediaRecorder: ${e.message}")
                 e.printStackTrace()
@@ -266,8 +329,11 @@ class RecordingViewModel @Inject constructor(
     private fun handleError(message: String, throwable: Throwable? = null) {
         System.err.println("RecordingViewModel Error: $message")
         throwable?.printStackTrace()
+        if (mediaRecorder != null) {
+            releaseMediaRecorder()
+        }
         viewModelScope.launch(Dispatchers.Main) {
-            _uiState.update { it.copy(error = message, isRecording = false) }
+            _uiState.update { it.copy(error = message, isRecording = false, showTitleDialog = false) }
             stopTimer()
             resetTimerDisplay()
         }
@@ -285,8 +351,8 @@ class RecordingViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        if (_uiState.value.isRecording) {
-            println("WARN: ViewModel cleared while recording was active. Attempting cleanup.")
+        if (mediaRecorder != null) {
+            println("WARN: ViewModel cleared while MediaRecorder might be active or unreleased. Attempting cleanup.")
             stopTimer()
             releaseMediaRecorder()
         }

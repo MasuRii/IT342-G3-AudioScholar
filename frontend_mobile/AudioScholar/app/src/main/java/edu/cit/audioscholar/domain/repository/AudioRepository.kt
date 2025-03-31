@@ -10,7 +10,10 @@ sealed class UploadResult {
     data object Loading : UploadResult()
 }
 
-
 interface AudioRepository {
-    fun uploadAudioFile(fileUri: Uri): Flow<UploadResult>
+    fun uploadAudioFile(
+        fileUri: Uri,
+        title: String?,
+        description: String?
+    ): Flow<UploadResult>
 }

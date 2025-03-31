@@ -4,7 +4,7 @@ plugins {
     kotlin("kapt")
     id("com.google.dagger.hilt.android")
     alias(libs.plugins.compose.compiler)
-}
+    }
 
 android {
     namespace = "edu.cit.audioscholar"
@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
 
     implementation(libs.androidx.navigation.compose)
+    implementation("com.google.code.gson:gson:2.10.1")
 
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)

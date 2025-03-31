@@ -13,6 +13,8 @@ interface ApiService {
     @POST("/api/audio/upload")
     suspend fun uploadAudio(
         @Part file: MultipartBody.Part,
+        @Part("title") title: RequestBody?,
+        @Part("description") description: RequestBody?
     ): Response<Unit>
 
 }

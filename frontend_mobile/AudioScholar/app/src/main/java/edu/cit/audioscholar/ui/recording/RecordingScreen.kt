@@ -194,7 +194,7 @@ fun RecordingScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(140.dp))
 
             TextButton(
                 onClick = {

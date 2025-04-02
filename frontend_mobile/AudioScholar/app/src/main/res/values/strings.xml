@@ -23,7 +23,7 @@
 
     <string name="dialog_title_prompt_title">Save Recording</string>
     <string name="dialog_title_prompt_label">Optional Title</string>
-    <string name="dialog_title_prompt_placeholder">e.g., Lecture Week 5</string>
+    <string name="dialog_title_prompt_placeholder">e.g., Lecture Week 1</string>
     <string name="dialog_action_save">Save</string>
     <string name="dialog_action_skip">Skip Title</string>
 
@@ -34,7 +34,7 @@
     <string name="text_uploading">Uploading…</string>
     <string name="upload_success_message">Upload successful!</string>
     <string name="upload_label_title">Title (Optional)</string>
-    <string name="upload_placeholder_title">e.g., Lecture Week 5 - Part 1</string>
+    <string name="upload_placeholder_title">e.g., Lecture Week 1 - Part 1</string>
     <string name="upload_label_description">Description (Optional)</string>
     <string name="upload_placeholder_description">Brief summary or keywords</string>
 

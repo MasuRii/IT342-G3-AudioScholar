@@ -1,3 +1,4 @@
+
 # 🎓 AudioScholar: Transforming Audio into Actionable Insights for Learners
 
 AudioScholar is an intelligent, multi-user platform designed to enhance lecture note-taking and content comprehension for students. It records lecture audio and uses AI-driven summarization, cloud sync, and video recommendation features to produce structured, actionable insights and personalized learning experiences — all accessible via web and mobile apps.
@@ -174,7 +175,13 @@ Use the following Firebase test credentials (if available):
 ## 🎨 Design & Documentation
 
 - **Use Case & Activity Diagrams**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
-- **Wireframes**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
+
+- **Mobile Wireframes**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=0-1&t=31ZcynnCihbXU6I4-1)  
+  
+- **Web Wireframes**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=8-2267&t=31ZcynnCihbXU6I4-1)  
+  
+- **Database Schema & ER Diagrams**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=31ZcynnCihbXU6I4-1)
+
 
 ---
 

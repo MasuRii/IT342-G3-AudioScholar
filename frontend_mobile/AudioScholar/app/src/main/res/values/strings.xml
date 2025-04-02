@@ -50,4 +50,6 @@
 
     <string name="upload_info_starting">Starting upload…</string>
 
+    <string name="default_notification_channel_id" translatable="false">upload_status_channel</string>
+
 </resources>

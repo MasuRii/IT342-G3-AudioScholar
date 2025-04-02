@@ -4,6 +4,7 @@ plugins {
     kotlin("kapt")
     id("com.google.dagger.hilt.android")
     alias(libs.plugins.compose.compiler)
+    id("com.google.gms.google-services")
     }
 
 android {
@@ -76,6 +77,14 @@ dependencies {
     implementation(platform(libs.okhttp.bom))
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
+
+    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation(platform("com.google.firebase:firebase-bom:32.7.4"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-analytics-ktx")
+    implementation ("androidx.core:core:1.13.1")
+    implementation ("androidx.core:core-ktx:1.13.1")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

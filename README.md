@@ -1,243 +1,200 @@
-# AudioScholar: Transforming Audio into Actionable Insights for Learners
+# 🎓 AudioScholar: Transforming Audio into Actionable Insights for Learners
 
-  
+AudioScholar is an intelligent, multi-user platform designed to enhance lecture note-taking and content comprehension for students. It records lecture audio and uses AI-driven summarization, cloud sync, and video recommendation features to produce structured, actionable insights and personalized learning experiences — all accessible via web and mobile apps.
 
 ![CITU Logo](https://cit.edu/wp-content/uploads/2023/07/cit-logo.png)
 
-  
+---
+
+## 🚀 Key Features
+
+### 🔊 Lecture Recording & Summarization
+- Record lectures via the mobile app.
+- AI generates structured summaries from captured audio.
+- Summaries are accessible across devices.
+
+### 📤 Audio Upload
+- Upload existing audio files through the web or mobile interface.
+- Summaries auto-generate after processing.
+
+### 📚 AI-Powered Learning Recommendations
+- Automatically suggests relevant **YouTube** videos based on lecture content.
+
+### 🔐 User Authentication & Account Management
+- Register/Login via **Email/Password**, **Google OAuth**, or **GitHub OAuth**.
+- Manage profiles and change passwords securely.
+- Feature access is controlled via a **freemium model**.
+
+### ☁️ Cloud Synchronization (Optional)
+- Sync recordings and summaries to **Firebase Cloud Storage**.
+- Choose between manual or automatic syncing.
+- Configure data types and frequency of sync.
+
+### 📊 PowerPoint Integration
+- Upload and associate **PowerPoint presentations** with lecture recordings.
+- Enhances summarization and context for lectures.
+
+### 🌐 Web Interface
+- View uploaded recordings and summaries.
+- Upload audio files for summarization.
+- Access AI-generated learning resources.
+
+---
+
+## ⚙️ Setup Instructions
+
+### 📌 Prerequisites
+Ensure the following tools are installed on your system:
+
+- **Java Development Kit (JDK) 17**
+- **Node.js** (v16+)
+- **npm** or **yarn**
+- **Git**
+- **Maven** (for backend)
+- **Android Studio** (Latest version)
+- **Firebase Account** (for authentication and cloud storage)
+
+---
+
+### 📁 Cloning the Repository
+```bash
+git clone https://github.com/IT342-G3-AudioScholar/AudioScholar.git
+cd AudioScholar
+```
+
+---
+
+### 🔧 Backend Setup (Spring Boot)
+1. Navigate to the backend:
+   ```bash
+   cd backend/audioscholar
+   ```
+2. Set up environment variables:
+   Create a `.env` file:
+   ```
+   FIREBASE_CONFIG_PATH=/path/to/firebase-config.json
+   GEMINI_API_KEY=your-gemini-api-key
+   YOUTUBE_API_KEY=your-youtube-api-key
+   ```
+3. Run the backend:
+   ```bash
+   mvn spring-boot:run
+   ```
+   Or run `AudioscholarApplication.java` from your IDE.
+
+---
+
+### 💻 Web Frontend Setup (React + Vite)
+1. Navigate to the web app:
+   ```bash
+   cd frontend_web/audioscholar-app
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Create a `.env` file:
+   ```
+   VITE_API_URL=http://localhost:8080
+   ```
+4. Run the development server:
+   ```bash
+   npm run dev
+   ```
+   Open at: `http://localhost:3000`
+
+---
+
+### 📱 Mobile Frontend Setup (Kotlin + Android)
+1. Open Android Studio → "Open an Existing Project"
+2. Navigate to:
+   ```
+   frontend_mobile/AudioScholar
+   ```
+3. Sync Gradle files (Android Studio will prompt).
+4. Add `google-services.json` to the `app/` directory.
+5. In `local.properties`, set:
+   ```
+   API_BASE_URL=http://your-local-ip:8080
+   ```
+6. Run on emulator or physical device.
 
-## 1. System Name
+---
 
-  
+## 🧪 Testing Credentials
+Use the following Firebase test credentials (if available):
+- **Email**: *[To be provided]*
+- **Password**: *[To be provided]*
 
-**AudioScholar**
+---
 
-  
+## 🧭 Example Workflow
 
-## 2. Product Description
+1. Record a lecture using the mobile app.
+2. Wait for AI to process and summarize (1–2 minutes).
+3. View the summary on web or mobile under **My Lectures**.
+4. Access recommended YouTube videos for deeper learning.
 
-  
+---
 
-AudioScholar is an intelligent, multi-user platform designed to enhance the lecture note-taking process for students. It is a dual-platform solution comprising a mobile application for Android devices and a web interface accessible through standard web browsers.
+## 🧩 Dependencies
 
-  
+### Backend
+- **Spring Boot 3.4.2**
+- **Firebase Admin SDK 9.2.0**
+- See full list in [`pom.xml`](./backend/audioscholar/pom.xml)
 
-The system's core functionality is to record lecture audio and leverage AI-driven summarization techniques to produce structured, actionable insights tailored for learners. AudioScholar goes beyond simple recording by offering personalized learning material recommendations, PowerPoint integration for enhanced summarization, and optional cloud synchronization.
+### Web Frontend
+- **React 19**
+- **Vite 6.2.0**
+- See full list in [`package.json`](./frontend_web/audioscholar-app/package.json)
 
-  
+### Mobile Frontend
+- **Kotlin + Jetpack Compose**
+- **AndroidX**
+- **Firebase SDKs**
+- See configurations in [`build.gradle.kts`](./frontend_mobile/AudioScholar/build.gradle.kts)
 
-**Key Objectives:**
+---
 
-  
+## 🧪 Features Outside Initial Scope (Planned for Future Releases)
 
-*  **Capture Lectures:** Robust audio recording capabilities for both online and offline learning environments.
+| Feature | Status |
+|--------|--------|
+| Real-time Transcription | 🚫 Not yet implemented |
+| iOS Mobile Support | 🚫 Not yet supported |
+| Web Audio Recording | 🚫 Not yet supported |
+| Multi-language Support | 🚫 English only for v1.0 |
+| Background Recording (Free Users) | 🚫 Not supported |
+| Recommendation Engine beyond YouTube | 🚫 Future feature |
+| Premium Subscription Management | 🚫 Planned |
 
-*  **Summarize Content:** AI-powered summarization using Google Gemini AI API to transform lengthy audio into digestible key points.
+---
 
-*  **Recommend Learning Materials:** Personalized recommendations of supplementary educational resources, initially focusing on YouTube.
+## 🎨 Design & Documentation
 
-*  **Provide Comprehensive Access:** Web interface for reviewing recordings, summaries, and recommendations on a larger screen.
+- **Use Case & Activity Diagrams**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
+- **Wireframes**: [View on Figma](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
 
-  
+---
 
-AudioScholar is designed to be a standalone application, initially not integrated with Learning Management Systems (LMS), but future integration is considered. It operates on a freemium model, offering basic services for free and advanced features for premium subscribers.
+## 👨‍💻 Developers
 
-  
-
-## 3. List of Features
-
-  
-
-AudioScholar provides a comprehensive suite of features across its mobile and web platforms:
-
-  
-
-**Core Features:**
-
-  
-
-*  **Lecture Recording (Mobile):**
-
-	- Start/Stop Lecture Recording: Capture high-quality audio lectures in real-time, both online and offline.
-
-	* Background Recording (Premium Feature): Continue recording even when the app is in the background (for premium users).
-
-*  **Audio Upload (Mobile & Web):**
-
-	* Upload Pre-recorded Audio Files: Process existing audio lecture files from mobile or web.
-
-*  **AI-Powered Summarization (Server-side):**
-
-	* Automatic Audio Processing: Utilize Google Gemini AI API to process audio recordings.
-
-	* Generate Lecture Summaries: Create structured and concise summaries of lecture content.
-
-*  **Learning Material Recommendation (Server-side):**
-
-	* Analyze Lecture Content: Extract keywords and key topics from lecture summaries using NLP.
-
-	* Generate YouTube Recommendations: Suggest relevant educational YouTube videos based on lecture content.
-
-*  **User Authentication & Account Management (Mobile & Server-side):**
-
-	* User Registration: Create new accounts using email/password.
-
-	* User Login: Secure login via Google OAuth 2.0, GitHub OAuth 2.0, or Email/Password.
-
-	* Account Profile Management: View and edit user profile information.
-
-	* Change Password (Email/Password Accounts): Securely update account passwords.
-
-*  **Cloud Synchronization (Mobile & Server-side - Optional):**
-
-	* Configure Cloud Sync Settings: Enable/disable cloud sync, set sync frequency, and choose data types to sync.
-
-	* Manual/Automatic Cloud Sync: Synchronize recordings and summaries to Firebase Cloud Storage for data backup and cross-device access.
-
-*  **PowerPoint Integration (Mobile & Server-side):**
-
-	* Upload PowerPoint Presentations: Upload lecture slides to the mobile application.
-
-	* Associate PowerPoint with Recording: Link uploaded PowerPoint presentations to specific lecture recordings for enhanced summarization.
-
-*  **Web Interface (Web):**
-
-	* View Recordings and Summaries: Access and review lecture recordings and AI-generated summaries.
-
-	* Upload Audio Files: Upload pre-recorded audio files for processing via the web interface.
-
-	* View Recommendations: Explore learning material recommendations for lectures.
-
-*  **Freemium Model (Mobile & Server-side):**
-
-	* Feature Access Control: Dynamically control feature access based on user login status and subscription level.
-
-  
-
-**Features Outside Initial Scope (Version 1.0):**
-
-  
-
-* Real-time Transcription
-
-* iOS Mobile Platform Support
-
-* Web Interface Audio Recording
-
-* Multi-language Support (Initially English only)
-
-* Background Recording for Free Logged-in Users
-
-* Recommendation Engine Beyond YouTube (for Free Users)
-
-* Premium Subscription Management
-
-  
-
-## 4. Links
-
-  
-
-*  **Diagrams (Use Case, Activity):** ![Link](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
-
-*  **Wireframes:** ![Link](https://www.figma.com/design/5cqAE14jvnfFDlKbqHObr7/AudioScholar?node-id=24-2315&t=su6Bkd3yHO2aCleY-1)
-
-  
-
-## 5. Developers Profile
-
-  
-
-**Proponent(s):**
-
-  
-
-* Biacolo, Math Lee L.
-
-* Terence, John Duterte
-
-* Orlanes, John Nathan
-
-  
+**Proponents:**
+- Biacolo, Math Lee L.
+- Terence, John Duterte
+- Orlanes, John Nathan
 
 **Adviser:**
+- Frederick L. Revilleza
 
-  
+---
 
-* Frederick L. Revilleza
+## 📬 Contact
 
-  
+For issues, suggestions, or collaboration inquiries, feel free to open an issue or contact the development team.
 
-## 6. Technology Stack
+---
 
-  
+✅ *AudioScholar — Empowering learners through intelligent audio insights.
 
-AudioScholar is built using a modern and robust technology stack:
-
-  
-
-*  **Mobile Application:**
-
-	*  **Kotlin:** Native Android development language.
-
-	*  **Firebase SDKs:** For Android integration with Firebase services.
-
-*  **Web Interface:**
-
-	*  **ReactJS:** JavaScript library for building interactive user interfaces.
-
-*  **Server-side Application:**
-
-	*  **Spring Boot (Java):** Framework for building robust and scalable server-side applications.
-
-	*  **Firebase SDKs:** For Server-side integration with Firebase services.
-
-*  **AI & APIs:**
-
-	*  **Google Gemini AI API:** For audio processing and summarization.
-
-	*  **YouTube Data API:** For learning material recommendations.
-
-	*  **Google OAuth 2.0 & GitHub OAuth 2.0 APIs:** For federated login.
-
-*  **Database & Cloud Services:**
-
-	*  **Firebase:** Comprehensive mobile and web application development platform.
-
-		*  **Firebase Authentication:** For user authentication and account management.
-
-		*  **Firebase Firestore/Realtime Database:** For storing user data, recordings metadata, summaries, and recommendations.
-
-		*  **Firebase Storage:** For optional cloud storage of audio recordings and summaries.
-
-  
-
-## 7. Getting Started
-
-  
-
-AudioScholar is designed for **college and university students** seeking to improve their lecture note-taking efficiency and study habits.
-
-  
-
-**Intended Users:**
-
-  
-
-* Undergraduate and graduate students across all disciplines.
-
-* Students attending in-person and online lectures.
-
-* Users comfortable with mobile applications and web browsers.
-
-  
-
-**User Roles & Access:**
-
-  
-
-*  **Free User (Unauthenticated):** Basic offline lecture recording and limited summarization.
-
-*  **Logged-in Free User (Authenticated):** Access to core features including cloud sync (optional), basic recommendations, and limited web interface access.
-
-*  **Premium User (Subscribed - Future):** Full access to all features, advanced summarization, expanded recommendations, priority processing, and potentially other premium features.

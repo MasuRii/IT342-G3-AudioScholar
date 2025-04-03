@@ -25,7 +25,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
-import edu.cit.audioscholar.ui.main.UploadScreenRoute
+import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -194,27 +194,7 @@ fun RecordingScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(140.dp))
-
-            TextButton(
-                onClick = {
-                    if (!uiState.isRecording && !uiState.showTitleDialog) {
-                        navController.navigate(UploadScreenRoute)
-                    } else {
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                message = context.getString(R.string.stop_recording_before_navigating),
-                                duration = SnackbarDuration.Short
-                            )
-                        }
-                    }
-                },
-                enabled = !uiState.isRecording && !uiState.showTitleDialog
-            ) {
-                Text(stringResource(R.string.button_go_to_upload))
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(172.dp))
         }
     }
 }

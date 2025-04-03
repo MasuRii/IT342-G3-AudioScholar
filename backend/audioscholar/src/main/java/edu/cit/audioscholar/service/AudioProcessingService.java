@@ -1,150 +1,144 @@
 package edu.cit.audioscholar.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import edu.cit.audioscholar.model.Recording;
+import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.Summary;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.Base64;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 @Service
 public class AudioProcessingService {
 
-    private static final String UPLOAD_DIR = "src/main/resources/uploads";
+    private static final String UPLOAD_DIR_STRING = "src/main/resources/uploads";
+    private static final Path UPLOAD_DIR = Paths.get(UPLOAD_DIR_STRING);
 
     @Autowired
     private GeminiService geminiService;
-    
-    // We'll use these services if they're needed, without assuming specific methods
+
     @Autowired(required = false)
     private FirebaseService firebaseService;
-    
+
     @Autowired(required = false)
     private RecordingService recordingService;
-    
+
     @Autowired(required = false)
     private SummaryService summaryService;
 
-    /**
-     * Process audio file - saves it locally and returns the path
-     */
-    public String processAudioFile(byte[] audioData, String fileName) throws IOException {
-        // Ensure the uploads directory exists
-        Files.createDirectories(Paths.get(UPLOAD_DIR));
+    // Removed the in-memory map
 
-        // Create a unique filename to prevent collisions
-        String uniqueFileName = UUID.randomUUID().toString() + "_" + fileName;
-        File file = new File(UPLOAD_DIR, uniqueFileName);
+    public String processAudioFile(byte[] audioData, String originalFileName, String title, String description) throws IOException, ExecutionException, InterruptedException {
+        Files.createDirectories(UPLOAD_DIR);
 
-        // Write file to the target directory
-        try (FileOutputStream fos = new FileOutputStream(file)) {
+        // Log the title and description
+        System.out.println("Processing Audio File: ");
+        System.out.println("Title: " + title);  // Log Title
+        System.out.println("Description: " + description);  // Log Description
+
+        String uniqueFileName = UUID.randomUUID().toString() + "_" + originalFileName;
+        Path filePath = UPLOAD_DIR.resolve(uniqueFileName);
+
+        try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
             fos.write(audioData);
         }
-        
-        System.out.println("Audio file saved to: " + file.getAbsolutePath());
-        return file.getAbsolutePath();
+
+        title = (title == null) ? "" : title;
+        description = (description == null) ? "" : description;
+
+        String audioId = UUID.randomUUID().toString();
+        AudioMetadata metadata = new AudioMetadata(
+                audioId,
+                uniqueFileName,
+                audioData.length,
+                getAudioDuration(audioData),
+                title,
+                description
+        );
+        firebaseService.saveAudioMetadata(metadata); // Save to Firebase
+
+        // Log the metadata to ensure values are correct
+        System.out.println("Metadata Saved to Firebase: " + metadata);
+
+        return metadata.getId(); // Return the generated ID
     }
-    
-    /**
-     * Process audio and generate a summary using Gemini
-     */
-    public Summary processAndSummarize(byte[] audioData, String fileName) throws Exception {
-        // First, save the file locally
-        String filePath = processAudioFile(audioData, fileName);
-        
-        // Generate a summary using Gemini
-        String base64Audio = Base64.getEncoder().encodeToString(audioData);
-        String aiResponse = callGeminiWithAudio(base64Audio, fileName);
-        
-        // Create and populate the Summary object
-        Summary summary = createSummaryFromResponse(aiResponse);
-        
-        return summary;
+
+    public List<AudioMetadata> getAllAudioMetadataList() throws ExecutionException, InterruptedException {
+        return firebaseService.getAllAudioMetadata(); // Retrieve all from Firebase
     }
-    
-    /**
-     * Call Gemini API with audio data
-     */
-    private String callGeminiWithAudio(String base64Audio, String fileName) {
-        // Create a prompt for Gemini that requests transcript, summary, key points, and topics
-        String prompt = "Please analyze this audio and provide the following:" +
-                        "\n1. Full transcript" +
-                        "\n2. A concise summary (2-3 paragraphs)" +
-                        "\n3. 5-7 key points" +
-                        "\n4. Main topics discussed" +
-                        "\nFormat your response as JSON with these fields: transcript, summary, keyPoints (as array), topics (as array)";
-        
-        // Call Gemini API with the audio data
-        return geminiService.callGeminiAPIWithAudio(prompt, base64Audio, fileName);
-    }
-    
-    /**
-     * Create a Summary object from the Gemini API response
-     */
-    private Summary createSummaryFromResponse(String aiResponse) throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode responseNode = mapper.readTree(aiResponse);
-        
-        if (responseNode.has("error")) {
-            throw new Exception("Error from AI service: " + responseNode.get("error").asText());
-        }
-        
-        String summaryId = UUID.randomUUID().toString();
-        String recordingId = UUID.randomUUID().toString(); // This would normally come from the Recording
-        Summary summary = new Summary(summaryId, recordingId, "");
-        
-        // Extract the text content
-        String textContent = responseNode.has("text") ? responseNode.get("text").asText() : "";
-        
+
+
+    public boolean deleteAudio(String audioId) {
         try {
-            // Try to parse as JSON
-            JsonNode contentJson = mapper.readTree(textContent);
-            
-            // Extract fields from JSON
-            if (contentJson.has("transcript")) {
-                summary.setFullText(contentJson.get("transcript").asText());
-            }
-            
-            if (contentJson.has("summary")) {
-                summary.setCondensedSummary(contentJson.get("summary").asText());
-            }
-            
-            if (contentJson.has("keyPoints") && contentJson.get("keyPoints").isArray()) {
-                List<String> keyPoints = new ArrayList<>();
-                contentJson.get("keyPoints").forEach(point -> keyPoints.add(point.asText()));
-                summary.setKeyPoints(keyPoints);
-            }
-            
-            if (contentJson.has("topics") && contentJson.get("topics").isArray()) {
-                List<String> topics = new ArrayList<>();
-                contentJson.get("topics").forEach(topic -> topics.add(topic.asText()));
-                summary.setTopics(topics);
-            }
-        } catch (Exception e) {
-            // If parsing as JSON fails, use a fallback strategy
-            // This handles cases where Gemini doesn't return properly formatted JSON
-            if (summary.getFullText() == null || summary.getFullText().isEmpty()) {
-                summary.setFullText(textContent);
-            }
-            
-            if (summary.getCondensedSummary() == null || summary.getCondensedSummary().isEmpty()) {
-                // Try to extract a summary from the text
-                String[] paragraphs = textContent.split("\n\n");
-                if (paragraphs.length > 0) {
-                    summary.setCondensedSummary(paragraphs[0]);
-                } else {
-                    summary.setCondensedSummary("Summary not available");
+            AudioMetadata metadata = null;
+            // Need to fetch metadata to get filename for local deletion
+            for (AudioMetadata am : firebaseService.getAllAudioMetadata()) {
+                if (am.getId().equals(audioId)) {
+                    metadata = am;
+                    break;
                 }
             }
+            if (metadata != null) {
+                Path filePath = UPLOAD_DIR.resolve(metadata.getFileName());
+                Files.deleteIfExists(filePath); // Delete from local storage
+                firebaseService.deleteData("audio_metadata", audioId); // Delete from Firebase
+                return true;
+            }
+            return false;
+        } catch (IOException | ExecutionException | InterruptedException e) {
+            System.err.println("Error deleting audio: " + e.getMessage());
+            return false;
         }
-        
+    }
+
+    private long getAudioDuration(byte[] audioData) {
+        return 0;
+    }
+
+    public Summary processAndSummarize(byte[] audioData, String fileName) throws Exception {
+        String audioId = processAudioFile(audioData, fileName, "", "");
+
+        // No need to fetch from in-memory map anymore
+        AudioMetadata metadata = null;
+        for (AudioMetadata am : firebaseService.getAllAudioMetadata()) {
+            if (am.getId().equals(audioId)) {
+                metadata = am;
+                break;
+            }
+        }
+        if (metadata == null) {
+            throw new IllegalStateException("Metadata not found in Firebase after processing file with ID: " + audioId);
+        }
+
+        String base64Audio = Base64.getEncoder().encodeToString(audioData);
+        String aiResponse = callGeminiWithAudio(base64Audio, metadata.getFileName());
+
+        Summary summary = createSummaryFromResponse(aiResponse);
+        summary.setRecordingId(audioId);
+
         return summary;
+    }
+
+    private String callGeminiWithAudio(String base64Audio, String fileName) {
+        String prompt = "Please analyze this audio and provide the following:" +
+                "\n1. Full transcript" +
+                "\n2. A concise summary (2-3 paragraphs)" +
+                "\n3. 5-7 key points" +
+                "\n4. Main topics discussed" +
+                "\nFormat your response as JSON with these fields: transcript, summary, keyPoints (as array), topics (as array)";
+
+        return geminiService.callGeminiAPIWithAudio(prompt, base64Audio, fileName);
+    }
+
+    private Summary createSummaryFromResponse(String aiResponse) throws Exception {
+        System.out.println("Received AI Response (needs parsing): " + aiResponse);
+        return new Summary();
     }
 }

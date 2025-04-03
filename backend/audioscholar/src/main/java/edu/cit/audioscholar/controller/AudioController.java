@@ -14,6 +14,7 @@ import java.net.URI;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 @RestController
 @RequestMapping("/api/audio")
@@ -26,15 +27,24 @@ public class AudioController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<?> uploadAudio(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadAudio(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "title", required = false) String title,
+            @RequestParam(value = "description", required = false) String description) {
         try {
+            // Log to ensure title and description are received
+            System.out.println("Received Title: " + title);   // Log Title
+            System.out.println("Received Description: " + description);   // Log Description
+
             byte[] audioData = file.getBytes();
             String fileName = file.getOriginalFilename();
-            String audioId = audioProcessingService.processAudioFile(audioData, fileName); 
+            
+            // Check the values of title and description again
+            String audioId = audioProcessingService.processAudioFile(audioData, fileName, title, description);
 
-             URI location = ServletUriComponentsBuilder
-                 .fromCurrentContextPath().path("/api/audio/{id}")
-                 .buildAndExpand(audioId).toUri();
+            URI location = ServletUriComponentsBuilder
+                .fromCurrentContextPath().path("/api/audio/{id}")
+                .buildAndExpand(audioId).toUri();
 
             return ResponseEntity.created(location).body(Map.of(
                     "message", "Audio file uploaded successfully",
@@ -46,13 +56,12 @@ public class AudioController {
                     "details", e.getMessage()
             ));
         } catch (Exception e) {
-             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "error", "An unexpected error occurred during upload",
                     "details", e.getMessage()
             ));
         }
     }
-
     @PostMapping("/summarize")
     public ResponseEntity<?> uploadAndSummarize(@RequestParam("file") MultipartFile file) {
         try {
@@ -70,8 +79,17 @@ public class AudioController {
 
     @GetMapping
     public ResponseEntity<List<AudioMetadata>> listAllAudio() {
-        List<AudioMetadata> audioMetadataList = audioProcessingService.getAllAudioMetadataList(); 
-        return ResponseEntity.ok(audioMetadataList);
+        try {
+            List<AudioMetadata> audioMetadataList = audioProcessingService.getAllAudioMetadataList();
+            return ResponseEntity.ok(audioMetadataList);
+        } catch (ExecutionException e) {
+            System.err.println("Error retrieving audio metadata from Firebase: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.emptyList()); // Or a more specific error response
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); // Re-interrupt the current thread
+            System.err.println("Thread interrupted while retrieving audio metadata: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.emptyList()); // Or a more specific error response
+        }
     }
 
     @DeleteMapping("/{audioId}")

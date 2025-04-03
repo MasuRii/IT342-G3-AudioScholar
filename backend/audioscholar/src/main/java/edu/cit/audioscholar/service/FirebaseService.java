@@ -2,10 +2,15 @@ package edu.cit.audioscholar.service;
 
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.*;
+import com.google.cloud.storage.BlobId;
+import com.google.cloud.storage.BlobInfo;
+import com.google.cloud.storage.Storage;
+import com.google.cloud.storage.StorageOptions;
 import com.google.firebase.cloud.FirestoreClient;
 import edu.cit.audioscholar.model.AudioMetadata;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -16,6 +21,8 @@ import java.util.concurrent.ExecutionException;
 public class FirebaseService {
 
     private static final String AUDIO_METADATA_COLLECTION = "audio_metadata";
+    private final Storage storage = StorageOptions.getDefaultInstance().getService(); // Initialize Firebase Storage
+    private final String bucketName = "audioscholar-39b22.appspot.com"; // Replace with your Firebase Storage bucket name
 
     private Firestore getFirestore() {
         return FirestoreClient.getFirestore();
@@ -86,6 +93,23 @@ public class FirebaseService {
         return audioMetadataList;
     }
 
+    public String uploadAudioToStorage(byte[] audioData, String fileName) throws IOException {
+        BlobId blobId = BlobId.of(bucketName, "audio_uploads/" + fileName); // Define the storage path
+        BlobInfo blobInfo = BlobInfo.newBuilder(blobId).setContentType(getMediaType(fileName)).build();
+        storage.create(blobInfo, audioData);
+        return blobInfo.getMediaLink(); // Or a different URL format if needed
+    }
+
+    private String getMediaType(String fileName) {
+        if (fileName.endsWith(".wav")) return "audio/wav";
+        if (fileName.endsWith(".mp3")) return "audio/mpeg"; // Use "audio/mpeg" for mp3
+        if (fileName.endsWith(".aiff")) return "audio/aiff";
+        if (fileName.endsWith(".aac")) return "audio/aac";
+        if (fileName.endsWith(".ogg") || fileName.endsWith(".oga")) return "audio/ogg";
+        if (fileName.endsWith(".flac")) return "audio/flac";
+        return "application/octet-stream"; // Default
+    }
+
     private Map<String, Object> convertToMap(AudioMetadata metadata) {
         Map<String, Object> map = new HashMap<>();
         map.put("id", metadata.getId());
@@ -94,6 +118,7 @@ public class FirebaseService {
         map.put("duration", metadata.getDuration());
         map.put("title", metadata.getTitle());
         map.put("description", metadata.getDescription());
+        map.put("firebaseStorageUrl", metadata.getFirebaseStorageUrl()); // Add the storage URL
         return map;
     }
 }

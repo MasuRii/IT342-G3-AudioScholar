@@ -36,15 +36,37 @@ public class AudioController {
             System.out.println("Received Title: " + title);   // Log Title
             System.out.println("Received Description: " + description);   // Log Description
 
+            String contentType = file.getContentType();
+            if (contentType == null || !contentType.startsWith("audio/")) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "error", "Invalid file format",
+                        "details", "Only audio files are supported."
+                ));
+            }
+
+            List<String> supportedTypes = List.of("audio/wav", "audio/mpeg", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac");
+            if (!supportedTypes.contains(contentType)) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                        "error", "Unsupported audio format",
+                        "details", "Supported formats are: WAV, MP3, AIFF, AAC, OGG Vorbis, FLAC."
+                ));
+            }
+
+            if (file.getSize() > 500 * 1024 * 1024) { // 500MB in bytes
+                return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of(
+                        "error", "File size exceeds the limit",
+                        "details", "Maximum file size allowed is 500MB."
+                ));
+            }
+
             byte[] audioData = file.getBytes();
             String fileName = file.getOriginalFilename();
-            
-            // Check the values of title and description again
+
             String audioId = audioProcessingService.processAudioFile(audioData, fileName, title, description);
 
             URI location = ServletUriComponentsBuilder
-                .fromCurrentContextPath().path("/api/audio/{id}")
-                .buildAndExpand(audioId).toUri();
+                    .fromCurrentContextPath().path("/api/audio/{id}")
+                    .buildAndExpand(audioId).toUri();
 
             return ResponseEntity.created(location).body(Map.of(
                     "message", "Audio file uploaded successfully",

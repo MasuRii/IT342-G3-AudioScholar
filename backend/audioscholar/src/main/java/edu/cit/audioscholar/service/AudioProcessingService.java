@@ -5,7 +5,6 @@ import edu.cit.audioscholar.model.Summary;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,34 +32,26 @@ public class AudioProcessingService {
     @Autowired(required = false)
     private SummaryService summaryService;
 
-    // Removed the in-memory map
-
     public String processAudioFile(byte[] audioData, String originalFileName, String title, String description) throws IOException, ExecutionException, InterruptedException {
-        Files.createDirectories(UPLOAD_DIR);
-
         // Log the title and description
         System.out.println("Processing Audio File: ");
-        System.out.println("Title: " + title);  // Log Title
-        System.out.println("Description: " + description);  // Log Description
+        System.out.println("Title: " + title);   // Log Title
+        System.out.println("Description: " + description);   // Log Description
 
-        String uniqueFileName = UUID.randomUUID().toString() + "_" + originalFileName;
-        Path filePath = UPLOAD_DIR.resolve(uniqueFileName);
-
-        try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
-            fos.write(audioData);
-        }
+        String audioId = UUID.randomUUID().toString();
+        String firebaseStorageUrl = firebaseService.uploadAudioToStorage(audioData, originalFileName);
 
         title = (title == null) ? "" : title;
         description = (description == null) ? "" : description;
 
-        String audioId = UUID.randomUUID().toString();
         AudioMetadata metadata = new AudioMetadata(
                 audioId,
-                uniqueFileName,
+                originalFileName,
                 audioData.length,
                 getAudioDuration(audioData),
                 title,
-                description
+                description,
+                firebaseStorageUrl
         );
         firebaseService.saveAudioMetadata(metadata); // Save to Firebase
 
@@ -78,7 +69,7 @@ public class AudioProcessingService {
     public boolean deleteAudio(String audioId) {
         try {
             AudioMetadata metadata = null;
-            // Need to fetch metadata to get filename for local deletion
+            // Need to fetch metadata to get filename for local deletion (if you still want local deletion)
             for (AudioMetadata am : firebaseService.getAllAudioMetadata()) {
                 if (am.getId().equals(audioId)) {
                     metadata = am;
@@ -86,9 +77,11 @@ public class AudioProcessingService {
                 }
             }
             if (metadata != null) {
+                // You might want to delete from Firebase Storage here as well
+                // Example: firebaseService.deleteAudioFromStorage(metadata.getFirebaseStorageUrl());
                 Path filePath = UPLOAD_DIR.resolve(metadata.getFileName());
-                Files.deleteIfExists(filePath); // Delete from local storage
-                firebaseService.deleteData("audio_metadata", audioId); // Delete from Firebase
+                Files.deleteIfExists(filePath); // Delete from local storage (optional)
+                firebaseService.deleteData("audio_metadata", audioId); // Delete metadata from Firebase
                 return true;
             }
             return false;
@@ -99,13 +92,12 @@ public class AudioProcessingService {
     }
 
     private long getAudioDuration(byte[] audioData) {
-        return 0;
+        return 0; // Implement logic to get audio duration if needed
     }
 
     public Summary processAndSummarize(byte[] audioData, String fileName) throws Exception {
         String audioId = processAudioFile(audioData, fileName, "", "");
 
-        // No need to fetch from in-memory map anymore
         AudioMetadata metadata = null;
         for (AudioMetadata am : firebaseService.getAllAudioMetadata()) {
             if (am.getId().equals(audioId)) {

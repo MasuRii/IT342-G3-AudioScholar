@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "94663253748",
+    "firebase_url": "https://audioscholar-39b22-default-rtdb.firebaseio.com",
+    "project_id": "audioscholar-39b22",
+    "storage_bucket": "audioscholar-39b22.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:94663253748:android:dcf759cb3bdb2dfcff48a1",
+        "android_client_info": {
+          "package_name": "edu.cit.audioscholar"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeO8wox0SPC1WXh2DdzZ4UITmlIM7FY6o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

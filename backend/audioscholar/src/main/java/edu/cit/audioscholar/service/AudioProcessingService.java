@@ -9,93 +9,128 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 public class AudioProcessingService {
 
-    private static final String UPLOAD_DIR = "src/main/resources/uploads";
+    private static final String UPLOAD_DIR_STRING = "src/main/resources/uploads";
+    private static final Path UPLOAD_DIR = Paths.get(UPLOAD_DIR_STRING);
 
     @Autowired
     private GeminiService geminiService;
 
-    @Autowired(required = false)
-    private FirebaseService firebaseService;
+    @Autowired(required = false) 
+    private FirebaseService firebaseService; 
 
     @Autowired(required = false)
-    private RecordingService recordingService;
+    private RecordingService recordingService; 
 
     @Autowired(required = false)
-    private SummaryService summaryService;
+    private SummaryService summaryService; 
 
-    // In-memory storage for audio metadata (this can be changed to a database)
-    private final Map<String, AudioMetadata> audioMetadataMap = new HashMap<>();
+    private final Map<String, AudioMetadata> audioMetadataMap = new HashMap<>(); 
 
-    /**
-     * Process audio file - saves it locally and returns the file path
-     */
-    public String processAudioFile(byte[] audioData, String fileName) throws IOException {
-        Files.createDirectories(Paths.get(UPLOAD_DIR));
+    public String processAudioFile(byte[] audioData, String originalFileName) throws IOException {
+        Files.createDirectories(UPLOAD_DIR);
 
-        // Create a unique filename to prevent collisions
-        String uniqueFileName = UUID.randomUUID().toString() + "_" + fileName;
-        File file = new File(UPLOAD_DIR, uniqueFileName);
+        String uniqueFileName = UUID.randomUUID().toString() + "_" + originalFileName;
+        Path filePath = UPLOAD_DIR.resolve(uniqueFileName);
 
-        // Write file to the target directory
-        try (FileOutputStream fos = new FileOutputStream(file)) {
+        try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
             fos.write(audioData);
         }
 
-        // Store metadata
+        String audioId = UUID.randomUUID().toString(); 
         AudioMetadata metadata = new AudioMetadata(
-                UUID.randomUUID().toString(),
-                file.getName(),
+                audioId,
+                uniqueFileName,
                 audioData.length,
-                getAudioDuration(audioData) // Placeholder method to calculate duration
+                getAudioDuration(audioData)
         );
         audioMetadataMap.put(metadata.getId(), metadata);
 
-        return file.getAbsolutePath();
+        return audioId; 
     }
 
-    /**
-     * Get all audio metadata
-     */
-    public Map<String, AudioMetadata> getAllAudioMetadata() {
-        return audioMetadataMap;
+    public Map<String, AudioMetadata> getAllAudioMetadataMap() {
+        return Collections.unmodifiableMap(audioMetadataMap);
     }
 
-    /**
-     * Delete audio by ID
-     */
+    public List<AudioMetadata> getAllAudioMetadataList() {
+        List<AudioMetadata> fileMetadataList = new ArrayList<>();
+
+        if (!Files.isDirectory(UPLOAD_DIR) || !Files.isReadable(UPLOAD_DIR)) {
+            System.err.println("Upload directory does not exist or is not readable: " + UPLOAD_DIR_STRING);
+            return Collections.emptyList();
+        }
+
+        try (Stream<Path> paths = Files.list(UPLOAD_DIR)) {
+            paths.filter(Files::isRegularFile)
+                 .forEach(filePath -> {
+                     try {
+                         String fileName = filePath.getFileName().toString();
+                         long fileSize = Files.size(filePath);
+                         long duration = 0; 
+
+                         AudioMetadata metadata = new AudioMetadata(
+                                 fileName,
+                                 fileName,
+                                 fileSize,
+                                 duration
+                         );
+                         fileMetadataList.add(metadata);
+                     } catch (IOException e) {
+                         System.err.println("Error reading metadata for file: " + filePath + " - " + e.getMessage());
+                     }
+                 });
+        } catch (IOException e) {
+            System.err.println("Error listing files in directory: " + UPLOAD_DIR_STRING + " - " + e.getMessage());
+            return Collections.emptyList(); 
+        }
+
+        return fileMetadataList;
+    }
+
+
     public boolean deleteAudio(String audioId) {
         AudioMetadata metadata = audioMetadataMap.remove(audioId);
         if (metadata != null) {
-            File file = new File(UPLOAD_DIR, metadata.getFileName());
-            return file.delete(); // Delete the file from storage
+            Path filePath = UPLOAD_DIR.resolve(metadata.getFileName()); 
+            try {
+                return Files.deleteIfExists(filePath);
+            } catch (IOException e) {
+                System.err.println("Error deleting file: " + filePath + " - " + e.getMessage());
+                return false; 
+            }
         }
-        return false;
+        return false; 
     }
 
-    /**
-     * Get audio duration (just a placeholder, replace with actual implementation)
-     */
     private long getAudioDuration(byte[] audioData) {
-        // Here, you can add logic to calculate actual audio duration.
-        return audioData.length / 1000; // Dummy calculation
+        return 0;
     }
 
     public Summary processAndSummarize(byte[] audioData, String fileName) throws Exception {
-        // First, save the file locally
-        String filePath = processAudioFile(audioData, fileName);
+        String audioId = processAudioFile(audioData, fileName); 
+        
+        AudioMetadata metadata = audioMetadataMap.get(audioId);
+        if (metadata == null) {
+            throw new IllegalStateException("Metadata not found after processing file with ID: " + audioId);
+        }
 
-        // Generate a summary using Gemini
         String base64Audio = Base64.getEncoder().encodeToString(audioData);
-        String aiResponse = callGeminiWithAudio(base64Audio, fileName);
+        String aiResponse = callGeminiWithAudio(base64Audio, metadata.getFileName()); 
 
-        // Create and populate the Summary object
-        return createSummaryFromResponse(aiResponse);
+        Summary summary = createSummaryFromResponse(aiResponse); 
+        summary.setRecordingId(audioId);
+
+
+        return summary;
     }
 
     private String callGeminiWithAudio(String base64Audio, String fileName) {
@@ -105,11 +140,12 @@ public class AudioProcessingService {
                         "\n3. 5-7 key points" +
                         "\n4. Main topics discussed" +
                         "\nFormat your response as JSON with these fields: transcript, summary, keyPoints (as array), topics (as array)";
-        return geminiService.callGeminiAPIWithAudio(prompt, base64Audio, fileName);
+        
+        return geminiService.callGeminiAPIWithAudio(prompt, base64Audio, fileName); 
     }
 
     private Summary createSummaryFromResponse(String aiResponse) throws Exception {
-        // Summarization logic...
-        return new Summary(); // Placeholder
+        System.out.println("Received AI Response (needs parsing): " + aiResponse);
+        return new Summary();
     }
 }

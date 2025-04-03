@@ -28,7 +28,6 @@ public class Summary {
         this.fullText = fullText;
     }
     
-    // Getters and setters
     public String getSummaryId() { return summaryId; }
     public void setSummaryId(String summaryId) { this.summaryId = summaryId; }
     
@@ -50,7 +49,6 @@ public class Summary {
     public Date getCreatedAt() { return createdAt; }
     public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
     
-    // Convert to Firestore document
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
         map.put("summaryId", summaryId);
@@ -63,7 +61,6 @@ public class Summary {
         return map;
     }
     
-    // Create from Firestore document
     public static Summary fromMap(Map<String, Object> map) {
         Summary summary = new Summary();
         summary.summaryId = (String) map.get("summaryId");

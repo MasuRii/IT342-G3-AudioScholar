@@ -2,9 +2,12 @@ package edu.cit.audioscholar.controller;
 
 import edu.cit.audioscholar.model.User;
 import edu.cit.audioscholar.service.UserService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -18,39 +21,45 @@ public class UserController {
         this.userService = userService;
     }
 
-    // ✅ Create User (POST)
     @PostMapping
     public ResponseEntity<User> createUser(@RequestBody User user) throws ExecutionException, InterruptedException {
         User createdUser = userService.createUser(user);
-        return ResponseEntity.status(201).body(createdUser); // ✅ 201 Created
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest().path("/{id}")
+                .buildAndExpand(createdUser.getUserId()).toUri();
+        return ResponseEntity.created(location).body(createdUser);
     }
 
-    // ✅ Get User by ID (GET)
     @GetMapping("/{userId}")
     public ResponseEntity<User> getUserById(@PathVariable String userId) throws ExecutionException, InterruptedException {
         User user = userService.getUserById(userId);
-        return user != null ? ResponseEntity.ok(user) : ResponseEntity.notFound().build(); // ✅ 200 OK or 404 Not Found
+        return user != null ? ResponseEntity.ok(user) : ResponseEntity.notFound().build();
     }
 
-    // ✅ Update User (PUT)
     @PutMapping("/{userId}")
     public ResponseEntity<User> updateUser(@PathVariable String userId, @RequestBody User user) throws ExecutionException, InterruptedException {
-        user.setUserId(userId); // Ensure ID is correctly set
+        user.setUserId(userId); 
         User updatedUser = userService.updateUser(user);
-        return ResponseEntity.ok(updatedUser); // ✅ 200 OK
+        return updatedUser != null ? ResponseEntity.ok(updatedUser) : ResponseEntity.notFound().build();
     }
 
-    // ✅ Delete User (DELETE)
     @DeleteMapping("/{userId}")
     public ResponseEntity<Void> deleteUser(@PathVariable String userId) throws ExecutionException, InterruptedException {
-        userService.deleteUser(userId);
-        return ResponseEntity.noContent().build(); // ✅ 204 No Content
+        userService.deleteUser(userId); 
+        return ResponseEntity.noContent().build();
     }
 
-    // ✅ Get Users by Email (GET)
-    @GetMapping("/email/{email}")
-    public ResponseEntity<List<User>> getUsersByEmail(@PathVariable String email) throws ExecutionException, InterruptedException {
-        List<User> users = userService.getUsersByEmail(email);
-        return users.isEmpty() ? ResponseEntity.notFound().build() : ResponseEntity.ok(users); // ✅ 200 OK or 404 Not Found
+    @GetMapping
+    public ResponseEntity<List<User>> findUsers(@RequestParam(value = "email", required = false) String email) 
+            throws ExecutionException, InterruptedException {
+        
+        List<User> users;
+        if (email != null && !email.isEmpty()) {
+            users = userService.getUsersByEmail(email);
+        } else {
+             users = List.of();
+        }
+        
+        return ResponseEntity.ok(users); 
     }
 }

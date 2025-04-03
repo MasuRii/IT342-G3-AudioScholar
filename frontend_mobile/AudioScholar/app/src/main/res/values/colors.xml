@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App Specific Colors -->
+    <color name="navy_blue">#FF1A365D</color>
+    <color name="teal_green">#FF2A9D8F</color>
+    <color name="sandy_brown">#FFF4A261</color>
+    <color name="light_gray">#FFCBD5E1</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+
+    <!-- Light Theme Colors -->
+    <color name="md_theme_light_primary">@color/navy_blue</color>
+    <color name="md_theme_light_background">#FFFDFBFF</color>
+    <color name="md_theme_light_surface">#FFFDFBFF</color>
+
+    <!-- Dark Theme Colors -->
+    <color name="md_theme_dark_primary">@color/teal_green</color>
+    <color name="md_theme_dark_background">#FF1A1C1E</color>
+    <color name="md_theme_dark_surface">#FF1A1C1E</color>
+
+    <!-- Default template colors (can be removed if not used) -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
     <color name="teal_200">#FF03DAC5</color>
     <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
 </resources>

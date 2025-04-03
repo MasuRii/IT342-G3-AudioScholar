@@ -5,25 +5,47 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.*
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
+import edu.cit.audioscholar.R
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
+import edu.cit.audioscholar.ui.library.LocalRecordingsListScreen
 import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
 
-const val RecordingScreenRoute = "recording_screen"
-const val UploadScreenRoute = "upload_screen"
+sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector) {
+    object Record : Screen("record", R.string.nav_record, Icons.Filled.Mic)
+    object Library : Screen("library", R.string.nav_library, Icons.AutoMirrored.Filled.List)
+    object Upload : Screen("upload", R.string.nav_upload, Icons.Filled.CloudUpload)
+    object Settings : Screen("settings", R.string.nav_settings, Icons.Filled.Settings)
+}
+
+val bottomNavItems = listOf(
+    Screen.Record,
+    Screen.Library,
+    Screen.Upload,
+    Screen.Settings
+)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -31,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var navController: NavHostController
 
     override fun onCreate(savedInstanceState: Bundle?) {
+
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "onCreate called. Intent received: $intent")
         logIntentExtras("onCreate", intent)
@@ -46,33 +69,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AudioScholarTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    navController = rememberNavController()
+                navController = rememberNavController()
 
-                    LaunchedEffect(intent) {
-                        Log.d("MainActivity", "LaunchedEffect in onCreate triggered.")
-                        handleNavigationIntent(intent, navController)
-                    }
-
-                    NavHost(
-                        navController = navController,
-                        startDestination = RecordingScreenRoute
-                    ) {
-                        composable(route = RecordingScreenRoute) {
-                            RecordingScreen(navController = navController)
-                        }
-                        composable(route = UploadScreenRoute) {
-                            UploadScreen(
-                                onNavigateToRecording = {
-                                    navController.popBackStack(RecordingScreenRoute, inclusive = false)
-                                }
-                            )
-                        }
-                    }
+                LaunchedEffect(intent) {
+                    Log.d("MainActivity", "LaunchedEffect in onCreate triggered.")
+                    handleNavigationIntent(intent, navController)
                 }
+
+                MainAppScreen(navController = navController)
             }
         }
     }
@@ -90,6 +94,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun logIntentExtras(source: String, intent: Intent?) {
         if (intent == null) {
             Log.d("MainActivity", "[$source] Intent is null.")
@@ -111,19 +116,91 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "[handleNavigationIntent] Value from getExtra(NAVIGATE_TO_EXTRA): $navigateTo")
 
         if (navigateTo == UPLOAD_SCREEN_VALUE) {
-            if (navController.currentDestination?.route != UploadScreenRoute) {
-                Log.d("MainActivity", "Navigating to UploadScreenRoute via navController.")
-                navController.navigate(UploadScreenRoute) {
-                    popUpTo(RecordingScreenRoute) {
-                        inclusive = false
+            if (navController.currentDestination?.route != Screen.Upload.route) {
+                Log.d("MainActivity", "Navigating to Upload screen via intent.")
+                navController.navigate(Screen.Upload.route) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        saveState = true
                     }
                     launchSingleTop = true
+                    restoreState = true
                 }
             } else {
-                Log.d("MainActivity", "Already on UploadScreenRoute, no navigation needed.")
+                Log.d("MainActivity", "Already on Upload screen, no navigation needed from intent.")
             }
+            intent?.removeExtra(NAVIGATE_TO_EXTRA)
         } else {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to UploadScreenRoute.")
+            Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to Upload screen.")
+        }
+    }
+}
+
+@Composable
+fun MainAppScreen(navController: NavHostController) {
+    Scaffold(
+        bottomBar = {
+            AppBottomNavigationBar(navController = navController)
+        }
+    ) { innerPadding ->
+        NavHost(
+            navController = navController,
+            startDestination = Screen.Record.route,
+            modifier = Modifier.padding(innerPadding)
+        ) {
+            composable(Screen.Record.route) {
+                RecordingScreen(navController = navController)
+            }
+            composable(Screen.Library.route) {
+                LocalRecordingsListScreen()
+            }
+            composable(Screen.Upload.route) {
+                UploadScreen(
+                    onNavigateToRecording = {
+                        navController.navigate(Screen.Record.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
+            composable(Screen.Settings.route) {
+                SettingsScreenPlaceholder()
+            }
+        }
+    }
+}
+
+@Composable
+fun AppBottomNavigationBar(navController: NavHostController) {
+    NavigationBar {
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentDestination = navBackStackEntry?.destination
+
+        bottomNavItems.forEach { screen ->
+            NavigationBarItem(
+                icon = { Icon(screen.icon, contentDescription = stringResource(screen.labelResId)) },
+                label = { Text(stringResource(screen.labelResId)) },
+                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
+                onClick = {
+                    navController.navigate(screen.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsScreenPlaceholder() {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Box(contentAlignment = Alignment.Center) {
+            Text("Settings Screen Placeholder")
         }
     }
 }

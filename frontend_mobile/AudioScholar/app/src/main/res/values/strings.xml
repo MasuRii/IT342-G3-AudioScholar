@@ -42,6 +42,7 @@
     <string name="upload_error_generic_prefix">Error: %1$s</string>
     <string name="upload_error_failed">Error: Upload failed.</string>
     <string name="upload_info_starting">Starting upload…</string>
+    <string name="upload_info_progress">Uploading: %1$d%%</string>
     <string name="button_back_to_recording">Back to Recording</string>
 
     <string name="nav_record">Record</string>

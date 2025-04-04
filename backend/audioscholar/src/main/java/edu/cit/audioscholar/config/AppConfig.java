@@ -1,4 +1,4 @@
-package edu.cit.audioscholar.config; // Or your preferred config package
+package edu.cit.audioscholar.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

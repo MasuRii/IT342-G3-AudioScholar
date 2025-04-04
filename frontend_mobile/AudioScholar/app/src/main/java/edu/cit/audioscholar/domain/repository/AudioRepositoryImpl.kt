@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import com.google.gson.Gson
+import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.service.ApiService
@@ -24,9 +25,13 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.*
+import retrofit2.HttpException
 import retrofit2.Response
 import java.io.File
 import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -81,14 +86,14 @@ class AudioRepositoryImpl @Inject constructor(
             contentResolver.openInputStream(fileUri)?.use { it.readBytes() }
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Failed to read file bytes", e)
-            trySend(UploadResult.Error("Failed to read file: ${e.message}"))
-            close(e)
+            trySend(UploadResult.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Unknown reason")))
+            close()
             return@callbackFlow
         }
 
         if (fileBytes == null) {
             Log.e(TAG_REPO, "Failed to read file content (stream was null or empty).")
-            trySend(UploadResult.Error("Failed to read file content."))
+            trySend(UploadResult.Error(application.getString(R.string.upload_error_read_empty)))
             close()
             return@callbackFlow
         }
@@ -133,15 +138,19 @@ class AudioRepositoryImpl @Inject constructor(
                 }
                 close()
             } else {
-                val errorBody = response.errorBody()?.string() ?: "Unknown server error"
-                Log.e(TAG_REPO, "Upload failed: ${response.code()} - $errorBody")
-                trySend(UploadResult.Error("Upload failed: ${response.code()} - $errorBody"))
+                val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
+                Log.e(TAG_REPO, "Upload failed with HTTP error: ${response.code()} - $errorBody")
+                trySend(UploadResult.Error(application.getString(R.string.upload_error_server_http, response.code(), errorBody)))
                 close()
             }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during upload: ${e.message}", e)
+            trySend(UploadResult.Error(application.getString(R.string.upload_error_network_connection)))
+            close()
         } catch (e: Exception) {
-            Log.e(TAG_REPO, "Upload exception: ${e.message}", e)
-            trySend(UploadResult.Error("Upload failed: ${e.message ?: "Network or unexpected error"}"))
-            close(e)
+            Log.e(TAG_REPO, "Unexpected exception during upload: ${e.message}", e)
+            trySend(UploadResult.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error")))
+            close()
         }
 
         awaitClose {
@@ -323,7 +332,7 @@ class AudioRepositoryImpl @Inject constructor(
                     return@withContext false
                 }
             } else {
-                Log.w(TAG_REPO, "Audio file not found for deletion: ${metadata.filePath}")
+                Log.w(TAG_REPO, "Audio file not found for deletion (considered success for overall operation): ${metadata.filePath}")
                 audioDeleted = true
             }
         } catch (e: SecurityException) {
@@ -370,6 +379,7 @@ class AudioRepositoryImpl @Inject constructor(
         return@withContext audioDeleted
     }
 
+
     override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
         try {
             Log.d(TAG_REPO, "Fetching cloud recordings metadata from API...")
@@ -379,13 +389,16 @@ class AudioRepositoryImpl @Inject constructor(
                 Log.i(TAG_REPO, "Successfully fetched ${metadataList.size} cloud recordings metadata.")
                 emit(Result.success(metadataList))
             } else {
-                val errorBody = response.errorBody()?.string() ?: "Unknown server error"
+                val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
                 Log.e(TAG_REPO, "Failed to fetch cloud recordings: ${response.code()} - $errorBody")
-                emit(Result.failure(IOException("API Error ${response.code()}: $errorBody")))
+                emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, response.code(), errorBody))))
             }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception fetching cloud recordings: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_network_connection), e)))
         } catch (e: Exception) {
-            Log.e(TAG_REPO, "Exception fetching cloud recordings: ${e.message}", e)
-            emit(Result.failure(e))
+            Log.e(TAG_REPO, "Unexpected exception fetching cloud recordings: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
         }
     }.flowOn(Dispatchers.IO)
 }

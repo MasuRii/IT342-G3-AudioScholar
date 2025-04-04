@@ -369,4 +369,23 @@ class AudioRepositoryImpl @Inject constructor(
 
         return@withContext audioDeleted
     }
+
+    override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
+        try {
+            Log.d(TAG_REPO, "Fetching cloud recordings metadata from API...")
+            val response = apiService.getAudioMetadataList()
+            if (response.isSuccessful) {
+                val metadataList = response.body() ?: emptyList()
+                Log.i(TAG_REPO, "Successfully fetched ${metadataList.size} cloud recordings metadata.")
+                emit(Result.success(metadataList))
+            } else {
+                val errorBody = response.errorBody()?.string() ?: "Unknown server error"
+                Log.e(TAG_REPO, "Failed to fetch cloud recordings: ${response.code()} - $errorBody")
+                emit(Result.failure(IOException("API Error ${response.code()}: $errorBody")))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Exception fetching cloud recordings: ${e.message}", e)
+            emit(Result.failure(e))
+        }
+    }.flowOn(Dispatchers.IO)
 }

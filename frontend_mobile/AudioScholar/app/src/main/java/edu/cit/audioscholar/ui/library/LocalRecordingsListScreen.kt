@@ -159,10 +159,18 @@ fun LibraryScreen(
         )
     }
 
-    LaunchedEffect(lifecycleOwner) {
+    val tabTitles = listOf(stringResource(R.string.library_tab_local), stringResource(R.string.library_tab_cloud))
+    val pagerState = rememberPagerState { tabTitles.size }
+
+    LaunchedEffect(lifecycleOwner, pagerState) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            Log.d("LibraryScreen", "Resumed, loading all recordings.")
-            viewModel.loadAllRecordings()
+            Log.d("LibraryScreen", "Resumed. Current tab: ${pagerState.currentPage}")
+            viewModel.loadLocalRecordingsOnResume()
+
+            if (pagerState.currentPage == 1) {
+                Log.d("LibraryScreen", "Cloud tab is active on resume, forcing cloud refresh.")
+                viewModel.forceRefreshCloudRecordings()
+            }
         }
     }
 
@@ -183,8 +191,15 @@ fun LibraryScreen(
         )
     }
 
-    val tabTitles = listOf(stringResource(R.string.library_tab_local), stringResource(R.string.library_tab_cloud))
-    val pagerState = rememberPagerState { tabTitles.size }
+    LaunchedEffect(pagerState.currentPage, uiState.hasAttemptedCloudLoad) {
+        if (pagerState.currentPage == 1 && !uiState.hasAttemptedCloudLoad) {
+            Log.d("LibraryScreen", "Cloud tab selected (page 1) and cloud load not attempted yet. Triggering initial load.")
+            viewModel.triggerCloudLoadIfNeeded()
+        } else {
+            Log.d("LibraryScreen", "Pager changed to ${pagerState.currentPage} or cloud load already attempted (${uiState.hasAttemptedCloudLoad}). Skipping initial trigger.")
+        }
+    }
+
 
     Scaffold(
         modifier = modifier,
@@ -201,7 +216,10 @@ fun LibraryScreen(
                 }
             }
 
-            if ((uiState.isLoadingLocal && uiState.localRecordings.isEmpty()) || (uiState.isLoadingCloud && uiState.cloudRecordings.isEmpty())) {
+            val showLoadingIndicator = (pagerState.currentPage == 0 && uiState.isLoadingLocal) ||
+                    (pagerState.currentPage == 1 && uiState.isLoadingCloud)
+
+            if (showLoadingIndicator) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
@@ -240,31 +258,26 @@ fun LocalRecordingsTabPage(
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
-        when {
-            uiState.isLoadingLocal && uiState.localRecordings.isEmpty() -> {
-            }
-            !uiState.isLoadingLocal && uiState.localRecordings.isEmpty() -> {
-                Text(
-                    text = stringResource(R.string.library_empty_state_local),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.align(Alignment.Center).padding(16.dp)
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(uiState.localRecordings, key = { it.filePath }) { metadata ->
-                        LocalRecordingListItem(
-                            metadata = metadata,
-                            onItemClick = {
-                                playLocalRecordingExternally(context, it, scope, showSnackbar)
-                            },
-                            onDeleteClick = onDeleteClick
-                        )
-                        HorizontalDivider(thickness = 0.5.dp)
-                    }
+        if (!uiState.isLoadingLocal && uiState.localRecordings.isEmpty()) {
+            Text(
+                text = stringResource(R.string.library_empty_state_local),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.align(Alignment.Center).padding(16.dp)
+            )
+        } else if (uiState.localRecordings.isNotEmpty()){
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(uiState.localRecordings, key = { it.filePath }) { metadata ->
+                    LocalRecordingListItem(
+                        metadata = metadata,
+                        onItemClick = {
+                            playLocalRecordingExternally(context, it, scope, showSnackbar)
+                        },
+                        onDeleteClick = onDeleteClick
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
                 }
             }
         }
@@ -280,30 +293,25 @@ fun CloudRecordingsTabPage(
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
-        when {
-            uiState.isLoadingCloud && uiState.cloudRecordings.isEmpty() -> {
-            }
-            !uiState.isLoadingCloud && uiState.cloudRecordings.isEmpty() -> {
-                Text(
-                    text = stringResource(R.string.library_empty_state_cloud),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.align(Alignment.Center).padding(16.dp)
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(uiState.cloudRecordings, key = { it.id ?: it.fileName ?: it.hashCode() }) { metadata ->
-                        CloudRecordingListItem(
-                            metadata = metadata,
-                            onItemClick = {
-                                playCloudRecording(context, it, scope, showSnackbar)
-                            }
-                        )
-                        HorizontalDivider(thickness = 0.5.dp)
-                    }
+        if (!uiState.isLoadingCloud && uiState.cloudRecordings.isEmpty() && uiState.hasAttemptedCloudLoad) {
+            Text(
+                text = stringResource(R.string.library_empty_state_cloud),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.align(Alignment.Center).padding(16.dp)
+            )
+        } else if (uiState.cloudRecordings.isNotEmpty()){
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(uiState.cloudRecordings, key = { it.id ?: it.fileName ?: it.hashCode() }) { metadata ->
+                    CloudRecordingListItem(
+                        metadata = metadata,
+                        onItemClick = {
+                            playCloudRecording(context, it, scope, showSnackbar)
+                        }
+                    )
+                    HorizontalDivider(thickness = 0.5.dp)
                 }
             }
         }

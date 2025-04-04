@@ -6,8 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.google.cloud.Timestamp;
+
 import java.io.IOException;
-import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -45,7 +46,6 @@ public class AudioProcessingService {
         String nhostFileId = nhostStorageService.uploadFile(file);
         LOGGER.log(Level.INFO, "File uploaded to Nhost, ID: {0}", nhostFileId);
 
-
         String storageUrl = nhostStorageService.getPublicUrl(nhostFileId);
         LOGGER.log(Level.INFO, "Constructed Nhost public URL: {0}", storageUrl);
 
@@ -58,7 +58,7 @@ public class AudioProcessingService {
         metadata.setDescription(description != null ? description : "");
         metadata.setNhostFileId(nhostFileId);
         metadata.setStorageUrl(storageUrl);
-        metadata.setUploadTimestamp(Instant.now());
+        metadata.setUploadTimestamp(Timestamp.now());
 
         AudioMetadata savedMetadata = firebaseService.saveAudioMetadata(metadata);
         LOGGER.log(Level.INFO, "AudioMetadata saved to Firestore with ID: {0}", savedMetadata.getId());
@@ -76,8 +76,6 @@ public class AudioProcessingService {
         try {
             firebaseService.deleteData(firebaseService.getAudioMetadataCollectionName(), metadataId);
             LOGGER.log(Level.INFO, "Deleted AudioMetadata from Firestore with ID: {0}", metadataId);
-
-
             return true;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -126,6 +124,7 @@ public class AudioProcessingService {
     private Summary createSummaryFromResponse(String aiResponse) throws Exception {
         LOGGER.log(Level.INFO, "Parsing Gemini response.");
         System.out.println("Received AI Response (needs parsing): " + aiResponse);
-        return new Summary();
+        Summary summary = new Summary();
+        return summary;
     }
 }

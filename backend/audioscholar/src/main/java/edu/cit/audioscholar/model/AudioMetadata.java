@@ -1,6 +1,6 @@
 package edu.cit.audioscholar.model;
 
-import java.time.Instant;
+import com.google.cloud.Timestamp;
 import java.util.Objects;
 
 public class AudioMetadata {
@@ -13,12 +13,12 @@ public class AudioMetadata {
     private String description;
     private String nhostFileId;
     private String storageUrl;
-    private Instant uploadTimestamp;
+    private Timestamp uploadTimestamp;
 
     public AudioMetadata() {
     }
 
-    public AudioMetadata(String userId, String fileName, long fileSize, String contentType, String title, String description, String nhostFileId, String storageUrl, Instant uploadTimestamp) {
+    public AudioMetadata(String userId, String fileName, long fileSize, String contentType, String title, String description, String nhostFileId, String storageUrl, Timestamp uploadTimestamp) {
         this.userId = userId;
         this.fileName = fileName;
         this.fileSize = fileSize;
@@ -30,7 +30,7 @@ public class AudioMetadata {
         this.uploadTimestamp = uploadTimestamp;
     }
 
-    public AudioMetadata(String id, String userId, String fileName, long fileSize, String contentType, String title, String description, String nhostFileId, String storageUrl, Instant uploadTimestamp) {
+    public AudioMetadata(String id, String userId, String fileName, long fileSize, String contentType, String title, String description, String nhostFileId, String storageUrl, Timestamp uploadTimestamp) {
         this.id = id;
         this.userId = userId;
         this.fileName = fileName;
@@ -42,6 +42,7 @@ public class AudioMetadata {
         this.storageUrl = storageUrl;
         this.uploadTimestamp = uploadTimestamp;
     }
+
 
 
     public String getId() {
@@ -116,11 +117,11 @@ public class AudioMetadata {
         this.storageUrl = storageUrl;
     }
 
-    public Instant getUploadTimestamp() {
+    public Timestamp getUploadTimestamp() {
         return uploadTimestamp;
     }
 
-    public void setUploadTimestamp(Instant uploadTimestamp) {
+    public void setUploadTimestamp(Timestamp uploadTimestamp) {
         this.uploadTimestamp = uploadTimestamp;
     }
 

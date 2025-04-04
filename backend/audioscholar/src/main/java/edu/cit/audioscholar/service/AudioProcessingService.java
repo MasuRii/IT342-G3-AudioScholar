@@ -4,27 +4,30 @@ import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.Summary;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 
 @Service
 public class AudioProcessingService {
 
-    private static final String UPLOAD_DIR_STRING = "src/main/resources/uploads";
-    private static final Path UPLOAD_DIR = Paths.get(UPLOAD_DIR_STRING);
+    private static final Logger LOGGER = Logger.getLogger(AudioProcessingService.class.getName());
 
     @Autowired
     private GeminiService geminiService;
 
-    @Autowired(required = false)
+    @Autowired
     private FirebaseService firebaseService;
+
+    @Autowired
+    private NhostStorageService nhostStorageService;
 
     @Autowired(required = false)
     private RecordingService recordingService;
@@ -32,93 +35,84 @@ public class AudioProcessingService {
     @Autowired(required = false)
     private SummaryService summaryService;
 
-    public String processAudioFile(byte[] audioData, String originalFileName, String title, String description) throws IOException, ExecutionException, InterruptedException {
-        // Log the title and description
-        System.out.println("Processing Audio File: ");
-        System.out.println("Title: " + title);   // Log Title
-        System.out.println("Description: " + description);   // Log Description
 
-        String audioId = UUID.randomUUID().toString();
-        String firebaseStorageUrl = firebaseService.uploadAudioToStorage(audioData, originalFileName);
+    public AudioMetadata uploadAndSaveMetadata(MultipartFile file, String title, String description, String userId)
+            throws IOException, ExecutionException, InterruptedException {
 
-        title = (title == null) ? "" : title;
-        description = (description == null) ? "" : description;
+        LOGGER.log(Level.INFO, "Starting upload process for file: {0}, Title: {1}, User: {2}",
+                   new Object[]{file.getOriginalFilename(), title, userId});
 
-        AudioMetadata metadata = new AudioMetadata(
-                audioId,
-                originalFileName,
-                audioData.length,
-                getAudioDuration(audioData),
-                title,
-                description,
-                firebaseStorageUrl
-        );
-        firebaseService.saveAudioMetadata(metadata); // Save to Firebase
+        String nhostFileId = nhostStorageService.uploadFile(file);
+        LOGGER.log(Level.INFO, "File uploaded to Nhost, ID: {0}", nhostFileId);
 
-        // Log the metadata to ensure values are correct
-        System.out.println("Metadata Saved to Firebase: " + metadata);
 
-        return metadata.getId(); // Return the generated ID
+        String storageUrl = nhostStorageService.getPublicUrl(nhostFileId);
+        LOGGER.log(Level.INFO, "Constructed Nhost public URL: {0}", storageUrl);
+
+        AudioMetadata metadata = new AudioMetadata();
+        metadata.setUserId(userId);
+        metadata.setFileName(file.getOriginalFilename());
+        metadata.setFileSize(file.getSize());
+        metadata.setContentType(file.getContentType());
+        metadata.setTitle(title != null ? title : "");
+        metadata.setDescription(description != null ? description : "");
+        metadata.setNhostFileId(nhostFileId);
+        metadata.setStorageUrl(storageUrl);
+        metadata.setUploadTimestamp(Instant.now());
+
+        AudioMetadata savedMetadata = firebaseService.saveAudioMetadata(metadata);
+        LOGGER.log(Level.INFO, "AudioMetadata saved to Firestore with ID: {0}", savedMetadata.getId());
+
+        return savedMetadata;
     }
+
 
     public List<AudioMetadata> getAllAudioMetadataList() throws ExecutionException, InterruptedException {
-        return firebaseService.getAllAudioMetadata(); // Retrieve all from Firebase
+        return firebaseService.getAllAudioMetadata();
     }
 
 
-    public boolean deleteAudio(String audioId) {
+    public boolean deleteAudioMetadata(String metadataId) {
         try {
-            AudioMetadata metadata = null;
-            // Need to fetch metadata to get filename for local deletion (if you still want local deletion)
-            for (AudioMetadata am : firebaseService.getAllAudioMetadata()) {
-                if (am.getId().equals(audioId)) {
-                    metadata = am;
-                    break;
-                }
-            }
-            if (metadata != null) {
-                // You might want to delete from Firebase Storage here as well
-                // Example: firebaseService.deleteAudioFromStorage(metadata.getFirebaseStorageUrl());
-                Path filePath = UPLOAD_DIR.resolve(metadata.getFileName());
-                Files.deleteIfExists(filePath); // Delete from local storage (optional)
-                firebaseService.deleteData("audio_metadata", audioId); // Delete metadata from Firebase
-                return true;
-            }
+            firebaseService.deleteData(firebaseService.getAudioMetadataCollectionName(), metadataId);
+            LOGGER.log(Level.INFO, "Deleted AudioMetadata from Firestore with ID: {0}", metadataId);
+
+
+            return true;
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.SEVERE, "Error deleting audio metadata from Firestore: " + e.getMessage(), e);
             return false;
-        } catch (IOException | ExecutionException | InterruptedException e) {
-            System.err.println("Error deleting audio: " + e.getMessage());
+        } catch (Exception e) {
+             LOGGER.log(Level.SEVERE, "Unexpected error deleting audio metadata: " + e.getMessage(), e);
             return false;
         }
     }
 
-    private long getAudioDuration(byte[] audioData) {
-        return 0; // Implement logic to get audio duration if needed
-    }
 
-    public Summary processAndSummarize(byte[] audioData, String fileName) throws Exception {
-        String audioId = processAudioFile(audioData, fileName, "", "");
+    public Summary processAndSummarize(byte[] audioData, MultipartFile fileInfo, String userId) throws Exception {
+        LOGGER.log(Level.INFO, "Starting processAndSummarize for file: {0}", fileInfo.getOriginalFilename());
 
-        AudioMetadata metadata = null;
-        for (AudioMetadata am : firebaseService.getAllAudioMetadata()) {
-            if (am.getId().equals(audioId)) {
-                metadata = am;
-                break;
-            }
+        AudioMetadata metadata = uploadAndSaveMetadata(fileInfo, "", "", userId);
+
+        if (metadata == null || metadata.getId() == null) {
+            throw new IllegalStateException("Metadata not saved correctly in Firestore for file: " + fileInfo.getOriginalFilename());
         }
-        if (metadata == null) {
-            throw new IllegalStateException("Metadata not found in Firebase after processing file with ID: " + audioId);
-        }
+        LOGGER.log(Level.INFO, "Metadata created with ID: {0}", metadata.getId());
 
         String base64Audio = Base64.getEncoder().encodeToString(audioData);
         String aiResponse = callGeminiWithAudio(base64Audio, metadata.getFileName());
 
         Summary summary = createSummaryFromResponse(aiResponse);
-        summary.setRecordingId(audioId);
+        summary.setRecordingId(metadata.getId());
 
+
+        LOGGER.log(Level.INFO, "Successfully processed and summarized audio for metadata ID: {0}", metadata.getId());
         return summary;
     }
 
     private String callGeminiWithAudio(String base64Audio, String fileName) {
+         LOGGER.log(Level.INFO, "Calling Gemini for file: {0}", fileName);
         String prompt = "Please analyze this audio and provide the following:" +
                 "\n1. Full transcript" +
                 "\n2. A concise summary (2-3 paragraphs)" +
@@ -130,6 +124,7 @@ public class AudioProcessingService {
     }
 
     private Summary createSummaryFromResponse(String aiResponse) throws Exception {
+        LOGGER.log(Level.INFO, "Parsing Gemini response.");
         System.out.println("Received AI Response (needs parsing): " + aiResponse);
         return new Summary();
     }

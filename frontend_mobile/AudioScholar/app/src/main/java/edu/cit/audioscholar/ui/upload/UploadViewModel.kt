@@ -1,20 +1,33 @@
 package edu.cit.audioscholar.ui.upload
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.data.local.file.RecordingFileHandler
+import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.domain.repository.AudioRepository
 import edu.cit.audioscholar.domain.repository.UploadResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.text.ParseException
+import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.inject.Inject
 
@@ -32,10 +45,13 @@ data class UploadScreenState(
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val application: Application,
-    private val audioRepository: AudioRepository
+    private val audioRepository: AudioRepository,
+    private val recordingFileHandler: RecordingFileHandler,
+    private val gson: Gson
 ) : ViewModel() {
 
     companion object {
+        private const val TAG = "UploadViewModel"
         private val SUPPORTED_MIME_TYPES = setOf(
             "audio/wav", "audio/x-wav",
             "audio/mp3", "audio/mpeg",
@@ -45,6 +61,9 @@ class UploadViewModel @Inject constructor(
             "audio/flac", "audio/x-flac"
         )
         private const val MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024
+        private const val FILENAME_DATE_FORMAT = "yyyy-MM-dd_HH-mm-ss"
+        private const val FILENAME_PREFIX = "Recording_"
+        private const val FILENAME_EXTENSION_METADATA = ".json"
     }
 
     fun consumeUploadMessage() {
@@ -55,7 +74,7 @@ class UploadViewModel @Inject constructor(
     val uiState: StateFlow<UploadScreenState> = _uiState.asStateFlow()
 
     fun onSelectFileClicked() {
-        println("Select File Clicked - Requesting UI to launch picker")
+        Log.d(TAG, "Select File Clicked - Requesting UI to launch picker")
         _uiState.update { it.copy(uploadMessage = null, progress = 0) }
     }
 
@@ -83,7 +102,7 @@ class UploadViewModel @Inject constructor(
                 }
                 fileMimeType = application.contentResolver.getType(uri)
 
-                println("File Selected: Name=$fileName, Size=$fileSize, Type=$fileMimeType, Uri=$uri")
+                Log.d(TAG, "File Selected: Name=$fileName, Size=$fileSize, Type=$fileMimeType, Uri=$uri")
 
                 val validationError = validateFile(uri, fileMimeType, fileSize)
 
@@ -94,11 +113,13 @@ class UploadViewModel @Inject constructor(
                         uploadMessage = validationError,
                         progress = 0,
                         isUploadEnabled = validationError == null,
+                        title = "",
+                        description = ""
                     )
                 }
 
             } catch (e: Exception) {
-                println("Error getting file details: ${e.message}")
+                Log.e(TAG, "Error getting file details: ${e.message}", e)
                 _uiState.update {
                     it.copy(
                         selectedFileName = "Error",
@@ -112,7 +133,7 @@ class UploadViewModel @Inject constructor(
                 }
             }
         } else {
-            println("File selection cancelled.")
+            Log.d(TAG, "File selection cancelled.")
             _uiState.update {
                 it.copy(
                     selectedFileName = null,
@@ -132,23 +153,23 @@ class UploadViewModel @Inject constructor(
 
         val lowerCaseMimeType = mimeType?.lowercase(Locale.ROOT)
         if (lowerCaseMimeType == null || lowerCaseMimeType !in SUPPORTED_MIME_TYPES) {
-            println("Validation Error: Unsupported MIME Type: $mimeType")
+            Log.w(TAG, "Validation Error: Unsupported MIME Type: $mimeType")
             return application.getString(R.string.upload_error_unsupported_format, mimeType ?: "unknown")
         }
 
         if (size == null) {
-            println("Validation Warning: Could not determine file size.")
-            return application.getString(R.string.upload_error_determine_size)
-        }
-        if (size == 0L) {
-            println("Validation Error: File appears to be empty.")
-            return application.getString(R.string.upload_error_empty_file)
-        }
-        if (size > MAX_FILE_SIZE_BYTES) {
-            println("Validation Error: File size ($size bytes) exceeds limit ($MAX_FILE_SIZE_BYTES bytes).")
-            val sizeInMB = size / (1024.0 * 1024.0)
-            val maxSizeInMB = MAX_FILE_SIZE_BYTES / (1024.0 * 1024.0)
-            return application.getString(R.string.upload_error_size_exceeded, sizeInMB, maxSizeInMB)
+            Log.w(TAG, "Validation Warning: Could not determine file size for Uri $uri.")
+        } else {
+            if (size == 0L) {
+                Log.e(TAG, "Validation Error: File appears to be empty (0 bytes). Uri: $uri")
+                return application.getString(R.string.upload_error_empty_file)
+            }
+            if (size > MAX_FILE_SIZE_BYTES) {
+                Log.e(TAG, "Validation Error: File size ($size bytes) exceeds limit ($MAX_FILE_SIZE_BYTES bytes). Uri: $uri")
+                val sizeInMB = size / (1024.0 * 1024.0)
+                val maxSizeInMB = MAX_FILE_SIZE_BYTES / (1024.0 * 1024.0)
+                return application.getString(R.string.upload_error_size_exceeded, String.format("%.2f", sizeInMB), String.format("%.0f", maxSizeInMB))
+            }
         }
 
         return null
@@ -170,10 +191,9 @@ class UploadViewModel @Inject constructor(
 
         if (currentUri == null) {
             _uiState.update { it.copy(uploadMessage = application.getString(R.string.upload_error_no_file)) }
-            println("Upload Error: No file URI present.")
+            Log.e(TAG, "Upload Error: No file URI present.")
             return
         }
-
         var fileSize: Long? = null
         var fileMimeType: String? = null
         try {
@@ -186,16 +206,14 @@ class UploadViewModel @Inject constructor(
                 }
             }
             fileMimeType = application.contentResolver.getType(currentUri)
-
             val validationError = validateFile(currentUri, fileMimeType, fileSize)
             if (validationError != null) {
                 _uiState.update { it.copy(uploadMessage = validationError, isUploading = false) }
-                println("Upload Error: Validation failed - $validationError")
+                Log.e(TAG, "Upload Error: Pre-upload validation failed - $validationError")
                 return
             }
-
         } catch (e: Exception) {
-            println("Error re-validating file details before upload: ${e.message}")
+            Log.e(TAG, "Error re-validating file details before upload: ${e.message}", e)
             _uiState.update {
                 it.copy(
                     uploadMessage = application.getString(R.string.upload_error_reverify_details),
@@ -205,17 +223,19 @@ class UploadViewModel @Inject constructor(
             }
             return
         }
-
         if (currentState.isUploading) {
-            println("Upload Info: Upload already in progress.")
+            Log.i(TAG, "Upload Info: Upload already in progress.")
             return
         }
 
-        println("Upload Clicked: Starting upload for file: ${currentState.selectedFileName} (Uri: $currentUri)")
-        println("With Title: '$currentTitle', Description: '$currentDescription'")
+
+        Log.i(TAG, "Upload Clicked: Starting upload for file: ${currentState.selectedFileName} (Uri: $currentUri)")
+        Log.d(TAG, "With Title: '$currentTitle', Description: '$currentDescription'")
+
+        val uriToUpload = currentUri
 
         audioRepository.uploadAudioFile(
-            fileUri = currentUri,
+            fileUri = uriToUpload,
             title = currentTitle.takeIf { it.isNotEmpty() },
             description = currentDescription.takeIf { it.isNotEmpty() }
         )
@@ -231,32 +251,61 @@ class UploadViewModel @Inject constructor(
                         }
                     }
                     is UploadResult.Progress -> {
-                        println("VM: Received Progress: ${result.percentage}%")
+                        Log.v(TAG, "Upload Progress: ${result.percentage}%")
                         _uiState.update {
                             it.copy(
                                 isUploading = true,
                                 progress = result.percentage,
-                                uploadMessage = "Uploading: ${result.percentage}%"
+                                uploadMessage = application.getString(R.string.upload_info_progress, result.percentage)
                             )
                         }
                     }
                     is UploadResult.Success -> {
-                        println("VM: Upload Successful")
-                        _uiState.update {
-                            it.copy(
-                                isUploading = false,
-                                uploadMessage = application.getString(R.string.upload_success_message),
-                                selectedFileName = null,
-                                selectedFileUri = null,
-                                title = "",
-                                description = "",
-                                progress = 0,
-                                isUploadEnabled = false
-                            )
+                        Log.i(TAG, "Upload Successful for Uri: $uriToUpload")
+                        viewModelScope.launch {
+                            var localCopySuccess = false
+                            var savedFile: File? = null
+
+                            Log.d(TAG, "Attempting to save a local copy of the uploaded audio file...")
+                            val copyResult = withContext(Dispatchers.IO) {
+                                recordingFileHandler.copyUriToLocalRecordings(uriToUpload)
+                            }
+                            copyResult.onSuccess { file ->
+                                Log.i(TAG, "Successfully saved local audio copy at: ${file.absolutePath}")
+                                localCopySuccess = true
+                                savedFile = file
+                            }.onFailure { exception ->
+                                Log.e(TAG, "Failed to save local copy of uploaded audio file.", exception)
+                            }
+
+                            if (localCopySuccess && savedFile != null) {
+                                Log.d(TAG, "Attempting to save local metadata for the copied file...")
+                                val metadataSaveResult = withContext(Dispatchers.IO) {
+                                    saveMetadataForFile(savedFile!!, currentTitle.takeIf { it.isNotEmpty() })
+                                }
+                                metadataSaveResult.onSuccess {
+                                    Log.i(TAG, "Successfully saved local metadata JSON.")
+                                }.onFailure { exception ->
+                                    Log.e(TAG, "Failed to save local metadata JSON.", exception)
+                                }
+                            }
+
+                            _uiState.update {
+                                it.copy(
+                                    isUploading = false,
+                                    uploadMessage = application.getString(R.string.upload_success_message),
+                                    selectedFileName = null,
+                                    selectedFileUri = null,
+                                    title = "",
+                                    description = "",
+                                    progress = 100,
+                                    isUploadEnabled = false
+                                )
+                            }
                         }
                     }
                     is UploadResult.Error -> {
-                        println("VM: Upload Error: ${result.message}")
+                        Log.e(TAG, "Upload Error: ${result.message}")
                         _uiState.update {
                             it.copy(
                                 isUploading = false,
@@ -269,5 +318,56 @@ class UploadViewModel @Inject constructor(
                 }
             }
             .launchIn(viewModelScope)
+    }
+
+    private suspend fun saveMetadataForFile(audioFile: File, titleFromUi: String?): Result<Unit> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val fileName = audioFile.name
+            val filePath = audioFile.absolutePath
+
+            val baseNameWithTimestamp = fileName.substringBeforeLast('.')
+            val timestampString = baseNameWithTimestamp.removePrefix(FILENAME_PREFIX)
+            val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
+            val timestampMillis = try {
+                dateFormat.parse(timestampString)?.time ?: audioFile.lastModified()
+            } catch (e: ParseException) {
+                Log.w(TAG, "Could not parse timestamp from filename: $fileName for metadata", e)
+                audioFile.lastModified()
+            }
+
+            var durationMillis = 0L
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(filePath)
+                durationMillis = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                retriever.release()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get duration for metadata file: $fileName", e)
+            }
+
+            val metadata = RecordingMetadata(
+                id = timestampMillis,
+                filePath = filePath,
+                fileName = fileName,
+                title = titleFromUi,
+                timestampMillis = timestampMillis,
+                durationMillis = durationMillis
+            )
+
+            val metadataJson = gson.toJson(metadata)
+            val metadataFileName = baseNameWithTimestamp + FILENAME_EXTENSION_METADATA
+            val metadataFile = File(audioFile.parent, metadataFileName)
+
+            FileOutputStream(metadataFile).use { outputStream ->
+                outputStream.write(metadataJson.toByteArray())
+            }
+            Result.success(Unit)
+        } catch (e: IOException) {
+            Log.e(TAG, "IOException saving metadata JSON for $audioFile", e)
+            Result.failure(e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error saving metadata JSON for $audioFile", e)
+            Result.failure(e)
+        }
     }
 }

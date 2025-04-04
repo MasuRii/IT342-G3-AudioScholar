@@ -34,9 +34,9 @@ object NetworkModule {
     fun provideOkHttpClient(loggingInterceptor: HttpLoggingInterceptor): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
             .build()
     }
 
@@ -66,8 +66,9 @@ object NetworkModule {
     @Singleton
     fun provideAudioRepository(
         apiService: ApiService,
-        application: Application
+        application: Application,
+        gson: Gson
     ): AudioRepository {
-        return AudioRepositoryImpl(apiService, application)
+        return AudioRepositoryImpl(apiService, application, gson)
     }
 }

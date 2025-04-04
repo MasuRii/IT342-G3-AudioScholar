@@ -3,14 +3,15 @@ package edu.cit.audioscholar.ui.recording
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
@@ -21,11 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
-import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,15 +40,36 @@ fun RecordingScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { isGranted ->
-            viewModel.onPermissionResult(granted = isGranted, shouldShowRationale = false)
+    val permissionsToRequest = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            arrayOf(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
-            if (!isGranted) {
+    val multiplePermissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { permissionsMap ->
+            val audioGranted = permissionsMap[Manifest.permission.RECORD_AUDIO] ?: false
+            viewModel.onPermissionResult(granted = audioGranted, permissionType = Manifest.permission.RECORD_AUDIO)
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val notificationGranted = permissionsMap[Manifest.permission.POST_NOTIFICATIONS] ?: false
+                viewModel.onPermissionResult(granted = notificationGranted, permissionType = Manifest.permission.POST_NOTIFICATIONS)
+            }
+
+            if (!audioGranted) {
                 scope.launch {
                     snackbarHostState.showSnackbar(
                         message = context.getString(R.string.permission_denied_message),
+                        duration = SnackbarDuration.Short
+                    )
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !(permissionsMap[Manifest.permission.POST_NOTIFICATIONS] ?: false)) {
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.permission_denied_notifications),
                         duration = SnackbarDuration.Short
                     )
                 }
@@ -74,7 +96,7 @@ fun RecordingScreen(
                     Log.e("RecordingScreen", "Failed to open app settings", e)
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            message = "Could not open settings. Please enable microphone permission manually.",
+                            message = "Could not open settings. Please enable permissions manually.",
                             duration = SnackbarDuration.Long
                         )
                     }
@@ -84,11 +106,10 @@ fun RecordingScreen(
         }
     }
 
-    LaunchedEffect(uiState.recordingFilePath) {
-        uiState.recordingFilePath?.let { path ->
-            val filename = path.substringAfterLast('/')
+    LaunchedEffect(uiState.recordingSavedMessage) {
+        uiState.recordingSavedMessage?.let { message ->
             snackbarHostState.showSnackbar(
-                message = context.getString(R.string.recording_saved_message, filename),
+                message = message,
                 duration = SnackbarDuration.Short
             )
             viewModel.consumeSavedMessage()
@@ -110,26 +131,7 @@ fun RecordingScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = R.string.recording_screen_title)) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (!uiState.isRecording && !uiState.showTitleDialog) {
-                            navController.navigateUp()
-                        } else {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    message = context.getString(R.string.stop_recording_before_leaving),
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back_button)
-                        )
-                    }
-                }
+                title = { Text(stringResource(id = R.string.recording_screen_title)) }
             )
         }
     ) { paddingValues ->
@@ -148,12 +150,13 @@ fun RecordingScreen(
                 style = MaterialTheme.typography.displayMedium,
                 color = if (uiState.isRecording || uiState.showTitleDialog) MaterialTheme.colorScheme.primary else LocalContentColor.current
             )
+
             Text(
                 text = when {
                     uiState.isRecording -> stringResource(R.string.status_recording)
                     uiState.showTitleDialog -> stringResource(R.string.status_saving)
+                    uiState.recordingSavedMessage != null -> stringResource(R.string.status_saved)
                     !uiState.permissionGranted -> stringResource(R.string.status_permission_needed)
-                    uiState.recordingFilePath != null && !uiState.isRecording && !uiState.showTitleDialog -> stringResource(R.string.status_saved)
                     else -> stringResource(R.string.status_tap_to_record)
                 },
                 style = MaterialTheme.typography.bodyLarge,
@@ -169,16 +172,20 @@ fun RecordingScreen(
                     if (uiState.isRecording) {
                         viewModel.toggleRecording()
                     } else {
-                        if (uiState.permissionGranted) {
+                        val audioGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                        val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                        } else { true }
+
+                        if (audioGranted) {
                             viewModel.toggleRecording()
                         } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            multiplePermissionsLauncher.launch(permissionsToRequest)
                         }
                     }
                 },
                 enabled = !uiState.showTitleDialog,
-                modifier = Modifier
-                    .size(100.dp),
+                modifier = Modifier.size(100.dp),
                 shape = MaterialTheme.shapes.extraLarge,
                 contentPadding = PaddingValues(0.dp)
             ) {

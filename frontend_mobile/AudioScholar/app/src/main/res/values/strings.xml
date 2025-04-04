@@ -63,5 +63,20 @@
     <string name="dialog_action_cancel">Cancel</string>
 
     <string name="default_notification_channel_id" translatable="false">upload_status_channel</string>
+    <string name="notification_channel_name_upload">Upload Status</string>
+    <string name="notification_channel_desc_upload">Notifications about the status of your audio uploads.</string>
+    <string name="notification_channel_name_recording">Ongoing Recording</string>
+    <string name="notification_channel_desc_recording">Displays status while recording audio</string>
+
+    <string name="notification_title_recording">Recording Audio</string>
+    <string name="notification_action_stop">Stop</string>
+
+    <string name="permission_denied_notifications">Notification permission denied. Progress updates might not be shown in the background.</string>
+    <string name="permission_required_notifications">Notification permission is recommended for background recording updates.</string>
+
+    <string name="recording_saved_message_format">Recording \'%1$s\' saved.</string>
+    <string name="error_saving_metadata">Failed to save recording metadata.</string>
+    <string name="error_unexpected_saving">An unexpected error occurred while saving.</string>
+    <string name="error_service_start">Could not start recording service.</string>
 
 </resources>

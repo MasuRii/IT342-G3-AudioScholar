@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,18 +58,7 @@ fun UploadScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = R.string.upload_screen_title)) },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateToRecording,
-                        enabled = !uiState.isUploading
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back_button)
-                        )
-                    }
-                }
+                title = { Text(stringResource(id = R.string.upload_screen_title)) }
             )
         }
     ) { paddingValues ->

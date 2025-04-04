@@ -50,6 +50,11 @@
     <string name="nav_upload">Upload</string>
     <string name="nav_settings">Settings</string>
 
+    <string name="library_tab_local">Local</string>
+    <string name="library_tab_cloud">Cloud</string>
+    <string name="library_empty_state_local">No local recordings found.\nStart recording from the Record tab!</string>
+    <string name="library_empty_state_cloud">No recordings uploaded yet.\nUpload recordings from the Upload tab or record and save locally first.</string>
+    <string name="cd_cloud_recording_indicator">Cloud recording</string>
     <string name="library_empty_state">No recordings found.\nTap the Record tab to make one!</string>
     <string name="cd_delete_recording">Delete recording %1$s</string>
     <string name="dialog_delete_title">Delete Recording?</string>

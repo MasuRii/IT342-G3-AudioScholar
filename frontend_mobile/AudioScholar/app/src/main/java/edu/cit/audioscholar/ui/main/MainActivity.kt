@@ -28,7 +28,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
-import edu.cit.audioscholar.ui.library.LocalRecordingsListScreen
+import edu.cit.audioscholar.ui.library.LibraryScreen
 import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
@@ -151,7 +151,7 @@ fun MainAppScreen(navController: NavHostController) {
                 RecordingScreen(navController = navController)
             }
             composable(Screen.Library.route) {
-                LocalRecordingsListScreen()
+                LibraryScreen()
             }
             composable(Screen.Upload.route) {
                 UploadScreen(

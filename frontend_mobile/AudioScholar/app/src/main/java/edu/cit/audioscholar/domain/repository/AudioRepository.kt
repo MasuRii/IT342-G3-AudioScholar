@@ -2,6 +2,7 @@ package edu.cit.audioscholar.domain.repository
 
 import android.net.Uri
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
+import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import kotlinx.coroutines.flow.Flow
 
 sealed class UploadResult {
@@ -21,4 +22,6 @@ interface AudioRepository {
     fun getLocalRecordings(): Flow<List<RecordingMetadata>>
 
     suspend fun deleteLocalRecording(metadata: RecordingMetadata): Boolean
+
+    fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>>
 }

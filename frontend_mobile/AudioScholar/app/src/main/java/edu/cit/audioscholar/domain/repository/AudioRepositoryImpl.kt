@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
+import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.domain.repository.AudioRepository
 import edu.cit.audioscholar.domain.repository.UploadResult
@@ -22,6 +23,7 @@ import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.*
+import retrofit2.Response
 import java.io.File
 import java.io.IOException
 import java.text.ParseException
@@ -37,7 +39,6 @@ private const val FILENAME_PREFIX = "Recording_"
 private const val FILENAME_EXTENSION_AUDIO = ".m4a"
 private const val FILENAME_EXTENSION_METADATA = ".json"
 private const val TAG_REPO = "AudioRepositoryImpl"
-
 
 @Singleton
 class AudioRepositoryImpl @Inject constructor(
@@ -102,8 +103,9 @@ class AudioRepositoryImpl @Inject constructor(
             progressRequestBody
         )
 
-        val titlePart: RequestBody? = title?.toRequestBody("text/plain".toMediaTypeOrNull())
-        val descriptionPart: RequestBody? = description?.toRequestBody("text/plain".toMediaTypeOrNull())
+        val titlePart: RequestBody? = title?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull())
+        val descriptionPart: RequestBody? = description?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull())
+
 
         Log.d(TAG_REPO, "Title part created: ${titlePart != null}")
         Log.d(TAG_REPO, "Description part created: ${descriptionPart != null}")
@@ -111,7 +113,7 @@ class AudioRepositoryImpl @Inject constructor(
 
         try {
             Log.d(TAG_REPO, "Executing API call...")
-            val response = apiService.uploadAudio(
+            val response: Response<AudioMetadataDto> = apiService.uploadAudio(
                 file = filePart,
                 title = titlePart,
                 description = descriptionPart
@@ -119,8 +121,14 @@ class AudioRepositoryImpl @Inject constructor(
             Log.d(TAG_REPO, "API call finished. Response code: ${response.code()}")
 
             if (response.isSuccessful) {
-                Log.i(TAG_REPO, "Upload successful.")
-                trySend(UploadResult.Success)
+                val responseBody: AudioMetadataDto? = response.body()
+                if (responseBody != null) {
+                    Log.i(TAG_REPO, "Upload successful. Metadata ID: ${responseBody.id}")
+                    trySend(UploadResult.Success)
+                } else {
+                    Log.w(TAG_REPO, "Upload successful (Code: ${response.code()}) but response body was null.")
+                    trySend(UploadResult.Success)
+                }
                 close()
             } else {
                 val errorBody = response.errorBody()?.string() ?: "Unknown server error"
@@ -189,7 +197,7 @@ class AudioRepositoryImpl @Inject constructor(
             bufferedCountingSink.flush()
 
             if (lastPercentage != 100 && bytesWritten == totalBytes) {
-                Log.d("ProgressRequestBody", "Ensuring 100% progress sent.")
+                Log.d("ProgressRequestBody", "Ensuring 100% progress sent at the end.")
                 onProgressUpdate(100)
             }
         }
@@ -252,7 +260,7 @@ class AudioRepositoryImpl @Inject constructor(
                     try {
                         val jsonContent = jsonFile.readText()
                         if (jsonContent.contains("\"title\"")) {
-                            titleFromFile = jsonContent.substringAfter("\"title\":\"").substringBefore("\"")
+                            titleFromFile = jsonContent.split("\"title\":\"")[1].split("\"")[0]
                         }
                         Log.d(TAG_REPO,"Read title '$titleFromFile' from ${jsonFile.name}")
                     } catch (e: Exception) {
@@ -265,7 +273,7 @@ class AudioRepositoryImpl @Inject constructor(
                         id = timestampMillis,
                         filePath = filePath,
                         fileName = fileName,
-                        title = titleFromFile ?: baseName,
+                        title = titleFromFile ?: baseName.replace("_", " "),
                         timestampMillis = timestampMillis,
                         durationMillis = durationMillis
                     )
@@ -276,7 +284,7 @@ class AudioRepositoryImpl @Inject constructor(
         }
         try {
             retriever.release()
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             Log.e(TAG_REPO, "Error releasing MediaMetadataRetriever", e)
         }
 
@@ -330,11 +338,11 @@ class AudioRepositoryImpl @Inject constructor(
                         Log.w(TAG_REPO, "Failed to delete metadata file: ${jsonFile.name}")
                     }
                 } else {
-                    Log.i(TAG_REPO, "Metadata file not found (which is okay): ${jsonFile.name}")
+                    Log.i(TAG_REPO, "Metadata file not found (considered success): ${jsonFile.name}")
                     jsonDeletedOrNotFound = true
                 }
             } else {
-                Log.w(TAG_REPO, "Could not get recordings directory to delete JSON file.")
+                Log.w(TAG_REPO, "Could not get recordings directory to find/delete JSON file.")
                 jsonDeletedOrNotFound = false
             }
         } catch (e: SecurityException) {

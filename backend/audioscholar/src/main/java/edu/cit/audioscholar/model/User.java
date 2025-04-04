@@ -25,7 +25,6 @@ public class User {
         this.displayName = displayName;
     }
     
-    // Getters and setters
     public String getUserId() { return userId; }
     public void setUserId(String userId) { this.userId = userId; }
     
@@ -44,7 +43,6 @@ public class User {
     public List<String> getFavoriteRecordingIds() { return favoriteRecordingIds; }
     public void setFavoriteRecordingIds(List<String> favoriteRecordingIds) { this.favoriteRecordingIds = favoriteRecordingIds; }
     
-    // Convert to Firestore document
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
         map.put("userId", userId);
@@ -56,7 +54,6 @@ public class User {
         return map;
     }
     
-    // Create from Firestore document
     public static User fromMap(Map<String, Object> map) {
         User user = new User();
         user.userId = (String) map.get("userId");

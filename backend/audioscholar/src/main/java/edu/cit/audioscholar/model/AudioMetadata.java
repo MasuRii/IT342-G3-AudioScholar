@@ -1,25 +1,49 @@
 package edu.cit.audioscholar.model;
 
+import com.google.cloud.Timestamp;
+import java.util.Objects;
+
 public class AudioMetadata {
     private String id;
+    private String userId;
     private String fileName;
     private long fileSize;
-    private long duration; // Duration in seconds
-    private String title; // Optional title
-    private String description; // Optional description
+    private String contentType;
+    private String title;
+    private String description;
+    private String nhostFileId;
+    private String storageUrl;
+    private Timestamp uploadTimestamp;
 
-    // Default constructor (required for Firebase)
     public AudioMetadata() {
     }
 
-    public AudioMetadata(String id, String fileName, long fileSize, long duration, String title, String description) {
-        this.id = id;
+    public AudioMetadata(String userId, String fileName, long fileSize, String contentType, String title, String description, String nhostFileId, String storageUrl, Timestamp uploadTimestamp) {
+        this.userId = userId;
         this.fileName = fileName;
         this.fileSize = fileSize;
-        this.duration = duration;
-        this.title = title != null ? title : ""; // Use empty string if title is null
-        this.description = description != null ? description : ""; // Same for description
+        this.contentType = contentType;
+        this.title = title != null ? title : "";
+        this.description = description != null ? description : "";
+        this.nhostFileId = nhostFileId;
+        this.storageUrl = storageUrl;
+        this.uploadTimestamp = uploadTimestamp;
     }
+
+    public AudioMetadata(String id, String userId, String fileName, long fileSize, String contentType, String title, String description, String nhostFileId, String storageUrl, Timestamp uploadTimestamp) {
+        this.id = id;
+        this.userId = userId;
+        this.fileName = fileName;
+        this.fileSize = fileSize;
+        this.contentType = contentType;
+        this.title = title != null ? title : "";
+        this.description = description != null ? description : "";
+        this.nhostFileId = nhostFileId;
+        this.storageUrl = storageUrl;
+        this.uploadTimestamp = uploadTimestamp;
+    }
+
+
 
     public String getId() {
         return id;
@@ -27,6 +51,14 @@ public class AudioMetadata {
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
     }
 
     public String getFileName() {
@@ -45,12 +77,12 @@ public class AudioMetadata {
         this.fileSize = fileSize;
     }
 
-    public long getDuration() {
-        return duration;
+    public String getContentType() {
+        return contentType;
     }
 
-    public void setDuration(long duration) {
-        this.duration = duration;
+    public void setContentType(String contentType) {
+        this.contentType = contentType;
     }
 
     public String getTitle() {
@@ -67,5 +99,59 @@ public class AudioMetadata {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getNhostFileId() {
+        return nhostFileId;
+    }
+
+    public void setNhostFileId(String nhostFileId) {
+        this.nhostFileId = nhostFileId;
+    }
+
+    public String getStorageUrl() {
+        return storageUrl;
+    }
+
+    public void setStorageUrl(String storageUrl) {
+        this.storageUrl = storageUrl;
+    }
+
+    public Timestamp getUploadTimestamp() {
+        return uploadTimestamp;
+    }
+
+    public void setUploadTimestamp(Timestamp uploadTimestamp) {
+        this.uploadTimestamp = uploadTimestamp;
+    }
+
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        AudioMetadata that = (AudioMetadata) o;
+        return fileSize == that.fileSize && Objects.equals(id, that.id) && Objects.equals(userId, that.userId) && Objects.equals(fileName, that.fileName) && Objects.equals(contentType, that.contentType) && Objects.equals(title, that.title) && Objects.equals(description, that.description) && Objects.equals(nhostFileId, that.nhostFileId) && Objects.equals(storageUrl, that.storageUrl) && Objects.equals(uploadTimestamp, that.uploadTimestamp);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, userId, fileName, fileSize, contentType, title, description, nhostFileId, storageUrl, uploadTimestamp);
+    }
+
+    @Override
+    public String toString() {
+        return "AudioMetadata{" +
+                "id='" + id + '\'' +
+                ", userId='" + userId + '\'' +
+                ", fileName='" + fileName + '\'' +
+                ", fileSize=" + fileSize +
+                ", contentType='" + contentType + '\'' +
+                ", title='" + title + '\'' +
+                ", description='" + description + '\'' +
+                ", nhostFileId='" + nhostFileId + '\'' +
+                ", storageUrl='" + storageUrl + '\'' +
+                ", uploadTimestamp=" + uploadTimestamp +
+                '}';
     }
 }

@@ -28,22 +28,29 @@ class RecordingService : Service() {
     private var mediaRecorder: MediaRecorder? = null
     private var currentRecordingFile: File? = null
     private var recordingStartTime: Long = 0L
+    private var timeWhenPaused: Long = 0L
     private var timerJob: Job? = null
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private var isPaused: Boolean = false
 
     private lateinit var notificationManager: NotificationManager
 
     companion object {
         const val ACTION_START_RECORDING = "edu.cit.audioscholar.ACTION_START_RECORDING"
         const val ACTION_STOP_RECORDING = "edu.cit.audioscholar.ACTION_STOP_RECORDING"
+        const val ACTION_PAUSE_RECORDING = "edu.cit.audioscholar.ACTION_PAUSE_RECORDING"
+        const val ACTION_RESUME_RECORDING = "edu.cit.audioscholar.ACTION_RESUME_RECORDING"
+        const val ACTION_CANCEL_RECORDING = "edu.cit.audioscholar.ACTION_CANCEL_RECORDING"
 
         const val BROADCAST_ACTION_STATUS_UPDATE = "edu.cit.audioscholar.BROADCAST_ACTION_STATUS_UPDATE"
         const val EXTRA_IS_RECORDING = "EXTRA_IS_RECORDING"
+        const val EXTRA_IS_PAUSED = "EXTRA_IS_PAUSED"
         const val EXTRA_ELAPSED_TIME_MILLIS = "EXTRA_ELAPSED_TIME_MILLIS"
         const val EXTRA_ERROR_MESSAGE = "EXTRA_ERROR_MESSAGE"
         const val EXTRA_RECORDING_FINISHED_PATH = "EXTRA_RECORDING_FINISHED_PATH"
         const val EXTRA_RECORDING_FINISHED_DURATION = "EXTRA_RECORDING_FINISHED_DURATION"
+        const val EXTRA_RECORDING_CANCELLED = "EXTRA_RECORDING_CANCELLED"
 
 
         const val NOTIFICATION_CHANNEL_ID = "RecordingChannel"
@@ -53,20 +60,34 @@ class RecordingService : Service() {
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        createNotificationChannel()
         Log.d("RecordingService", "Service Created")
     }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Recording Controls",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            channel.description = "Notifications for ongoing audio recording"
+            notificationManager.createNotificationChannel(channel)
+            Log.d("RecordingService", "Notification channel created.")
+        }
+    }
+
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("RecordingService", "onStartCommand received: ${intent?.action}")
         when (intent?.action) {
-            ACTION_START_RECORDING -> {
-                startRecording()
-            }
-            ACTION_STOP_RECORDING -> {
-                stopRecording()
-            }
+            ACTION_START_RECORDING -> startRecording()
+            ACTION_STOP_RECORDING -> stopRecording()
+            ACTION_PAUSE_RECORDING -> pauseRecording()
+            ACTION_RESUME_RECORDING -> resumeRecording()
+            ACTION_CANCEL_RECORDING -> cancelRecording()
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun startRecording() {
@@ -77,6 +98,9 @@ class RecordingService : Service() {
         }
 
         Log.d("RecordingService", "Attempting to start recording...")
+        isPaused = false
+        timeWhenPaused = 0L
+
         serviceScope.launch {
             var recorderInstance: MediaRecorder? = null
             try {
@@ -101,7 +125,7 @@ class RecordingService : Service() {
                         recordingStartTime = System.currentTimeMillis()
                         startForeground(NOTIFICATION_ID, createNotification(formatElapsedTime(0L)))
                         startTimer()
-                        broadcastStatusUpdate(isRecording = true, elapsedTimeMillis = 0L)
+                        broadcastStatusUpdate(isRecording = true, isPaused = false, elapsedTimeMillis = 0L)
                         Log.d("RecordingService", "Recording started successfully. File: ${outputFile.absolutePath}")
                     }
                     .onFailure { exception ->
@@ -125,6 +149,65 @@ class RecordingService : Service() {
         }
     }
 
+    private fun pauseRecording() {
+        if (mediaRecorder == null || isPaused) {
+            Log.w("RecordingService", "Pause called but not recording or already paused.")
+            broadcastError("Cannot pause: Not recording or already paused.")
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            Log.w("RecordingService", "Pause requires Android N (API 24) or higher.")
+            broadcastError("Pause/Resume requires Android N (API 24) or higher.")
+            return
+        }
+
+        try {
+            mediaRecorder?.pause()
+            isPaused = true
+            timeWhenPaused = System.currentTimeMillis()
+            stopTimer()
+            val elapsedMillis = calculateElapsedTime()
+            updateNotification(formatElapsedTime(elapsedMillis))
+            broadcastStatusUpdate(isRecording = true, isPaused = true, elapsedTimeMillis = elapsedMillis)
+            Log.d("RecordingService", "Recording paused at ${formatElapsedTime(elapsedMillis)}")
+        } catch (e: IllegalStateException) {
+            handleError("Failed to pause MediaRecorder: ${e.message}", e)
+        } catch (e: Exception) {
+            handleError("An unexpected error occurred during pauseRecording: ${e.message}", e)
+        }
+    }
+
+    private fun resumeRecording() {
+        if (mediaRecorder == null || !isPaused) {
+            Log.w("RecordingService", "Resume called but not recording or not paused.")
+            broadcastError("Cannot resume: Not recording or not paused.")
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            Log.w("RecordingService", "Resume requires Android N (API 24) or higher.")
+            broadcastError("Pause/Resume requires Android N (API 24) or higher.")
+            return
+        }
+
+        try {
+            mediaRecorder?.resume()
+            isPaused = false
+            val pauseDuration = System.currentTimeMillis() - timeWhenPaused
+            recordingStartTime += pauseDuration
+            timeWhenPaused = 0L
+
+            startTimer()
+            val elapsedMillis = calculateElapsedTime()
+            updateNotification(formatElapsedTime(elapsedMillis))
+            broadcastStatusUpdate(isRecording = true, isPaused = false, elapsedTimeMillis = elapsedMillis)
+            Log.d("RecordingService", "Recording resumed.")
+        } catch (e: IllegalStateException) {
+            handleError("Failed to resume MediaRecorder: ${e.message}", e)
+        } catch (e: Exception) {
+            handleError("An unexpected error occurred during resumeRecording: ${e.message}", e)
+        }
+    }
+
     private fun stopRecording() {
         if (mediaRecorder == null) {
             Log.w("RecordingService", "Stop recording called but not recording.")
@@ -133,8 +216,18 @@ class RecordingService : Service() {
 
         Log.d("RecordingService", "Attempting to stop recording...")
         stopTimer()
-        val finalDuration = System.currentTimeMillis() - recordingStartTime
+        val finalDuration = calculateElapsedTime()
         val fileToSave = currentRecordingFile
+
+        if (isPaused && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            try {
+                mediaRecorder?.resume()
+                Log.d("RecordingService", "Briefly resumed before stopping.")
+            } catch (e: IllegalStateException) {
+                Log.e("RecordingService", "Error resuming before stop: ${e.message}", e)
+            }
+        }
+        isPaused = false
 
         serviceScope.launch {
             try {
@@ -154,34 +247,95 @@ class RecordingService : Service() {
             } catch (e: IllegalStateException) {
                 handleError("Failed to stop MediaRecorder properly: ${e.message}", e)
                 releaseMediaRecorder()
+                if (fileToSave?.exists() == true && finalDuration > 500) {
+                    broadcastRecordingFinished(fileToSave.absolutePath, finalDuration)
+                    Log.w("RecordingService", "Stopped with error, but file seems partially saved.")
+                } else {
+                    fileToSave?.delete()
+                }
             } catch (e: RuntimeException) {
                 handleError("Runtime error stopping recording: ${e.message}", e)
                 releaseMediaRecorder()
+                if (fileToSave?.exists() == true && finalDuration > 500) {
+                    broadcastRecordingFinished(fileToSave.absolutePath, finalDuration)
+                    Log.w("RecordingService", "Stopped with runtime error, but file seems partially saved.")
+                } else {
+                    fileToSave?.delete()
+                }
             } catch (e: Exception) {
                 handleError("An unexpected error occurred during stopRecording: ${e.message}", e)
                 releaseMediaRecorder()
+                if (fileToSave?.exists() == true && finalDuration > 500) {
+                    broadcastRecordingFinished(fileToSave.absolutePath, finalDuration)
+                    Log.w("RecordingService", "Stopped with unexpected error, but file seems partially saved.")
+                } else {
+                    fileToSave?.delete()
+                }
             } finally {
                 withContext(Dispatchers.Main) {
-                    stopForeground(true)
+                    stopForeground(Service.STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
-                broadcastStatusUpdate(isRecording = false, elapsedTimeMillis = finalDuration)
-                Log.d("RecordingService", "Service stopping.")
+                if (fileToSave == null || !fileToSave.exists()) {
+                    broadcastStatusUpdate(isRecording = false, isPaused = false, elapsedTimeMillis = 0L)
+                }
+                Log.d("RecordingService", "Service stopping after stopRecording.")
             }
         }
     }
 
+    private fun cancelRecording() {
+        if (mediaRecorder == null) {
+            Log.w("RecordingService", "Cancel called but not recording.")
+            return
+        }
+        Log.d("RecordingService", "Attempting to cancel recording...")
+        stopTimer()
+        releaseMediaRecorder()
+
+        val fileToDelete = currentRecordingFile
+        currentRecordingFile = null
+        isPaused = false
+        timeWhenPaused = 0L
+
+        serviceScope.launch {
+            fileToDelete?.let {
+                if (it.exists()) {
+                    try {
+                        if (it.delete()) {
+                            Log.d("RecordingService", "Cancelled recording file deleted: ${it.absolutePath}")
+                        } else {
+                            Log.w("RecordingService", "Failed to delete cancelled recording file: ${it.absolutePath}")
+                        }
+                    } catch (e: SecurityException) {
+                        Log.e("RecordingService", "SecurityException deleting cancelled file: ${e.message}", e)
+                    }
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+            broadcastRecordingCancelled()
+            Log.d("RecordingService", "Recording cancelled and service stopping.")
+        }
+    }
+
+
     private fun startTimer() {
         stopTimer()
+        if (isPaused) return
+
         timerJob = serviceScope.launch(Dispatchers.Main) {
             Log.d("RecordingService", "Timer Started")
-            while (isActive && mediaRecorder != null) {
-                val elapsedMillis = System.currentTimeMillis() - recordingStartTime
+            while (isActive && mediaRecorder != null && !isPaused) {
+                val elapsedMillis = calculateElapsedTime()
                 updateNotification(formatElapsedTime(elapsedMillis))
-                broadcastStatusUpdate(isRecording = true, elapsedTimeMillis = elapsedMillis)
+                broadcastStatusUpdate(isRecording = true, isPaused = false, elapsedTimeMillis = elapsedMillis)
                 delay(1000L)
             }
-            Log.d("RecordingService", "Timer loop finished.")
+            Log.d("RecordingService", "Timer loop finished (isActive=$isActive, mediaRecorder=${mediaRecorder != null}, isPaused=$isPaused).")
         }
     }
 
@@ -191,35 +345,65 @@ class RecordingService : Service() {
         Log.d("RecordingService", "Timer Stopped/Cancelled")
     }
 
+    private fun calculateElapsedTime(): Long {
+        if (recordingStartTime == 0L) return 0L
+        if (isPaused) {
+            return timeWhenPaused - recordingStartTime
+        } else {
+            return System.currentTimeMillis() - recordingStartTime
+        }
+    }
+
+
     private fun createNotification(contentText: String): Notification {
         val notificationIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingIntentFlags)
 
-        val stopIntent = Intent(this, RecordingService::class.java).apply {
-            action = ACTION_STOP_RECORDING
-        }
-        val stopPendingIntent = PendingIntent.getService(
-            this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title_recording))
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_mic)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(R.drawable.ic_stop, getString(R.string.notification_action_stop), stopPendingIntent)
-            .build()
+            .clearActions()
+
+        if (isPaused) {
+            val resumeIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_RESUME_RECORDING }
+            val resumePendingIntent = PendingIntent.getService(this, 1, resumeIntent, pendingIntentFlags)
+            builder.addAction(R.drawable.play_pause_24px, getString(R.string.notification_action_resume), resumePendingIntent)
+
+            val cancelIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_CANCEL_RECORDING }
+            val cancelPendingIntent = PendingIntent.getService(this, 2, cancelIntent, pendingIntentFlags)
+            builder.addAction(R.drawable.stop_circle_24px, getString(R.string.notification_action_cancel), cancelPendingIntent)
+
+            builder.setContentTitle(getString(R.string.notification_title_paused))
+
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val pauseIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_PAUSE_RECORDING }
+                val pausePendingIntent = PendingIntent.getService(this, 3, pauseIntent, pendingIntentFlags)
+                builder.addAction(R.drawable.pause_circle_24px, getString(R.string.notification_action_pause), pausePendingIntent)
+            }
+
+            val stopIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_STOP_RECORDING }
+            val stopPendingIntent = PendingIntent.getService(this, 4, stopIntent, pendingIntentFlags)
+            builder.addAction(R.drawable.stop_circle_24px, getString(R.string.notification_action_stop), stopPendingIntent)
+        }
+
+        return builder.build()
     }
 
     private fun updateNotification(contentText: String) {
         val notification = createNotification(contentText)
-        notificationManager.notify(NOTIFICATION_ID, notification)
+        try {
+            notificationManager.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e("RecordingService", "Error updating notification: ${e.message}", e)
+        }
     }
 
     private fun formatElapsedTime(millis: Long): String {
@@ -233,6 +417,7 @@ class RecordingService : Service() {
         Log.d("RecordingService", "Attempting to release MediaRecorder.")
         mediaRecorder?.apply {
             try {
+                stopTimer()
                 reset()
                 release()
                 Log.d("RecordingService", "MediaRecorder released successfully.")
@@ -241,22 +426,24 @@ class RecordingService : Service() {
             }
         }
         mediaRecorder = null
-        currentRecordingFile = null
     }
 
     private fun handleError(message: String, throwable: Throwable? = null) {
         Log.e("RecordingService", "Error: $message", throwable)
         releaseMediaRecorder()
         broadcastError(message)
+        isPaused = false
+        timeWhenPaused = 0L
         serviceScope.launch(Dispatchers.Main) {
-            stopForeground(true)
+            stopForeground(Service.STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
     }
 
-    private fun broadcastStatusUpdate(isRecording: Boolean, elapsedTimeMillis: Long) {
+    private fun broadcastStatusUpdate(isRecording: Boolean, isPaused: Boolean, elapsedTimeMillis: Long) {
         val intent = Intent(BROADCAST_ACTION_STATUS_UPDATE).apply {
             putExtra(EXTRA_IS_RECORDING, isRecording)
+            putExtra(EXTRA_IS_PAUSED, isPaused)
             putExtra(EXTRA_ELAPSED_TIME_MILLIS, elapsedTimeMillis)
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
@@ -265,6 +452,7 @@ class RecordingService : Service() {
     private fun broadcastError(errorMessage: String) {
         val intent = Intent(BROADCAST_ACTION_STATUS_UPDATE).apply {
             putExtra(EXTRA_IS_RECORDING, false)
+            putExtra(EXTRA_IS_PAUSED, false)
             putExtra(EXTRA_ERROR_MESSAGE, errorMessage)
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
@@ -273,8 +461,19 @@ class RecordingService : Service() {
     private fun broadcastRecordingFinished(filePath: String, durationMillis: Long) {
         val intent = Intent(BROADCAST_ACTION_STATUS_UPDATE).apply {
             putExtra(EXTRA_IS_RECORDING, false)
+            putExtra(EXTRA_IS_PAUSED, false)
             putExtra(EXTRA_RECORDING_FINISHED_PATH, filePath)
             putExtra(EXTRA_RECORDING_FINISHED_DURATION, durationMillis)
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
+    private fun broadcastRecordingCancelled() {
+        val intent = Intent(BROADCAST_ACTION_STATUS_UPDATE).apply {
+            putExtra(EXTRA_IS_RECORDING, false)
+            putExtra(EXTRA_IS_PAUSED, false)
+            putExtra(EXTRA_RECORDING_CANCELLED, true)
+            putExtra(EXTRA_ELAPSED_TIME_MILLIS, 0L)
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }

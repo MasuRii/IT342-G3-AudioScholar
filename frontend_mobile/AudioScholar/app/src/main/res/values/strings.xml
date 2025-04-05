@@ -74,6 +74,32 @@
     <string name="permission_denied_notifications">Notification permission denied. Progress updates might not be shown in the background.</string>
     <string name="permission_required_notifications">Notification permission is recommended for background recording updates.</string>
 
+    <string name="status_paused">Paused</string>
+
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_cancel">Cancel</string>
+
+    <string name="cd_pause_button">Pause recording</string>
+    <string name="cd_resume_button">Resume recording</string>
+    <string name="cd_cancel_button">Cancel recording</string>
+
+    <string name="notification_action_pause">Pause</string>
+    <string name="notification_action_resume">Resume</string>
+    <string name="notification_action_cancel">Cancel</string>
+    <string name="notification_title_paused">Recording Paused</string>
+
+    <string name="dialog_stop_title">Stop Recording?</string>
+    <string name="dialog_stop_message">Do you want to stop recording and save the audio?</string>
+    <string name="dialog_action_stop_confirm">Stop &amp; Save</string>
+
+    <string name="dialog_cancel_title">Cancel Recording?</string>
+    <string name="dialog_cancel_message">Are you sure you want to cancel this recording? The audio will be discarded.</string>
+    <string name="dialog_action_cancel_confirm">Discard</string>
+    <string name="dialog_action_keep_recording">Keep Recording</string>
+
+    <string name="permission_denied_notifications_recording">Notification permission denied. Background progress updates might not be shown.</string>
+
     <string name="recording_saved_message_format">Recording \'%1$s\' saved.</string>
     <string name="error_saving_metadata">Failed to save recording metadata.</string>
     <string name="error_unexpected_saving">An unexpected error occurred while saving.</string>

@@ -28,6 +28,7 @@ import javax.inject.Inject
 
 data class RecordingUiState(
     val isRecording: Boolean = false,
+    val isPaused: Boolean = false,
     val elapsedTimeMillis: Long = 0L,
     val elapsedTimeFormatted: String = "00:00:00",
     val permissionGranted: Boolean = false,
@@ -35,7 +36,10 @@ data class RecordingUiState(
     val error: String? = null,
     val recordingSavedMessage: String? = null,
     val showTitleDialog: Boolean = false,
-    val notificationPermissionGranted: Boolean = true
+    val notificationPermissionGranted: Boolean = true,
+    val supportsPauseResume: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N,
+    val showStopConfirmationDialog: Boolean = false,
+    val showCancelConfirmationDialog: Boolean = false
 )
 
 @HiltViewModel
@@ -55,37 +59,50 @@ class RecordingViewModel @Inject constructor(
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == RecordingService.BROADCAST_ACTION_STATUS_UPDATE) {
                 val isRecording = intent.getBooleanExtra(RecordingService.EXTRA_IS_RECORDING, false)
+                val isPaused = intent.getBooleanExtra(RecordingService.EXTRA_IS_PAUSED, false)
                 val elapsedTime = intent.getLongExtra(RecordingService.EXTRA_ELAPSED_TIME_MILLIS, 0L)
                 val errorMessage = intent.getStringExtra(RecordingService.EXTRA_ERROR_MESSAGE)
                 val finishedPath = intent.getStringExtra(RecordingService.EXTRA_RECORDING_FINISHED_PATH)
                 val finishedDuration = intent.getLongExtra(RecordingService.EXTRA_RECORDING_FINISHED_DURATION, 0L)
+                val isCancelled = intent.getBooleanExtra(RecordingService.EXTRA_RECORDING_CANCELLED, false)
 
-                Log.d("RecordingViewModel", "Broadcast received: isRecording=$isRecording, elapsed=$elapsedTime, error=$errorMessage, finishedPath=$finishedPath")
+                Log.d("RecordingViewModel", "Broadcast received: isRecording=$isRecording, isPaused=$isPaused, elapsed=$elapsedTime, error=$errorMessage, finishedPath=$finishedPath, cancelled=$isCancelled")
+
+                val wasStopConfirmationShowing = _uiState.value.showStopConfirmationDialog
 
                 _uiState.update { currentState ->
                     currentState.copy(
                         isRecording = isRecording,
+                        isPaused = isPaused,
                         elapsedTimeMillis = elapsedTime,
                         elapsedTimeFormatted = formatElapsedTime(elapsedTime),
-                        error = errorMessage ?: currentState.error
+                        error = errorMessage ?: if (currentState.error != null && finishedPath == null && !isCancelled) null else currentState.error,
+                        showStopConfirmationDialog = if (wasStopConfirmationShowing && isPaused && !currentState.isPaused) true else currentState.showStopConfirmationDialog
                     )
                 }
 
                 if (errorMessage != null) {
-                    _uiState.update { it.copy(error = errorMessage) }
-                    if (!isRecording) {
-                        _uiState.update { it.copy(showTitleDialog = false) }
-                    }
-                }
-
-                if (finishedPath != null) {
+                    _uiState.update { it.copy(error = errorMessage, showTitleDialog = false, isRecording = false, isPaused = false, showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
+                } else if (isCancelled) {
+                    _uiState.update { it.copy(
+                        isRecording = false,
+                        isPaused = false,
+                        showTitleDialog = false,
+                        elapsedTimeMillis = 0L,
+                        elapsedTimeFormatted = formatElapsedTime(0L),
+                        recordingSavedMessage = "Recording cancelled.",
+                        showStopConfirmationDialog = false,
+                        showCancelConfirmationDialog = false
+                    ) }
+                } else if (finishedPath != null) {
                     finishedRecordingPath = finishedPath
                     finishedRecordingDuration = finishedDuration
-                    if (errorMessage == null) {
-                        _uiState.update { it.copy(showTitleDialog = true, isRecording = false) }
-                    }
-                } else if (!isRecording && errorMessage == null) {
+                    _uiState.update { it.copy(showTitleDialog = true, isRecording = false, isPaused = false, showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
+                } else if (!isRecording) {
                     resetTimerDisplayIfNotSaving()
+                    if (!uiState.value.showTitleDialog) {
+                        _uiState.update { it.copy(showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
+                    }
                 }
             }
         }
@@ -127,7 +144,7 @@ class RecordingViewModel @Inject constructor(
     private fun unregisterReceiver() {
         try {
             localBroadcastManager.unregisterReceiver(recordingStatusReceiver)
-            Log.d("RecordingViewModel", "BroadcastReceiver unregistered.")
+            Log.d("RecordingViewModel", "Receiver already unregistered or never registered.")
         } catch (e: IllegalArgumentException) {
             Log.w("RecordingViewModel", "Receiver already unregistered or never registered.")
         }
@@ -139,7 +156,7 @@ class RecordingViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         permissionGranted = granted,
-                        error = if (granted) null else it.error
+                        error = if (granted && it.error?.contains("permission", ignoreCase = true) == true) null else it.error
                     )
                 }
                 if (!granted) {
@@ -148,31 +165,101 @@ class RecordingViewModel @Inject constructor(
             }
             Manifest.permission.POST_NOTIFICATIONS -> {
                 _uiState.update { it.copy(notificationPermissionGranted = granted) }
-                if (!granted) {
-                    _uiState.update { it.copy(error = "Notification permission denied. Progress updates might not be shown.") }
-                }
             }
         }
         Log.d("RecordingViewModel", "Permission Result - Type: $permissionType, Granted: $granted")
     }
 
 
-    fun toggleRecording() {
+    fun startRecording() {
         if (_uiState.value.isRecording) {
-            sendServiceCommand(RecordingService.ACTION_STOP_RECORDING)
-        } else {
-            if (!_uiState.value.permissionGranted) {
-                _uiState.update { it.copy(error = "Microphone permission required.") }
-                return
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !_uiState.value.notificationPermissionGranted) {
-                _uiState.update { it.copy(error = "Notification permission recommended for background recording updates.") }
-            }
-
-            _uiState.update { it.copy(error = null, recordingSavedMessage = null) }
-            sendServiceCommand(RecordingService.ACTION_START_RECORDING)
+            Log.w("RecordingViewModel", "Start called but already recording.")
+            return
         }
+        if (!_uiState.value.permissionGranted) {
+            _uiState.update { it.copy(error = "Microphone permission required.") }
+            return
+        }
+        _uiState.update { it.copy(error = null, recordingSavedMessage = null, showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
+        sendServiceCommand(RecordingService.ACTION_START_RECORDING)
     }
+
+    fun requestStopConfirmation() {
+        val currentState = _uiState.value
+        if (!currentState.isRecording) {
+            Log.w("RecordingViewModel", "Stop confirmation requested but not recording.")
+            return
+        }
+
+        if (!currentState.isPaused && currentState.supportsPauseResume) {
+            Log.d("RecordingViewModel", "Pausing recording before showing stop confirmation.")
+            sendServiceCommand(RecordingService.ACTION_PAUSE_RECORDING)
+        }
+
+        _uiState.update { it.copy(showStopConfirmationDialog = true) }
+    }
+
+    fun confirmStopRecording() {
+        _uiState.update { it.copy(showStopConfirmationDialog = false) }
+        sendServiceCommand(RecordingService.ACTION_STOP_RECORDING)
+    }
+
+    fun dismissStopConfirmation() {
+        _uiState.update { it.copy(showStopConfirmationDialog = false) }
+    }
+
+
+    fun pauseRecording() {
+        val currentState = _uiState.value
+        if (currentState.showStopConfirmationDialog || currentState.showCancelConfirmationDialog) {
+            Log.w("RecordingViewModel", "Pause called while confirmation dialog is showing.")
+            return
+        }
+        if (!currentState.isRecording || currentState.isPaused) {
+            Log.w("RecordingViewModel", "Pause called but not recording or already paused.")
+            return
+        }
+        if (!currentState.supportsPauseResume) {
+            _uiState.update { it.copy(error = "Pause/Resume not supported on this Android version.") }
+            return
+        }
+        sendServiceCommand(RecordingService.ACTION_PAUSE_RECORDING)
+    }
+
+    fun resumeRecording() {
+        val currentState = _uiState.value
+        if (currentState.showStopConfirmationDialog || currentState.showCancelConfirmationDialog) {
+            Log.w("RecordingViewModel", "Resume called while confirmation dialog is showing.")
+            return
+        }
+        if (!currentState.isRecording || !currentState.isPaused) {
+            Log.w("RecordingViewModel", "Resume called but not recording or not paused.")
+            return
+        }
+        if (!currentState.supportsPauseResume) {
+            _uiState.update { it.copy(error = "Pause/Resume not supported on this Android version.") }
+            return
+        }
+        sendServiceCommand(RecordingService.ACTION_RESUME_RECORDING)
+    }
+
+    fun requestCancelConfirmation() {
+        if (!_uiState.value.isRecording) {
+            Log.w("RecordingViewModel", "Cancel confirmation requested but not recording.")
+            return
+        }
+        _uiState.update { it.copy(showCancelConfirmationDialog = true) }
+    }
+
+    fun confirmCancelRecording() {
+        _uiState.update { it.copy(showCancelConfirmationDialog = false) }
+        sendServiceCommand(RecordingService.ACTION_CANCEL_RECORDING)
+    }
+
+    fun dismissCancelConfirmation() {
+        _uiState.update { it.copy(showCancelConfirmationDialog = false) }
+    }
+
 
     private fun sendServiceCommand(action: String) {
         val intent = Intent(application, RecordingService::class.java).apply {
@@ -186,8 +273,8 @@ class RecordingViewModel @Inject constructor(
                 application.startService(intent)
             }
         } catch (e: Exception) {
-            Log.e("RecordingViewModel", "Failed to start RecordingService: ${e.message}", e)
-            _uiState.update { it.copy(error = "Could not start recording service. ${e.message}") }
+            Log.e("RecordingViewModel", "Failed to send command '$action' to RecordingService: ${e.message}", e)
+            _uiState.update { it.copy(error = "Could not communicate with recording service. ${e.message}") }
         }
     }
 
@@ -198,6 +285,12 @@ class RecordingViewModel @Inject constructor(
             return
         }
         val savedFile = File(savedFilePath)
+        if (!savedFile.exists()) {
+            Log.e("RecordingViewModel", "Cannot finalize recording: File does not exist at path $savedFilePath")
+            _uiState.update { it.copy(showTitleDialog = false, error = "Error: Recording file not found.") }
+            return
+        }
+
         val savedFileName = savedFile.name
         val timestamp = System.currentTimeMillis()
 
@@ -216,7 +309,7 @@ class RecordingViewModel @Inject constructor(
             var finalErrorMessage: String? = null
             try {
                 val metadataJson = gson.toJson(metadata)
-                val metadataFileName = savedFileName.substringBeforeLast('.') + ".json"
+                val metadataFileName = savedFileName.substringBeforeLast('.', savedFileName) + ".json"
                 val metadataFile = File(savedFile.parent, metadataFileName)
 
                 FileOutputStream(metadataFile).use { outputStream ->

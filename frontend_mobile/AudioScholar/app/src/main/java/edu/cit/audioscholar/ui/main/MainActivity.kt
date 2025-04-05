@@ -32,6 +32,10 @@ import edu.cit.audioscholar.ui.library.LibraryScreen
 import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarDefaults
+import androidx.compose.material3.contentColorFor
+import androidx.compose.ui.graphics.Color
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector) {
     object Record : Screen("record", R.string.nav_record, Icons.Filled.Mic)
@@ -173,7 +177,8 @@ fun MainAppScreen(navController: NavHostController) {
 
 @Composable
 fun AppBottomNavigationBar(navController: NavHostController) {
-    NavigationBar {
+    NavigationBar(
+    ) {
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination
 
@@ -190,7 +195,14 @@ fun AppBottomNavigationBar(navController: NavHostController) {
                         launchSingleTop = true
                         restoreState = true
                     }
-                }
+                },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         }
     }

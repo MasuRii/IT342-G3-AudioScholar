@@ -80,6 +80,7 @@ private val LightColorScheme = lightColorScheme(
     scrim = md_theme_light_scrim,
 )
 
+
 @Composable
 fun AudioScholarTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -98,10 +99,19 @@ fun AudioScholarTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+
+            WindowCompat.setDecorFitsSystemWindows(window, true)
+
             window.statusBarColor = colorScheme.primary.toArgb()
+            window.navigationBarColor = colorScheme.surface.toArgb()
+
+            val insetsController = WindowCompat.getInsetsController(window, view)
 
             val isLightStatusBar = colorScheme.onPrimary != Color.White
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = isLightStatusBar
+            insetsController.isAppearanceLightStatusBars = isLightStatusBar
+
+            insetsController.isAppearanceLightNavigationBars = !darkTheme
+
         }
     }
 

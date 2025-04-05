@@ -48,6 +48,8 @@ android {
 }
 
 dependencies {
+    implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
+
     implementation(libs.google.android.material)
 
     implementation(libs.androidx.core.ktx)

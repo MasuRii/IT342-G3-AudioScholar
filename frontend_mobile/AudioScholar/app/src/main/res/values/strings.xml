@@ -98,6 +98,34 @@
     <string name="dialog_action_cancel_confirm">Discard</string>
     <string name="dialog_action_keep_recording">Keep Recording</string>
 
+    <string name="nav_onboarding">Onboarding</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_finish">Finish</string>
+
+    <string name="onboarding_title_1">Welcome to AudioScholar!</string>
+    <string name="onboarding_body_1">Tired of frantically scribbling notes while trying to absorb complex lectures? AudioScholar lets you capture every word effortlessly, so you can truly focus on learning in the moment. We turn lectures into your personal study archive.</string>
+    <string name="onboarding_title_2">Capture Lectures Your Way</string>
+    <string name="onboarding_body_2">Record lectures in real-time directly within the app using your device\'s microphone – works even offline! Already have audio files? Easily upload pre-recorded lectures from your device via the mobile app or our web interface.</string>
+
+    <string name="onboarding_title_3">Get Smart Summaries &amp; Resources</string>
+    <string name="onboarding_body_3">Go beyond just recordings. Our powerful AI automatically generates concise, structured summaries, highlighting key points. Plus, discover relevant YouTube videos recommended based on lecture content to deepen your understanding.</string>
+
+    <string name="onboarding_title_4">Your Learning Hub, Synced</string>
+    <string name="onboarding_body_4">Keep your learning organized. Optionally sync recordings and summaries to the cloud for secure backup and access across your devices via our web interface.</string>
+    <string name="onboarding_permission_note">Ready to start? We\'ll need microphone access to enable lecture recording.</string>
+
+    <string name="permission_mic_rationale_title">Microphone Permission Needed</string>
+    <string name="permission_mic_rationale_message">AudioScholar needs access to your microphone to record lectures directly within the app. Please grant permission to enable this feature.</string>
+    <string name="permission_settings_action">Open Settings</string>
+    <string name="permission_dismiss">Dismiss</string>
+
+    <string name="onboarding_image_desc_1">Illustration showing the app\'s main purpose.</string>
+    <string name="onboarding_image_desc_2">Illustration showing how to record audio.</string>
+    <string name="onboarding_image_desc_3">Illustration showing transcription feature.</string>
+    <string name="onboarding_image_desc_4">Illustration related to microphone permission.</string>
+
     <string name="permission_denied_notifications_recording">Notification permission denied. Background progress updates might not be shown.</string>
 
     <string name="recording_saved_message_format">Recording \'%1$s\' saved.</string>

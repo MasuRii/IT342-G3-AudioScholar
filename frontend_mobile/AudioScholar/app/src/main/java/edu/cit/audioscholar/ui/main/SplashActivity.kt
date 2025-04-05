@@ -1,6 +1,7 @@
 package edu.cit.audioscholar.ui.main
 
 import android.annotation.SuppressLint
+import android.content.Context // Import Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -22,12 +23,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dagger.hilt.android.AndroidEntryPoint // Add Hilt EntryPoint if using Hilt for SharedPreferences later
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.delay
 
 @SuppressLint("CustomSplashScreen")
+// @AndroidEntryPoint // Uncomment if you inject SharedPreferences via Hilt
 class SplashActivity : ComponentActivity() {
+
+    companion object {
+        const val PREFS_NAME = "AudioScholarPrefs"
+        const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
+        const val EXTRA_START_DESTINATION = "start_destination"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,11 +50,29 @@ class SplashActivity : ComponentActivity() {
                     SplashScreenImage()
                 }
 
-                // Navigate to MainActivity after 500ms
                 LaunchedEffect(Unit) {
-                    delay(500)
-                    startActivity(Intent(this@SplashActivity, MainActivity::class.java))
-                    finish()
+                    // Check if onboarding is complete
+                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    val isOnboardingComplete = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+
+                    // Determine the target destination
+                    val targetDestination = if (isOnboardingComplete) {
+                        Screen.Record.route // Navigate to main screen (Record)
+                    } else {
+                        Screen.Onboarding.route // Navigate to Onboarding
+                    }
+
+                    // Wait for a short duration
+                    delay(1500) // Increased delay slightly to 1.5 seconds as per task description
+
+                    // Create intent for MainActivity and pass the start destination
+                    val intent = Intent(this@SplashActivity, MainActivity::class.java).apply {
+                        putExtra(EXTRA_START_DESTINATION, targetDestination)
+                        // Ensure MainActivity isn't stacked on top of existing instances unnecessarily
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(intent)
+                    finish() // Finish SplashActivity so it's not in the back stack
                 }
             }
         }
@@ -56,11 +83,10 @@ class SplashActivity : ComponentActivity() {
 fun SplashScreenImage() {
     val isDarkTheme = isSystemInDarkTheme()
 
-    // Choose image based on system theme
     val imageRes = if (isDarkTheme) {
-        R.drawable.ic_audioscholar_light // Light image for dark mode
+        R.drawable.ic_audioscholar_light
     } else {
-        R.drawable.ic_audioscholar_dark // Dark image for light mode
+        R.drawable.ic_audioscholar_dark
     }
 
     Box(
@@ -72,8 +98,8 @@ fun SplashScreenImage() {
             contentDescription = stringResource(id = R.string.app_name),
             modifier = Modifier
                 .size(150.dp)
-                .clip(CircleShape), // Make it circular
-            contentScale = ContentScale.Crop // Crop to fit circle
+                .clip(CircleShape),
+            contentScale = ContentScale.Crop
         )
     }
 }

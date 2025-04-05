@@ -11,9 +11,9 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,29 +58,30 @@ fun RecordingScreen(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val notificationGranted = permissionsMap[Manifest.permission.POST_NOTIFICATIONS] ?: false
                 viewModel.onPermissionResult(granted = notificationGranted, permissionType = Manifest.permission.POST_NOTIFICATIONS)
+                if (audioGranted && !notificationGranted) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = context.getString(R.string.permission_denied_notifications_recording),
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
             }
 
             if (!audioGranted) {
-                scope.launch {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.permission_denied_message),
-                        duration = SnackbarDuration.Short
-                    )
-                }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !(permissionsMap[Manifest.permission.POST_NOTIFICATIONS] ?: false)) {
-                scope.launch {
-                    snackbarHostState.showSnackbar(
-                        message = context.getString(R.string.permission_denied_notifications),
-                        duration = SnackbarDuration.Short
-                    )
-                }
+            } else if (audioGranted) {
+                viewModel.startRecording()
             }
         }
     )
 
-    LaunchedEffect(uiState.error) {
+    LaunchedEffect(uiState.permissionGranted) {
+    }
+
+
+    LaunchedEffect(uiState.error, uiState.recordingSavedMessage) {
         uiState.error?.let { errorMessage ->
-            val isPermanentDenial = errorMessage.contains("permanently denied", ignoreCase = true)
+            val isPermanentDenial = errorMessage.contains("permission", ignoreCase = true)
             val result = snackbarHostState.showSnackbar(
                 message = errorMessage,
                 actionLabel = if (isPermanentDenial) context.getString(R.string.action_open_settings) else null,
@@ -104,9 +106,7 @@ fun RecordingScreen(
             }
             viewModel.consumeErrorMessage()
         }
-    }
 
-    LaunchedEffect(uiState.recordingSavedMessage) {
         uiState.recordingSavedMessage?.let { message ->
             snackbarHostState.showSnackbar(
                 message = message,
@@ -123,6 +123,47 @@ fun RecordingScreen(
             },
             onDismiss = {
                 viewModel.finalizeRecording(null)
+            }
+        )
+    }
+
+    if (uiState.showStopConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissStopConfirmation() },
+            title = { Text(stringResource(R.string.dialog_stop_title)) },
+            text = { Text(stringResource(R.string.dialog_stop_message)) },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmStopRecording() }
+                ) {
+                    Text(stringResource(R.string.dialog_action_stop_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissStopConfirmation() }) {
+                    Text(stringResource(R.string.dialog_action_cancel))
+                }
+            }
+        )
+    }
+
+    if (uiState.showCancelConfirmationDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissCancelConfirmation() },
+            title = { Text(stringResource(R.string.dialog_cancel_title)) },
+            text = { Text(stringResource(R.string.dialog_cancel_message)) },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.confirmCancelRecording() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.dialog_action_cancel_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissCancelConfirmation() }) {
+                    Text(stringResource(R.string.dialog_action_keep_recording))
+                }
             }
         )
     }
@@ -148,46 +189,47 @@ fun RecordingScreen(
             Text(
                 text = uiState.elapsedTimeFormatted,
                 style = MaterialTheme.typography.displayMedium,
-                color = if (uiState.isRecording || uiState.showTitleDialog) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                color = when {
+                    uiState.isRecording && !uiState.isPaused -> MaterialTheme.colorScheme.primary
+                    uiState.isPaused -> MaterialTheme.colorScheme.secondary
+                    uiState.showTitleDialog -> MaterialTheme.colorScheme.tertiary
+                    else -> LocalContentColor.current.copy(alpha = 0.8f)
+                },
+                modifier = Modifier.padding(bottom = 8.dp)
             )
 
             Text(
                 text = when {
-                    uiState.isRecording -> stringResource(R.string.status_recording)
+                    uiState.isRecording && !uiState.isPaused -> stringResource(R.string.status_recording)
+                    uiState.isPaused -> stringResource(R.string.status_paused)
                     uiState.showTitleDialog -> stringResource(R.string.status_saving)
-                    uiState.recordingSavedMessage != null -> stringResource(R.string.status_saved)
                     !uiState.permissionGranted -> stringResource(R.string.status_permission_needed)
                     else -> stringResource(R.string.status_tap_to_record)
                 },
                 style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.Center,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
             Spacer(modifier = Modifier.weight(1f))
 
-            Button(
+            LargeFloatingActionButton(
                 onClick = {
-                    if (uiState.showTitleDialog) return@Button
+                    if (uiState.showTitleDialog || uiState.showStopConfirmationDialog || uiState.showCancelConfirmationDialog) return@LargeFloatingActionButton
 
                     if (uiState.isRecording) {
-                        viewModel.toggleRecording()
+                        viewModel.requestStopConfirmation()
                     } else {
                         val audioGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                        val notificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-                        } else { true }
-
                         if (audioGranted) {
-                            viewModel.toggleRecording()
+                            viewModel.startRecording()
                         } else {
                             multiplePermissionsLauncher.launch(permissionsToRequest)
                         }
                     }
                 },
-                enabled = !uiState.showTitleDialog,
                 modifier = Modifier.size(100.dp),
-                shape = MaterialTheme.shapes.extraLarge,
-                contentPadding = PaddingValues(0.dp)
+                shape = CircleShape
             ) {
                 Icon(
                     imageVector = if (uiState.isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
@@ -196,12 +238,53 @@ fun RecordingScreen(
                     } else {
                         stringResource(R.string.cd_record_button)
                     },
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
+                    modifier = Modifier.size(48.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(172.dp))
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (uiState.isRecording && !uiState.isPaused && uiState.supportsPauseResume) {
+                    Button(
+                        onClick = { viewModel.pauseRecording() },
+                        enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
+                    ) {
+                        Icon(Icons.Filled.Pause, contentDescription = stringResource(R.string.cd_pause_button))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text(stringResource(R.string.action_pause))
+                    }
+                }
+
+                if (uiState.isRecording && uiState.isPaused && uiState.supportsPauseResume) {
+                    Button(
+                        onClick = { viewModel.resumeRecording() },
+                        enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.cd_resume_button))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text(stringResource(R.string.action_resume))
+                    }
+
+                    Button(
+                        onClick = { viewModel.requestCancelConfirmation() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
+                    ) {
+                        Icon(Icons.Filled.Cancel, contentDescription = stringResource(R.string.cd_cancel_button))
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }

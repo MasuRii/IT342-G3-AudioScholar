@@ -39,6 +39,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -49,6 +50,7 @@ android {
 
 dependencies {
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
+    implementation(libs.androidx.lifecycle.runtime.compose)
 
     implementation(libs.google.android.material)
 

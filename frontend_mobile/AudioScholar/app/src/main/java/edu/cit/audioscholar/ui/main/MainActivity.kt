@@ -2,13 +2,16 @@ package edu.cit.audioscholar.ui.main
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -27,6 +30,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -39,11 +43,14 @@ import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.library.LibraryScreen
 import edu.cit.audioscholar.ui.onboarding.OnboardingScreen
 import edu.cit.audioscholar.ui.recording.RecordingScreen
+import edu.cit.audioscholar.ui.settings.SettingsViewModel
+import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
 import edu.cit.audioscholar.ui.about.AboutScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
@@ -68,11 +75,16 @@ val screensWithDrawer = listOf(
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject
+    lateinit var prefs: SharedPreferences
+
+    private val settingsViewModel: SettingsViewModel by viewModels()
+
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
-        val prefs = getSharedPreferences(SplashActivity.PREFS_NAME, Context.MODE_PRIVATE)
-        with(prefs.edit()) {
+        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, Context.MODE_PRIVATE)
+        with(splashPrefs.edit()) {
             putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true)
             apply()
         }
@@ -107,7 +119,15 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            AudioScholarTheme {
+            val themeSetting by settingsViewModel.selectedTheme.collectAsStateWithLifecycle()
+            val systemIsDark = isSystemInDarkTheme()
+            val useDarkTheme = when (themeSetting) {
+                ThemeSetting.Light -> false
+                ThemeSetting.Dark -> true
+                ThemeSetting.System -> systemIsDark
+            }
+
+            AudioScholarTheme(darkTheme = useDarkTheme) {
                 navController = rememberNavController()
 
                 LaunchedEffect(intent) {
@@ -363,7 +383,8 @@ fun MainAppScreen(
                 )
             }
             composable(Screen.Settings.route) {
-                SettingsScreenPlaceholder(
+                edu.cit.audioscholar.ui.settings.SettingsScreen(
+                    navController = navController,
                     drawerState = drawerState,
                     scope = scope
                 )

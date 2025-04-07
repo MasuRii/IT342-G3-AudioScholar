@@ -135,6 +135,32 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Finish</string>
 
+    <string name="settings_section_account">Account Settings</string>
+    <string name="settings_item_edit_profile">Edit Profile</string>
+    <string name="settings_item_change_password">Change Password</string>
+    <string name="settings_item_logout">Logout</string>
+
+    <string name="settings_section_cloud_sync">Cloud Sync Settings</string>
+    <string name="settings_item_sync_mode">Sync Mode</string>
+    <string name="settings_item_sync_frequency">Sync Frequency</string>
+
+    <string name="settings_section_app_prefs">App Preferences</string>
+    <string name="settings_item_theme">Theme</string>
+    <string name="settings_dialog_title_theme">Select Theme</string>
+    <string name="settings_dialog_title_quality">Select Recording Quality</string>
+    <string name="dialog_button_cancel">Cancel</string>
+
+    <string name="settings_section_audio">Audio Recording Settings</string>
+    <string name="settings_item_recording_quality">Recording Quality</string>
+
+    <string name="settings_section_support">Support &amp; Legal</string>
+    <string name="settings_item_help_center">Help Center</string>
+    <string name="settings_item_privacy_policy">Privacy Policy</string>
+    <string name="settings_item_terms_service">Terms of Service</string>
+
+    <string name="settings_section_app_info">App Info</string>
+    <string name="settings_item_app_version">App Version</string>
+
     <string name="onboarding_title_1">Welcome to AudioScholar!</string>
     <string name="onboarding_body_1">Tired of frantically scribbling notes while trying to absorb complex lectures? AudioScholar lets you capture every word effortlessly, so you can truly focus on learning in the moment. We turn lectures into your personal study archive.</string>
     <string name="onboarding_title_2">Capture Lectures Your Way</string>

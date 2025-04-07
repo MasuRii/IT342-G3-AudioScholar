@@ -1,0 +1,16 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-AudioscholarApplication",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "edu.cit.audioscholar.AudioscholarApplication",
+            "projectName": "audioscholar",
+            "args": [],
+            "env": {
+                "NHOST_ADMIN_SECRET": "N8than#1"
+            }
+        }
+    ]
+}

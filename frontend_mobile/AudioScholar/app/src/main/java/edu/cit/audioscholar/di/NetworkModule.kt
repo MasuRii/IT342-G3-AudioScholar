@@ -1,10 +1,13 @@
 package edu.cit.audioscholar.di
 
 import android.app.Application
+import android.content.Context
+import android.content.SharedPreferences
 import com.google.gson.Gson
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.data.repository.AudioRepositoryImpl
@@ -20,6 +23,7 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val BASE_URL = "http://192.168.254.100:8080/"
+    private const val PREFS_NAME = "audioscholar_settings_prefs"
 
     @Provides
     @Singleton
@@ -70,5 +74,11 @@ object NetworkModule {
         gson: Gson
     ): AudioRepository {
         return AudioRepositoryImpl(apiService, application, gson)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 }

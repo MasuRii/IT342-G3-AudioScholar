@@ -1,8 +1,9 @@
 package edu.cit.audioscholar.ui.main
 
 import android.annotation.SuppressLint
-import android.content.Context // Import Context
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,56 +24,63 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import dagger.hilt.android.AndroidEntryPoint // Add Hilt EntryPoint if using Hilt for SharedPreferences later
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.ui.settings.SettingsViewModel
+import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.delay
 
 @SuppressLint("CustomSplashScreen")
-// @AndroidEntryPoint // Uncomment if you inject SharedPreferences via Hilt
 class SplashActivity : ComponentActivity() {
 
     companion object {
         const val PREFS_NAME = "AudioScholarPrefs"
         const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
         const val EXTRA_START_DESTINATION = "start_destination"
+        private const val SETTINGS_PREFS_NAME = "audioscholar_settings_prefs"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val onboardingPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val settingsPrefs = getSharedPreferences(SETTINGS_PREFS_NAME, Context.MODE_PRIVATE)
+
+        val isOnboardingComplete = onboardingPrefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+        val savedThemeName = settingsPrefs.getString(SettingsViewModel.PREF_KEY_THEME, ThemeSetting.System.name)
+
+        val systemIsDark = resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val useDarkTheme = when (savedThemeName) {
+            ThemeSetting.Light.name -> false
+            ThemeSetting.Dark.name -> true
+            else -> systemIsDark
+        }
+
         setContent {
-            AudioScholarTheme {
+            AudioScholarTheme(darkTheme = useDarkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    SplashScreenImage()
+                    SplashScreenImage(useDarkTheme = useDarkTheme)
                 }
 
                 LaunchedEffect(Unit) {
-                    // Check if onboarding is complete
-                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    val isOnboardingComplete = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
-
-                    // Determine the target destination
                     val targetDestination = if (isOnboardingComplete) {
-                        Screen.Record.route // Navigate to main screen (Record)
+                        Screen.Record.route
                     } else {
-                        Screen.Onboarding.route // Navigate to Onboarding
+                        Screen.Onboarding.route
                     }
 
-                    // Wait for a short duration
-                    delay(1500) // Increased delay slightly to 1.5 seconds as per task description
+                    delay(1500)
 
-                    // Create intent for MainActivity and pass the start destination
                     val intent = Intent(this@SplashActivity, MainActivity::class.java).apply {
                         putExtra(EXTRA_START_DESTINATION, targetDestination)
-                        // Ensure MainActivity isn't stacked on top of existing instances unnecessarily
                         flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
                     }
                     startActivity(intent)
-                    finish() // Finish SplashActivity so it's not in the back stack
+                    finish()
                 }
             }
         }
@@ -80,10 +88,8 @@ class SplashActivity : ComponentActivity() {
 }
 
 @Composable
-fun SplashScreenImage() {
-    val isDarkTheme = isSystemInDarkTheme()
-
-    val imageRes = if (isDarkTheme) {
+fun SplashScreenImage(useDarkTheme: Boolean) {
+    val imageRes = if (useDarkTheme) {
         R.drawable.ic_audioscholar_light
     } else {
         R.drawable.ic_audioscholar_dark
@@ -99,7 +105,7 @@ fun SplashScreenImage() {
             modifier = Modifier
                 .size(150.dp)
                 .clip(CircleShape),
-            contentScale = ContentScale.Crop
+            contentScale = ContentScale.Fit
         )
     }
 }

@@ -28,18 +28,20 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordingScreen(
     navController: NavHostController,
-    viewModel: RecordingViewModel = hiltViewModel()
+    viewModel: RecordingViewModel = hiltViewModel(),
+    drawerState: DrawerState,
+    scope: CoroutineScope
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     val permissionsToRequest = remember {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -66,11 +68,6 @@ fun RecordingScreen(
                         )
                     }
                 }
-            }
-
-            if (!audioGranted) {
-            } else if (audioGranted) {
-                viewModel.startRecording()
             }
         }
     )
@@ -172,7 +169,15 @@ fun RecordingScreen(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = R.string.recording_screen_title)) }
+                title = { Text(stringResource(id = R.string.recording_screen_title)) },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = stringResource(R.string.cd_open_navigation_drawer)
+                        )
+                    }
+                }
             )
         }
     ) { paddingValues ->
@@ -220,8 +225,7 @@ fun RecordingScreen(
                     if (uiState.isRecording) {
                         viewModel.requestStopConfirmation()
                     } else {
-                        val audioGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                        if (audioGranted) {
+                        if (uiState.permissionGranted) {
                             viewModel.startRecording()
                         } else {
                             multiplePermissionsLauncher.launch(permissionsToRequest)

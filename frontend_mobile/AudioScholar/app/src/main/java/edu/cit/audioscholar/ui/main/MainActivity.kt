@@ -6,22 +6,27 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -36,6 +41,9 @@ import edu.cit.audioscholar.ui.onboarding.OnboardingScreen
 import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
+import edu.cit.audioscholar.ui.about.AboutScreen
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
@@ -43,13 +51,18 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Library : Screen("library", R.string.nav_library, Icons.AutoMirrored.Filled.List)
     object Upload : Screen("upload", R.string.nav_upload, Icons.Filled.CloudUpload)
     object Settings : Screen("settings", R.string.nav_settings, Icons.Filled.Settings)
+    object Profile : Screen("profile", R.string.nav_profile, Icons.Filled.AccountCircle)
+    object About : Screen("about", R.string.nav_about, Icons.Filled.Info)
+    object Login : Screen("login", R.string.nav_login, Icons.Filled.Lock)
 }
 
-val bottomNavItems = listOf(
-    Screen.Record,
-    Screen.Library,
-    Screen.Upload,
-    Screen.Settings
+val screensWithDrawer = listOf(
+    Screen.Record.route,
+    Screen.Library.route,
+    Screen.Upload.route,
+    Screen.Settings.route,
+    Screen.Profile.route,
+    Screen.About.route
 )
 
 @AndroidEntryPoint
@@ -167,34 +180,155 @@ class MainActivity : ComponentActivity() {
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppScreen(
     navController: NavHostController,
     startDestination: String,
     onOnboardingComplete: () -> Unit
 ) {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
+    val currentRoute = navBackStackEntry?.destination?.route
 
-    val showBottomBar = bottomNavItems.any { it.route == currentDestination?.route }
+    val gesturesEnabled = currentRoute in screensWithDrawer
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                AppBottomNavigationBar(navController = navController)
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = gesturesEnabled,
+        drawerContent = {
+            ModalDrawerSheet {
+                Column(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_navigation_logo),
+                            contentDescription = stringResource(R.string.cd_app_logo),
+                            modifier = Modifier.size(84.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(id = R.string.app_name),
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 24.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                scope.launch { drawerState.close() }
+                                if (currentRoute != Screen.Profile.route) {
+                                    navController.navigate(Screen.Profile.route) {
+                                        launchSingleTop = true
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        restoreState = true
+                                    }
+                                }
+                                Log.d("DrawerHeader", "Profile section clicked")
+                            }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_navigation_profile_placeholder),
+                            contentDescription = stringResource(R.string.cd_user_avatar),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.drawer_header_user_name),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = stringResource(R.string.drawer_header_user_email),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Divider()
+
+                val mainNavItems = listOf(
+                    Screen.Record,
+                    Screen.Library,
+                    Screen.Upload,
+                    Screen.Settings,
+                    Screen.About
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                mainNavItems.forEach { screen ->
+                    NavigationDrawerItem(
+                        icon = { Icon(screen.icon, contentDescription = null) },
+                        label = { Text(stringResource(screen.labelResId)) },
+                        selected = currentRoute == screen.route,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            if (currentRoute != screen.route) {
+                                navController.navigate(screen.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+                Divider()
+
+                NavigationDrawerItem(
+                    icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
+                    label = { Text(stringResource(R.string.nav_logout)) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        Log.d("DrawerFooter", "Logout clicked - Placeholder Action")
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(navController.graph.id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                Spacer(Modifier.height(12.dp))
+
             }
         }
-    ) { innerPadding ->
-        val navHostModifier = if (showBottomBar) {
-            Modifier.padding(innerPadding)
-        } else {
-            Modifier
-        }
+    ) {
 
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = navHostModifier
+            modifier = Modifier.fillMaxSize()
         ) {
             composable(Screen.Onboarding.route) {
                 OnboardingScreen(
@@ -202,12 +336,18 @@ fun MainAppScreen(
                     onOnboardingComplete = onOnboardingComplete
                 )
             }
-
             composable(Screen.Record.route) {
-                RecordingScreen(navController = navController)
+                RecordingScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
             }
             composable(Screen.Library.route) {
-                LibraryScreen()
+                LibraryScreen(
+                    drawerState = drawerState,
+                    scope = scope
+                )
             }
             composable(Screen.Upload.route) {
                 UploadScreen(
@@ -217,54 +357,113 @@ fun MainAppScreen(
                             launchSingleTop = true
                             restoreState = true
                         }
-                    }
+                    },
+                    drawerState = drawerState,
+                    scope = scope
                 )
             }
             composable(Screen.Settings.route) {
-                SettingsScreenPlaceholder()
+                SettingsScreenPlaceholder(
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Profile.route) {
+                ProfileScreenPlaceholder(
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.About.route) {
+                AboutScreen(navController = navController)
+            }
+            composable(Screen.Login.route) {
+                LoginScreenPlaceholder()
             }
         }
     }
 }
 
-@Composable
-fun AppBottomNavigationBar(navController: NavHostController) {
-    NavigationBar {
-        val navBackStackEntry by navController.currentBackStackEntryAsState()
-        val currentDestination = navBackStackEntry?.destination
 
-        bottomNavItems.forEach { screen ->
-            NavigationBarItem(
-                icon = { Icon(screen.icon, contentDescription = stringResource(screen.labelResId)) },
-                label = { Text(stringResource(screen.labelResId)) },
-                selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                onClick = {
-                    navController.navigate(screen.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(id = Screen.Settings.labelResId)) },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
                     }
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                }
             )
         }
-    }
-}
-
-@Composable
-fun SettingsScreenPlaceholder() {
-    Surface(modifier = Modifier.fillMaxSize()) {
-        Box(contentAlignment = Alignment.Center) {
-            Text("Settings Screen Placeholder")
+    ) { paddingValues ->
+        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("Settings Screen Placeholder")
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProfileScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(id = Screen.Profile.labelResId)) },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("Profile Screen Placeholder")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AboutScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(id = Screen.About.labelResId)) },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("About App Screen Placeholder")
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LoginScreenPlaceholder() {
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(stringResource(id = Screen.Login.labelResId)) }) }
+    ) { paddingValues ->
+        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text("Login Screen Placeholder")
+            }
+        }
+    }
+}

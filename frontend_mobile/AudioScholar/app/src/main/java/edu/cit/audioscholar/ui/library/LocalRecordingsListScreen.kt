@@ -15,6 +15,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -144,13 +145,14 @@ private fun playCloudRecording(
 @Composable
 fun LibraryScreen(
     modifier: Modifier = Modifier,
-    viewModel: LocalRecordingsViewModel = hiltViewModel()
+    viewModel: LocalRecordingsViewModel = hiltViewModel(),
+    drawerState: DrawerState,
+    scope: CoroutineScope
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
 
     val showSnackbar: suspend (String) -> Unit = { message ->
         snackbarHostState.showSnackbar(
@@ -204,6 +206,19 @@ fun LibraryScreen(
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(id = R.string.nav_library)) },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = stringResource(R.string.cd_open_navigation_drawer)
+                        )
+                    }
+                }
+            )
+        }
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {

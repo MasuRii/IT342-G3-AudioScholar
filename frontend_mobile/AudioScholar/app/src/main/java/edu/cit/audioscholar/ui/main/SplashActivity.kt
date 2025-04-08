@@ -73,7 +73,7 @@ class SplashActivity : ComponentActivity() {
                         Screen.Onboarding.route
                     }
 
-                    delay(1500)
+                    delay(500)
 
                     val intent = Intent(this@SplashActivity, MainActivity::class.java).apply {
                         putExtra(EXTRA_START_DESTINATION, targetDestination)

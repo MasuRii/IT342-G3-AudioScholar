@@ -40,7 +40,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private fun formatTimestampMillis(timestampMillis: Long): String {

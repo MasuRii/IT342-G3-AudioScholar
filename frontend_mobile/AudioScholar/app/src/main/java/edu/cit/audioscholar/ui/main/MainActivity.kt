@@ -50,6 +50,8 @@ import edu.cit.audioscholar.ui.upload.UploadScreen
 import edu.cit.audioscholar.ui.about.AboutScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import edu.cit.audioscholar.ui.profile.EditProfileScreen
+import edu.cit.audioscholar.ui.profile.UserProfileScreen
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector) {
@@ -59,6 +61,7 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Upload : Screen("upload", R.string.nav_upload, Icons.Filled.CloudUpload)
     object Settings : Screen("settings", R.string.nav_settings, Icons.Filled.Settings)
     object Profile : Screen("profile", R.string.nav_profile, Icons.Filled.AccountCircle)
+    object EditProfile : Screen("edit_profile", R.string.nav_edit_profile, Icons.Filled.Edit)
     object About : Screen("about", R.string.nav_about, Icons.Filled.Info)
     object Login : Screen("login", R.string.nav_login, Icons.Filled.Lock)
 }
@@ -311,7 +314,6 @@ fun MainAppScreen(
                                         saveState = true
                                     }
                                     launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
                         },
@@ -390,9 +392,15 @@ fun MainAppScreen(
                 )
             }
             composable(Screen.Profile.route) {
-                ProfileScreenPlaceholder(
+                UserProfileScreen(
+                    navController = navController,
                     drawerState = drawerState,
                     scope = scope
+                )
+            }
+            composable(Screen.EditProfile.route) {
+                EditProfileScreen(
+                    navController = navController
                 )
             }
             composable(Screen.About.route) {

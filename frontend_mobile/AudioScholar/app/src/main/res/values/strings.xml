@@ -135,6 +135,20 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Finish</string>
 
+    <string name="edit_profile_firstname_label">First Name</string>
+    <string name="edit_profile_firstname_placeholder">e.g., John</string>
+    <string name="edit_profile_lastname_label">Last Name</string>
+    <string name="edit_profile_lastname_placeholder">e.g., Doe</string>
+    <string name="edit_profile_username_label">Username</string>
+    <string name="edit_profile_username_placeholder">e.g., johndoe99</string>
+    <string name="edit_profile_email_label">Email</string>
+    <string name="edit_profile_error_required">This field is required</string>
+
+    <string name="button_save">Save</string>
+    <string name="edit_profile_name_label">Name</string>
+    <string name="edit_profile_name_error_empty">Name cannot be empty</string>
+    <string name="snackbar_profile_updated">Profile updated successfully</string>
+
     <string name="settings_section_account">Account Settings</string>
     <string name="settings_item_edit_profile">Edit Profile</string>
     <string name="settings_item_change_password">Change Password</string>
@@ -157,6 +171,20 @@
     <string name="settings_item_help_center">Help Center</string>
     <string name="settings_item_privacy_policy">Privacy Policy</string>
     <string name="settings_item_terms_service">Terms of Service</string>
+
+    <string name="cd_edit_avatar">Edit avatar</string>
+    <string name="button_edit_profile">Edit Profile</string>
+    <string name="avatar_option_gallery">Choose from Gallery</string>
+    <string name="avatar_option_take_photo">Take Photo</string>
+    <string name="avatar_option_remove">Remove Photo</string>
+    <string name="snackbar_avatar_editing_soon">Avatar editing coming soon</string>
+
+    <string name="cd_edit_profile">Edit Profile</string>
+    <string name="dialog_logout_title">Log Out?</string>
+    <string name="dialog_logout_message">Are you sure you want to log out?</string>
+    <string name="dialog_logout_confirm">Log Out</string>
+    <string name="nav_edit_profile">Edit Profile</string> // Added for Edit Profile screen title
+    <string name="cd_navigate_back">Navigate back</string>
 
     <string name="settings_section_app_info">App Info</string>
     <string name="settings_item_app_version">App Version</string>

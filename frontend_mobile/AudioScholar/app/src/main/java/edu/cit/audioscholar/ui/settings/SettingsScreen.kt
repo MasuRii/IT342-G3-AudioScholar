@@ -7,6 +7,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
@@ -83,7 +84,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = stringResource(R.string.settings_section_account))
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_edit_profile),
-                onClick = { navController.navigate(Screen.Profile.route) }
+                onClick = { navController.navigate(Screen.EditProfile.route) }
             )
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_change_password),
@@ -100,7 +101,7 @@ fun SettingsScreen(
                 }
             )
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
 
             SettingsSectionHeader(title = stringResource(R.string.settings_section_cloud_sync))
             SettingsItemRow(
@@ -114,7 +115,7 @@ fun SettingsScreen(
                 onClick = { }
             )
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
 
             SettingsSectionHeader(title = stringResource(R.string.settings_section_app_prefs))
             SettingsItemRow(
@@ -123,7 +124,7 @@ fun SettingsScreen(
                 onClick = { showThemeDialog.value = true }
             )
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
 
             SettingsSectionHeader(title = stringResource(R.string.settings_section_audio))
             SettingsItemRow(
@@ -132,7 +133,7 @@ fun SettingsScreen(
                 onClick = { showQualityDialog.value = true }
             )
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
 
             SettingsSectionHeader(title = stringResource(R.string.settings_section_support))
             SettingsItemRow(
@@ -148,7 +149,7 @@ fun SettingsScreen(
                 onClick = { }
             )
 
-            Divider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
+            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
 
             SettingsSectionHeader(title = stringResource(R.string.settings_section_app_info))
             SettingsInfoRow(
@@ -254,7 +255,7 @@ fun SettingsItemRow(
             }
         }
         Icon(
-            imageVector = Icons.Filled.ArrowForwardIos,
+            imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(16.dp)

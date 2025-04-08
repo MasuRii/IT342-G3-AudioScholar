@@ -219,7 +219,7 @@ fun MainAppScreen(
         drawerState = drawerState,
         gesturesEnabled = gesturesEnabled,
         drawerContent = {
-            ModalDrawerSheet {
+            ModalDrawerSheet(modifier = Modifier.width(300.dp)) {
                 Column(
                     modifier = Modifier
                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))

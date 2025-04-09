@@ -69,7 +69,7 @@ class RecordingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
         Log.d("RecordingService", "Service Created")
     }
@@ -283,7 +283,7 @@ class RecordingService : Service() {
                 }
             } finally {
                 withContext(Dispatchers.Main) {
-                    stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
                 if (fileToSave == null || !fileToSave.exists()) {
@@ -324,7 +324,7 @@ class RecordingService : Service() {
             }
 
             withContext(Dispatchers.Main) {
-                stopForeground(Service.STOP_FOREGROUND_REMOVE)
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
             broadcastRecordingCancelled()
@@ -445,7 +445,7 @@ class RecordingService : Service() {
         isPaused = false
         timeWhenPaused = 0L
         serviceScope.launch(Dispatchers.Main) {
-            stopForeground(Service.STOP_FOREGROUND_REMOVE)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
     }

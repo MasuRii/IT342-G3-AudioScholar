@@ -51,6 +51,7 @@ android {
 dependencies {
     implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.22")
     implementation(libs.androidx.lifecycle.runtime.compose)
 
     implementation(libs.google.android.material)

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -22,29 +23,38 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.delay
+import javax.inject.Inject
 
 @SuppressLint("CustomSplashScreen")
+@AndroidEntryPoint
 class SplashActivity : ComponentActivity() {
 
+    @Inject
+    lateinit var prefs: android.content.SharedPreferences
+
     companion object {
-        const val PREFS_NAME = "AudioScholarPrefs"
         const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
+        const val KEY_IS_LOGGED_IN = "is_logged_in"
         const val EXTRA_START_DESTINATION = "start_destination"
         private const val SETTINGS_PREFS_NAME = "audioscholar_settings_prefs"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Log.d("SplashActivity", "onCreate started")
 
-        val onboardingPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val settingsPrefs = getSharedPreferences(SETTINGS_PREFS_NAME, Context.MODE_PRIVATE)
+        val settingsPrefs = getSharedPreferences(SETTINGS_PREFS_NAME, MODE_PRIVATE)
 
-        val isOnboardingComplete = onboardingPrefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+        val isOnboardingComplete = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
+        val isLoggedIn = prefs.getBoolean(KEY_IS_LOGGED_IN, false)
+        Log.d("SplashActivity", "Onboarding Complete: $isOnboardingComplete, Is Logged In: $isLoggedIn")
+
         val savedThemeName = settingsPrefs.getString(SettingsViewModel.PREF_KEY_THEME, ThemeSetting.System.name)
 
         val systemIsDark = resources.configuration.uiMode and
@@ -65,11 +75,12 @@ class SplashActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(Unit) {
-                    val targetDestination = if (isOnboardingComplete) {
-                        Screen.Record.route
-                    } else {
-                        Screen.Onboarding.route
+                    val targetDestination = when {
+                        !isOnboardingComplete -> Screen.Onboarding.route
+                        !isLoggedIn -> Screen.Login.route
+                        else -> Screen.Record.route
                     }
+                    Log.d("SplashActivity", "Determined target destination: $targetDestination")
 
                     delay(500)
 
@@ -77,6 +88,7 @@ class SplashActivity : ComponentActivity() {
                         putExtra(EXTRA_START_DESTINATION, targetDestination)
                         flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
                     }
+                    Log.d("SplashActivity", "Starting MainActivity with intent: $intent")
                     startActivity(intent)
                     finish()
                 }

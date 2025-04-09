@@ -80,10 +80,9 @@ import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
 import kotlinx.coroutines.launch
 
-// Helper function to get filename from Uri
 private fun getFileNameFromUri(contentResolver: ContentResolver, uri: Uri): String? {
     var fileName: String? = null
-    try { // Add try-catch for potential SecurityException or other issues
+    try {
         contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -93,8 +92,7 @@ private fun getFileNameFromUri(contentResolver: ContentResolver, uri: Uri): Stri
             }
         }
     } catch (e: Exception) {
-        Log.e("FileNameHelper", "Error getting filename from URI: $uri", e) // Log usage
-        // Optionally return a default error name or null
+        Log.e("FileNameHelper", "Error getting filename from URI: $uri", e)
         fileName = "Error_Fetching_Name"
     }
     return fileName
@@ -114,39 +112,34 @@ fun RecordingDetailsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = LocalClipboardManager.current
 
-    // --- Activity Result Launcher for File Picker ---
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
             if (uri != null) {
                 val fileName = getFileNameFromUri(contentResolver, uri)
-                viewModel.setAttachedPowerPointFile(fileName) // Pass filename (or null/error) to VM
+                viewModel.setAttachedPowerPointFile(fileName)
             } else {
-                // Optional: Show a message if the user cancelled
                 scope.launch { snackbarHostState.showSnackbar("File selection cancelled.") }
-                viewModel.setAttachedPowerPointFile(null) // Ensure state is cleared if cancelled
+                viewModel.setAttachedPowerPointFile(null)
             }
         }
     )
 
-    // --- Effect to Launch File Picker ---
-    LaunchedEffect(Unit) { // Re-triggers if ViewModel is recreated, which is usually fine
+    LaunchedEffect(Unit) {
         viewModel.triggerFilePicker.collect {
-            // Define the MIME types for PowerPoint files
             val mimeTypes = arrayOf(
-                "application/vnd.ms-powerpoint", // .ppt
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation" // .pptx
+                "application/vnd.ms-powerpoint",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             )
             try {
                 filePickerLauncher.launch(mimeTypes)
             } catch (e: Exception) {
-                Log.e("FilePickerLaunch", "Error launching file picker", e) // Log usage
+                Log.e("FilePickerLaunch", "Error launching file picker", e)
                 scope.launch { snackbarHostState.showSnackbar("Could not open file picker.") }
             }
         }
     }
 
-    // --- Effects for Snackbar and Clipboard ---
     LaunchedEffect(uiState.error) {
         uiState.error?.let { message ->
             scope.launch {
@@ -224,7 +217,6 @@ fun RecordingDetailsScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp)
             ) {
-                // --- Recording Title and Metadata ---
                 Text(
                     text = uiState.title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -254,7 +246,6 @@ fun RecordingDetailsScreen(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- Playback Controls ---
                 Text(stringResource(R.string.details_playback_title), style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -286,7 +277,6 @@ fun RecordingDetailsScreen(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- Summary Section ---
                 Text(stringResource(R.string.details_summary_title), style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 Card(
@@ -346,7 +336,6 @@ fun RecordingDetailsScreen(
                     }
                 }
 
-                // --- AI Notes Section (Conditional) ---
                 if (uiState.summaryStatus == SummaryStatus.READY && uiState.aiNotesText.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider()
@@ -372,7 +361,6 @@ fun RecordingDetailsScreen(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- PowerPoint Section ---
                 Text(stringResource(R.string.details_powerpoint_title), style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
@@ -402,9 +390,9 @@ fun RecordingDetailsScreen(
                     }
                     Button(onClick = {
                         if (currentAttachment == null) {
-                            viewModel.requestAttachPowerPoint() // Trigger the file picker flow
+                            viewModel.requestAttachPowerPoint()
                         } else {
-                            viewModel.detachPowerPoint() // Detach if already attached
+                            viewModel.detachPowerPoint()
                         }
                     }) {
                         val icon = if (currentAttachment == null) Icons.Filled.AttachFile else Icons.Filled.LinkOff
@@ -415,7 +403,6 @@ fun RecordingDetailsScreen(
                     }
                 }
 
-                // --- YouTube Recommendations Section (Conditional) ---
                 if (uiState.summaryStatus == SummaryStatus.READY && uiState.youtubeRecommendations.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider()
@@ -432,12 +419,11 @@ fun RecordingDetailsScreen(
                         }
                     }
                 }
-                Spacer(modifier = Modifier.height(24.dp)) // Bottom padding
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
 
 
-        // --- Delete Confirmation Dialog ---
         if (uiState.showDeleteConfirmation) {
             AlertDialog(
                 onDismissRequest = viewModel::cancelDelete,

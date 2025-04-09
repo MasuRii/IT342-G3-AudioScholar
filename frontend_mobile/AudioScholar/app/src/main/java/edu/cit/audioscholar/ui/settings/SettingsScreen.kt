@@ -30,6 +30,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -56,27 +58,32 @@ fun SettingsScreen(
     scope: CoroutineScope,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
+    LocalContext.current
     val showThemeDialog = remember { mutableStateOf(false) }
     val showQualityDialog = remember { mutableStateOf(false) }
+
+    val selectedTheme by viewModel.selectedTheme.collectAsState()
+    val selectedQuality by viewModel.selectedQuality.collectAsState()
 
     if (showThemeDialog.value) {
         SelectionDialog(
             title = stringResource(R.string.settings_dialog_title_theme),
-            options = ThemeSetting.values().toList(),
-            currentSelection = viewModel.selectedTheme.value,
+            options = ThemeSetting.entries,
+            currentSelection = selectedTheme,
             onSelectionChanged = { viewModel.updateTheme(it) },
-            onDismissRequest = { showThemeDialog.value = false }
+            onDismissRequest = { showThemeDialog.value = false },
+            optionLabel = { theme -> stringResource(id = theme.labelResId) }
         )
     }
 
     if (showQualityDialog.value) {
         SelectionDialog(
             title = stringResource(R.string.settings_dialog_title_quality),
-            options = QualitySetting.values().toList(),
-            currentSelection = viewModel.selectedQuality.value,
+            options = QualitySetting.entries,
+            currentSelection = selectedQuality,
             onSelectionChanged = { viewModel.updateQuality(it) },
-            onDismissRequest = { showQualityDialog.value = false }
+            onDismissRequest = { showQualityDialog.value = false },
+            optionLabel = { quality -> stringResource(id = quality.labelResId) }
         )
     }
 
@@ -108,16 +115,6 @@ fun SettingsScreen(
                 title = stringResource(R.string.settings_item_change_password),
                 onClick = { navController.navigate(Screen.ChangePassword.route) }
             )
-            SettingsItemRow(
-                title = stringResource(R.string.settings_item_logout),
-                onClick = {
-                    scope.launch { drawerState.close() }
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(navController.graph.id) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                }
-            )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
 
@@ -138,7 +135,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = stringResource(R.string.settings_section_app_prefs))
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_theme),
-                subtitle = viewModel.selectedTheme.value.name,
+                subtitle = stringResource(id = selectedTheme.labelResId),
                 onClick = { showThemeDialog.value = true }
             )
 
@@ -147,7 +144,7 @@ fun SettingsScreen(
             SettingsSectionHeader(title = stringResource(R.string.settings_section_audio))
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_recording_quality),
-                subtitle = viewModel.selectedQuality.value.name,
+                subtitle = stringResource(id = selectedQuality.labelResId),
                 onClick = { showQualityDialog.value = true }
             )
 
@@ -187,7 +184,7 @@ fun <T> SelectionDialog(
     currentSelection: T,
     onSelectionChanged: (T) -> Unit,
     onDismissRequest: () -> Unit,
-    optionLabel: @Composable (T) -> String = { it.toString() }
+    optionLabel: @Composable (T) -> String
 ) {
     AlertDialog(
         onDismissRequest = onDismissRequest,
@@ -304,4 +301,3 @@ fun SettingsInfoRow(
         )
     }
 }
-

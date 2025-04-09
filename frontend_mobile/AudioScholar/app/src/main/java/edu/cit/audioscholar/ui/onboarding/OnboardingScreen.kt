@@ -258,7 +258,7 @@ fun OnboardingBottomBar(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                val scope = rememberCoroutineScope()
+                rememberCoroutineScope()
                 if (pagerState.currentPage == ONBOARDING_PAGE_COUNT - 1) {
                     Button(onClick = onFinishClick) {
                         Text(stringResource(R.string.onboarding_finish))

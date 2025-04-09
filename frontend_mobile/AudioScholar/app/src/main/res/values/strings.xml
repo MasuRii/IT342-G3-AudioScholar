@@ -62,6 +62,57 @@
     <string name="nav_login">Login</string>
     <string name="nav_logout">Logout</string>
 
+    <string name="details_summary_copy_button">Copy Summary &amp; Notes</string>
+    <string name="details_ai_notes_title">AI Notes</string>
+    <string name="details_copy_success_message">Copied to clipboard</string>
+    <string name="details_summary_placeholder">Summary will appear here when ready.</string>
+    <string name="details_error_loading">Could not load recording details.</string>
+
+    <string name="nav_change_password">Change Password</string>
+    <string name="settings_current_password">Current Password</string>
+    <string name="settings_new_password">New Password</string>
+    <string name="settings_confirm_new_password">Confirm New Password</string>
+    <string name="settings_password_strength_indicator">Password Strength: %1$s</string>
+    <string name="settings_password_strength_weak">Weak</string>
+    <string name="settings_password_strength_medium">Medium</string>
+    <string name="settings_password_strength_strong">Strong</string>
+    <string name="settings_change_password_button">Change Password</string>
+    <string name="settings_password_validation_length">Minimum 8 characters</string>
+    <string name="settings_password_validation_uppercase">At least 1 uppercase letter</string>
+    <string name="settings_password_validation_lowercase">At least 1 lowercase letter</string>
+    <string name="settings_password_validation_number">At least 1 number</string>
+    <string name="settings_password_validation_special">At least 1 special character (!@#$%^&amp;*())</string>
+    <string name="settings_password_validation_match">Passwords do not match</string>
+    <string name="settings_password_validation_current_mock_error">Incorrect current password (Mock)</string>
+    <string name="settings_password_change_success">Password changed successfully (Mock)</string>
+    <string name="cd_toggle_password_visibility">Toggle password visibility</string>
+
+    <string name="cd_copy_summary_notes">Copy summary and notes</string>
+    <string name="cd_ai_notes_section">AI generated notes section</string>
+    <string name="cd_powerpoint_section">PowerPoint attachment section</string>
+    <string name="cd_youtube_recommendations_section">YouTube recommendations section</string>
+
+    <string name="nav_recording_details">Recording Details</string>
+    <string name="cd_delete_recording_action">Delete recording</string>
+    <string name="details_playback_title">Playback</string>
+    <string name="cd_play_playback">Play recording</string>
+    <string name="cd_pause_playback">Pause recording</string>
+    <string name="details_summary_title">AI Summary</string>
+    <string name="details_summary_status_label">Status:</string>
+    <string name="cd_summary_ready">Summary ready</string>
+    <string name="cd_summary_failed">Summary failed</string>
+    <string name="details_summary_download_button">Download Summary</string>
+    <string name="details_powerpoint_title">PowerPoint Slides</string>
+    <string name="details_powerpoint_none_attached">No slides attached</string>
+    <string name="details_powerpoint_attach_button">Attach</string>
+    <string name="details_powerpoint_detach_button">Detach</string>
+    <string name="details_youtube_title">Related Videos</string>
+    <string name="details_youtube_watch_button">Watch</string>
+    <string name="dialog_delete_title">Delete Recording?</string>
+    <string name="dialog_delete_message_details">Are you sure you want to permanently delete \"%1$s\"?</string>
+    <string name="dialog_action_delete">Delete</string>
+    <string name="dialog_action_cancel">Cancel</string>
+
     <string name="library_tab_local">Local</string>
     <string name="library_tab_cloud">Cloud</string>
     <string name="library_empty_state_local">No local recordings found.\nStart recording from the Record tab!</string>
@@ -69,10 +120,7 @@
     <string name="cd_cloud_recording_indicator">Cloud recording</string>
     <string name="library_empty_state">No recordings found.\nTap the Record tab to make one!</string>
     <string name="cd_delete_recording">Delete recording %1$s</string>
-    <string name="dialog_delete_title">Delete Recording?</string>
     <string name="dialog_delete_message">Are you sure you want to permanently delete \"%1$s\"?</string>
-    <string name="dialog_action_delete">Delete</string>
-    <string name="dialog_action_cancel">Cancel</string>
 
     <string name="default_notification_channel_id" translatable="false">upload_status_channel</string>
     <string name="notification_channel_name_upload">Upload Status</string>

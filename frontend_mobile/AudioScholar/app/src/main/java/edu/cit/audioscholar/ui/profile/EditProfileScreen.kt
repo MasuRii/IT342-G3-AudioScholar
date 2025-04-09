@@ -85,7 +85,7 @@ fun EditProfileScreen(
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    LocalContext.current
     val avatarEditMessage = stringResource(R.string.snackbar_avatar_editing_soon)
 
     val sheetState = rememberModalBottomSheetState()

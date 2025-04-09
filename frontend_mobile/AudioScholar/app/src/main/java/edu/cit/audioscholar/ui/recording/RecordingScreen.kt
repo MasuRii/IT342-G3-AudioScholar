@@ -88,11 +88,11 @@ fun RecordingScreen(
     val multiplePermissionsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
         onResult = { permissionsMap ->
-            val audioGranted = permissionsMap[Manifest.permission.RECORD_AUDIO] ?: false
+            val audioGranted = permissionsMap[Manifest.permission.RECORD_AUDIO] == true
             viewModel.onPermissionResult(granted = audioGranted, permissionType = Manifest.permission.RECORD_AUDIO)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val notificationGranted = permissionsMap[Manifest.permission.POST_NOTIFICATIONS] ?: false
+                val notificationGranted = permissionsMap[Manifest.permission.POST_NOTIFICATIONS] == true
                 viewModel.onPermissionResult(granted = notificationGranted, permissionType = Manifest.permission.POST_NOTIFICATIONS)
                 if (audioGranted && !notificationGranted) {
                     scope.launch {

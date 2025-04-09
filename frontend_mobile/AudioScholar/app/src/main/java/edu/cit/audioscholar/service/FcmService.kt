@@ -57,11 +57,8 @@ class FcmService : FirebaseMessagingService() {
             putExtra(NAVIGATE_TO_EXTRA, navigateTo)
         }
 
-        val pendingIntentFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val pendingIntentFlag =
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
 
         Log.d(tag, "Creating PendingIntent with flags: $pendingIntentFlag. Intent extras: ${intent.extras}")
 
@@ -80,7 +77,7 @@ class FcmService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
 
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
         val notificationId = Random.nextInt()
         notificationManager.notify(notificationId, notificationBuilder.build())

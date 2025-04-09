@@ -21,6 +21,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.core.net.toUri
 
 data class PlaybackState(
     val isPlaying: Boolean = false,
@@ -85,7 +86,7 @@ class PlaybackManager @Inject constructor(
 
         try {
             player = ExoPlayer.Builder(context).build().apply {
-                val mediaItem = MediaItem.fromUri(Uri.parse(filePath))
+                val mediaItem = MediaItem.fromUri(filePath.toUri())
                 setMediaItem(mediaItem)
                 addListener(playerListener)
                 prepare()

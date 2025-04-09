@@ -40,7 +40,7 @@ data class RecordingUiState(
     val recordingSavedMessage: String? = null,
     val showTitleDialog: Boolean = false,
     val notificationPermissionGranted: Boolean = true,
-    val supportsPauseResume: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N,
+    val supportsPauseResume: Boolean = true,
     val showStopConfirmationDialog: Boolean = false,
     val showCancelConfirmationDialog: Boolean = false
 )

@@ -75,6 +75,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import androidx.core.net.toUri
 
 private fun formatTimestampMillis(timestampMillis: Long): String {
     if (timestampMillis <= 0) return "Unknown date"
@@ -160,7 +161,7 @@ private fun playCloudRecording(
 
     try {
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            data = Uri.parse(url)
+            data = url.toUri()
         }
         Log.d("PlayRecording", "Attempting to launch player for cloud URL: $url")
         context.startActivity(intent)

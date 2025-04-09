@@ -21,7 +21,7 @@ class AudioScholarApplication : Application() {
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
             val uploadChannelName = getString(R.string.notification_channel_name_upload)
             val uploadChannelDescription = getString(R.string.notification_channel_desc_upload)

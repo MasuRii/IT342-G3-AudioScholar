@@ -88,7 +88,7 @@ fun SettingsScreen(
             )
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_change_password),
-                onClick = { }
+                onClick = { navController.navigate(Screen.ChangePassword.route) }
             )
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_logout),

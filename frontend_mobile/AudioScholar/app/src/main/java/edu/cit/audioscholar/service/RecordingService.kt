@@ -1,10 +1,13 @@
 package edu.cit.audioscholar.service
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.media.MediaRecorder
-import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
@@ -14,7 +17,14 @@ import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import edu.cit.audioscholar.ui.main.MainActivity
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit

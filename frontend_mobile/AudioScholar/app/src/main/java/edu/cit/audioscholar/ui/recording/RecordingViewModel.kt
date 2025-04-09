@@ -2,7 +2,10 @@ package edu.cit.audioscholar.ui.recording
 
 import android.Manifest
 import android.app.Application
-import android.content.*
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log

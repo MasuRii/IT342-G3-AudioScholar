@@ -1,6 +1,8 @@
 package edu.cit.audioscholar.model;
 
 import com.google.cloud.Timestamp;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 public class AudioMetadata {
@@ -42,8 +44,6 @@ public class AudioMetadata {
         this.storageUrl = storageUrl;
         this.uploadTimestamp = uploadTimestamp;
     }
-
-
 
     public String getId() {
         return id;
@@ -125,6 +125,20 @@ public class AudioMetadata {
         this.uploadTimestamp = uploadTimestamp;
     }
 
+    public Map<String, Object> toMap() {
+        Map<String, Object> map = new HashMap<>();
+        map.put("id", id);
+        map.put("userId", userId);
+        map.put("fileName", fileName);
+        map.put("fileSize", fileSize);
+        map.put("contentType", contentType);
+        map.put("title", title);
+        map.put("description", description);
+        map.put("nhostFileId", nhostFileId);
+        map.put("storageUrl", storageUrl);
+        map.put("uploadTimestamp", uploadTimestamp);
+        return map;
+    }
 
     @Override
     public boolean equals(Object o) {

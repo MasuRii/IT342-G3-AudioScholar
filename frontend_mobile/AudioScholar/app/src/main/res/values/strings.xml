@@ -87,12 +87,38 @@
     <string name="settings_password_change_success">Password changed successfully (Mock)</string>
     <string name="cd_toggle_password_visibility">Toggle password visibility</string>
 
+    <string name="nav_registration">Register</string>
+    <string name="registration_first_name">First Name</string>
+    <string name="registration_last_name">Last Name</string>
+    <string name="registration_email">Email Address</string>
+    <string name="registration_password">Password</string>
+    <string name="registration_confirm_password">Confirm Password</string>
+    <string name="registration_terms_prefix">I agree to the </string>
+    <string name="registration_terms_link">Terms &amp; Conditions</string>
+    <string name="registration_register_button">Register</string>
+    <string name="registration_or_continue_with">Or continue with</string>
+    <string name="registration_login_link">Already have an account? Login</string>
+    <string name="registration_success_message">Registration Successful!</string>
+    <string name="oauth_not_implemented">OAuth login not implemented yet.</string>
+    <string name="cd_show_password">Show password</string>
+    <string name="cd_hide_password">Hide password</string>
+    <string name="error_passwords_do_not_match">Passwords do not match</string>
+    <string name="registration_welcome_message">Create your AudioScholar account</string>
+
+    <string name="password_strength_label">Strength</string>
+    <string name="password_strength_weak">Weak</string>
+    <string name="password_strength_medium">Medium</string>
+    <string name="password_strength_strong">Strong</string>
+
+    <string name="login_go_to_register">Don\'t have an account? Register</string>
+
+    <string name="nav_recording_details">Recording Details</string>
+
     <string name="cd_copy_summary_notes">Copy summary and notes</string>
     <string name="cd_ai_notes_section">AI generated notes section</string>
     <string name="cd_powerpoint_section">PowerPoint attachment section</string>
     <string name="cd_youtube_recommendations_section">YouTube recommendations section</string>
 
-    <string name="nav_recording_details">Recording Details</string>
     <string name="cd_delete_recording_action">Delete recording</string>
     <string name="details_playback_title">Playback</string>
     <string name="cd_play_playback">Play recording</string>

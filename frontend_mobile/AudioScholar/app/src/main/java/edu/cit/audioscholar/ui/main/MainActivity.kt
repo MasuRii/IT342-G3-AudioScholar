@@ -5,9 +5,13 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -16,7 +20,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +33,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -55,6 +60,7 @@ import kotlinx.coroutines.launch
 import edu.cit.audioscholar.ui.profile.EditProfileScreen
 import edu.cit.audioscholar.ui.profile.UserProfileScreen
 import edu.cit.audioscholar.ui.details.RecordingDetailsScreen
+import edu.cit.audioscholar.ui.auth.RegistrationScreen
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
@@ -66,7 +72,8 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Profile : Screen("profile", R.string.nav_profile, Icons.Filled.AccountCircle)
     object EditProfile : Screen("edit_profile", R.string.nav_edit_profile, Icons.Filled.Edit)
     object About : Screen("about", R.string.nav_about, Icons.Filled.Info)
-    object Login : Screen("login", R.string.nav_login, Icons.Filled.Lock)
+    object Login : Screen("login", R.string.nav_login, Icons.AutoMirrored.Filled.Login)
+    object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
 
     object RecordingDetails : Screen("recording_details/{recordingId}", R.string.nav_recording_details) {
@@ -80,7 +87,8 @@ val screensWithDrawer = listOf(
     Screen.Upload.route,
     Screen.Settings.route,
     Screen.Profile.route,
-    Screen.About.route
+    Screen.About.route,
+    Screen.ChangePassword.route
 )
 
 @AndroidEntryPoint
@@ -100,11 +108,11 @@ class MainActivity : ComponentActivity() {
             apply()
         }
         if (::navController.isInitialized) {
-            navController.navigate(Screen.Record.route) {
+            navController.navigate(Screen.Login.route) {
                 popUpTo(Screen.Onboarding.route) { inclusive = true }
                 launchSingleTop = true
             }
-            Log.d("MainActivity", "Onboarding complete. Navigating to Record screen.")
+            Log.d("MainActivity", "Onboarding complete. Navigating to Login screen.")
         } else {
             Log.e("MainActivity", "Onboarding complete called but NavController not ready.")
         }
@@ -115,10 +123,17 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onCreate called. Intent received: $intent")
         logIntentExtras("onCreate", intent)
 
-        val startDestination = intent?.getStringExtra(SplashActivity.EXTRA_START_DESTINATION)
-            ?: Screen.Record.route
+        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, Context.MODE_PRIVATE)
+        val onboardingComplete = splashPrefs.getBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, false)
 
-        Log.d("MainActivity", "Determined start destination: $startDestination")
+        val startDestination = if (!onboardingComplete) {
+            Screen.Onboarding.route
+        } else {
+            intent?.getStringExtra(SplashActivity.EXTRA_START_DESTINATION) ?: Screen.Login.route
+        }
+
+        Log.d("MainActivity", "Onboarding complete: $onboardingComplete. Determined start destination: $startDestination")
+
 
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
@@ -189,9 +204,11 @@ class MainActivity : ComponentActivity() {
         val navigateTo = intent?.getStringExtra(NAVIGATE_TO_EXTRA)
         Log.d("MainActivity", "[handleNavigationIntent] Value from getExtra(NAVIGATE_TO_EXTRA): $navigateTo")
 
-        if (navigateTo == UPLOAD_SCREEN_VALUE) {
-            if (navController.currentDestination?.route != Screen.Upload.route &&
-                navController.currentDestination?.route != Screen.Onboarding.route) {
+        val currentRoute = navController.currentDestination?.route
+        val isAuthScreen = currentRoute == Screen.Login.route || currentRoute == Screen.Registration.route || currentRoute == Screen.Onboarding.route
+
+        if (navigateTo == UPLOAD_SCREEN_VALUE && !isAuthScreen) {
+            if (currentRoute != Screen.Upload.route) {
                 Log.d("MainActivity", "Navigating to Upload screen via intent.")
                 navController.navigate(Screen.Upload.route) {
                     popUpTo(navController.graph.findStartDestination().id) {
@@ -201,11 +218,15 @@ class MainActivity : ComponentActivity() {
                     restoreState = true
                 }
             } else {
-                Log.d("MainActivity", "Already on Upload/Onboarding screen, no navigation needed from intent.")
+                Log.d("MainActivity", "Already on Upload screen, no navigation needed from intent.")
             }
             intent?.removeExtra(NAVIGATE_TO_EXTRA)
-        } else {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to Upload screen.")
+        } else if (navigateTo == UPLOAD_SCREEN_VALUE && isAuthScreen) {
+            Log.d("MainActivity", "Intent requests Upload screen, but currently on Auth/Onboarding. Ignoring.")
+            intent?.removeExtra(NAVIGATE_TO_EXTRA)
+        }
+        else {
+            Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to Upload screen or currently on Auth.")
         }
     }
 }
@@ -323,6 +344,7 @@ fun MainAppScreen(
                                             saveState = true
                                         }
                                         launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             },
@@ -340,7 +362,7 @@ fun MainAppScreen(
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
-                        Log.d("DrawerFooter", "Logout clicked - Placeholder Action")
+                        Log.d("DrawerFooter", "Logout clicked - Navigating to Login")
                         navController.navigate(Screen.Login.route) {
                             popUpTo(navController.graph.id) {
                                 inclusive = true
@@ -356,7 +378,6 @@ fun MainAppScreen(
             }
         }
     ) {
-
         NavHost(
             navController = navController,
             startDestination = startDestination,
@@ -418,7 +439,10 @@ fun MainAppScreen(
                 AboutScreen(navController = navController)
             }
             composable(Screen.Login.route) {
-                LoginScreenPlaceholder()
+                LoginScreenPlaceholder(navController = navController)
+            }
+            composable(Screen.Registration.route) {
+                RegistrationScreen(navController = navController)
             }
             composable(Screen.ChangePassword.route) {
                 edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
@@ -429,95 +453,44 @@ fun MainAppScreen(
                 route = Screen.RecordingDetails.route,
                 arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
             ) { backStackEntry ->
-                    RecordingDetailsScreen(
-                        navController = navController
-                    )
-                }
-            }
-        }
-    }
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(id = Screen.Settings.labelResId ?: R.string.app_name)) },
-                navigationIcon = {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("Settings Screen Placeholder")
+                RecordingDetailsScreen(
+                    navController = navController
+                )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ProfileScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(id = Screen.Profile.labelResId ?: R.string.app_name)) },
-                navigationIcon = {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("Profile Screen Placeholder")
-            }
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(id = Screen.About.labelResId ?: R.string.app_name)) },
-                navigationIcon = {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Box(contentAlignment = Alignment.Center) {
-                Text("About App Screen Placeholder")
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LoginScreenPlaceholder() {
+fun LoginScreenPlaceholder(navController: NavController) {
+    val context = LocalContext.current
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(id = Screen.Login.labelResId ?: R.string.app_name)) }) }
     ) { paddingValues ->
         Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Box(contentAlignment = Alignment.Center) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 Text("Login Screen Placeholder")
+                Spacer(modifier = Modifier.height(20.dp))
+                Button(onClick = { navController.navigate(Screen.Registration.route) }) {
+                    Text(stringResource(R.string.login_go_to_register))
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(onClick = {
+                    Toast.makeText(context, "Mock Login Success", Toast.LENGTH_SHORT).show()
+                    navController.navigate(Screen.Record.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }) {
+                    Text("Mock Login to Record Screen")
+                }
             }
         }
     }
 }
-

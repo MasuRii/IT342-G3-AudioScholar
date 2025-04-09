@@ -295,7 +295,7 @@ class AudioRepositoryImpl @Inject constructor(
                         id = timestampMillis,
                         filePath = filePath,
                         fileName = fileName,
-                        title = titleFromFile ?: baseNameWithTimestamp.replace("_", " "),
+                        title = titleFromFile ?: baseNameWithTimestamp.removePrefix(FILENAME_PREFIX).replace("_", " "),
                         timestampMillis = timestampMillis,
                         durationMillis = if (parsedMetadata != null && parsedMetadata.durationMillis > 0) parsedMetadata.durationMillis else durationMillis
                     )
@@ -316,6 +316,96 @@ class AudioRepositoryImpl @Inject constructor(
         emit(metadataList)
 
     }.flowOn(Dispatchers.IO)
+
+    override fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>> = flow {
+        val file = File(filePath)
+        if (!file.exists() || !file.isFile) {
+            emit(Result.failure(IOException("File not found or is not a valid file: $filePath")))
+            return@flow
+        }
+
+        val fileName = file.name
+        val isSupported = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.any { fileName.endsWith(it, ignoreCase = true) }
+        if (!isSupported) {
+            emit(Result.failure(IOException("Unsupported file type: $fileName")))
+            return@flow
+        }
+
+        val recordingsDir = file.parentFile
+        if (recordingsDir == null) {
+            emit(Result.failure(IOException("Could not determine parent directory for: $filePath")))
+            return@flow
+        }
+
+        val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
+        val retriever = MediaMetadataRetriever()
+        var metadataResult: Result<RecordingMetadata>? = null
+
+        try {
+            val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { fileName.endsWith(it, ignoreCase = true) } ?: ""
+            val baseNameWithTimestamp = fileName.removeSuffix(fileExtension)
+            val timestampString = baseNameWithTimestamp.removePrefix(FILENAME_PREFIX)
+
+            val timestampMillis = try {
+                dateFormat.parse(timestampString)?.time ?: file.lastModified()
+            } catch (e: ParseException) {
+                Log.w(TAG_REPO, "Could not parse timestamp from filename: $fileName", e)
+                file.lastModified()
+            }
+
+            val durationMillis = try {
+                retriever.setDataSource(filePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            } catch (e: Exception) {
+                Log.e(TAG_REPO, "Failed to get duration for file: $fileName", e)
+                0L
+            } finally {
+                try { retriever.release() } catch (e: Exception) { Log.e(TAG_REPO, "Error releasing MediaMetadataRetriever", e) }
+            }
+
+            val jsonFileName = "$baseNameWithTimestamp$FILENAME_EXTENSION_METADATA"
+            val jsonFile = File(recordingsDir, jsonFileName)
+            var titleFromFile: String? = null
+            var parsedMetadata: RecordingMetadata? = null
+
+            if (jsonFile.exists() && jsonFile.isFile) {
+                try {
+                    val jsonContent = jsonFile.readText()
+                    parsedMetadata = gson.fromJson(jsonContent, RecordingMetadata::class.java)
+                    titleFromFile = parsedMetadata?.title
+                    Log.d(TAG_REPO,"Successfully parsed metadata from ${jsonFile.name}")
+                } catch (e: Exception) {
+                    Log.e(TAG_REPO, "Failed to read or parse JSON metadata file: ${jsonFile.name}", e)
+                    try {
+                        if (jsonFile.readText().contains("\"title\"")) {
+                            titleFromFile = jsonFile.readText().split("\"title\":\"")[1].split("\"")[0]
+                            Log.w(TAG_REPO,"Parsed title using fallback string split for ${jsonFile.name}")
+                        }
+                    } catch (splitError: Exception) {
+                        Log.e(TAG_REPO, "Fallback string split for title also failed for ${jsonFile.name}", splitError)
+                    }
+                }
+            }
+
+            val finalMetadata = RecordingMetadata(
+                id = timestampMillis,
+                filePath = filePath,
+                fileName = fileName,
+                title = titleFromFile ?: baseNameWithTimestamp.removePrefix(FILENAME_PREFIX).replace("_", " "),
+                timestampMillis = timestampMillis,
+                durationMillis = if (parsedMetadata != null && parsedMetadata.durationMillis > 0) parsedMetadata.durationMillis else durationMillis
+            )
+            metadataResult = Result.success(finalMetadata)
+
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Error processing file metadata for: $filePath", e)
+            metadataResult = Result.failure(e)
+        }
+
+        emit(metadataResult ?: Result.failure(Exception("Metadata processing failed unexpectedly for $filePath")))
+
+    }.flowOn(Dispatchers.IO)
+
 
     override suspend fun deleteLocalRecording(metadata: RecordingMetadata): Boolean = withContext(Dispatchers.IO) {
         var audioDeleted = false

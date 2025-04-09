@@ -49,6 +49,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
     implementation(libs.androidx.lifecycle.runtime.compose)
 

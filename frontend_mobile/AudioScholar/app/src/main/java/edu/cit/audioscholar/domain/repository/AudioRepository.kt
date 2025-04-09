@@ -13,6 +13,7 @@ sealed class UploadResult {
 }
 
 interface AudioRepository {
+    fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>>
     fun uploadAudioFile(
         fileUri: Uri,
         title: String?,

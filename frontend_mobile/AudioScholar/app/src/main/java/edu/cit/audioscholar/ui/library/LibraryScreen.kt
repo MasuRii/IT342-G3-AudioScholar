@@ -30,10 +30,12 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.TimestampDto
+import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.io.File
@@ -126,7 +128,7 @@ private fun playCloudRecording(
 
     try {
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setData(Uri.parse(url))
+            data = Uri.parse(url)
         }
         Log.d("PlayRecording", "Attempting to launch player for cloud URL: $url")
         context.startActivity(intent)
@@ -145,6 +147,7 @@ private fun playCloudRecording(
 fun LibraryScreen(
     modifier: Modifier = Modifier,
     viewModel: LocalRecordingsViewModel = hiltViewModel(),
+    navController: NavHostController,
     drawerState: DrawerState,
     scope: CoroutineScope
 ) {
@@ -248,7 +251,8 @@ fun LibraryScreen(
                         context = context,
                         scope = scope,
                         showSnackbar = showSnackbar,
-                        onDeleteClick = viewModel::requestDeleteConfirmation
+                        onDeleteClick = viewModel::requestDeleteConfirmation,
+                        navController = navController
                     )
                     1 -> CloudRecordingsTabPage(
                         uiState = uiState,
@@ -269,6 +273,7 @@ fun LocalRecordingsTabPage(
     scope: CoroutineScope,
     showSnackbar: suspend (String) -> Unit,
     onDeleteClick: (RecordingMetadata) -> Unit,
+    navController: NavHostController,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -286,10 +291,8 @@ fun LocalRecordingsTabPage(
                 items(uiState.localRecordings, key = { it.filePath }) { metadata ->
                     LocalRecordingListItem(
                         metadata = metadata,
-                        onItemClick = {
-                            playLocalRecordingExternally(context, it, scope, showSnackbar)
-                        },
-                        onDeleteClick = onDeleteClick
+                        onDeleteClick = onDeleteClick,
+                        navController = navController
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                 }
@@ -336,14 +339,18 @@ fun CloudRecordingsTabPage(
 @Composable
 fun LocalRecordingListItem(
     metadata: RecordingMetadata,
-    onItemClick: (RecordingMetadata) -> Unit,
     onDeleteClick: (RecordingMetadata) -> Unit,
+    navController: NavHostController,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clickable { onItemClick(metadata) }
+            .clickable {
+                val encodedFilePath = Uri.encode(metadata.filePath)
+                navController.navigate(Screen.RecordingDetails.createRoute(encodedFilePath))
+                Log.d("LocalRecordingListItem", "Navigating to details for: $encodedFilePath")
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween

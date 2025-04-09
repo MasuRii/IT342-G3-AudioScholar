@@ -34,7 +34,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
@@ -52,9 +54,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import edu.cit.audioscholar.ui.profile.EditProfileScreen
 import edu.cit.audioscholar.ui.profile.UserProfileScreen
+import edu.cit.audioscholar.ui.details.RecordingDetailsScreen
 import javax.inject.Inject
 
-sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector) {
+sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
     object Record : Screen("record", R.string.nav_record, Icons.Filled.Mic)
     object Library : Screen("library", R.string.nav_library, Icons.AutoMirrored.Filled.List)
@@ -64,6 +67,11 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object EditProfile : Screen("edit_profile", R.string.nav_edit_profile, Icons.Filled.Edit)
     object About : Screen("about", R.string.nav_about, Icons.Filled.Info)
     object Login : Screen("login", R.string.nav_login, Icons.Filled.Lock)
+    object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
+
+    object RecordingDetails : Screen("recording_details/{recordingId}", R.string.nav_recording_details) {
+        fun createRoute(recordingId: String) = "recording_details/$recordingId"
+    }
 }
 
 val screensWithDrawer = listOf(
@@ -289,7 +297,7 @@ fun MainAppScreen(
                     }
                 }
 
-                Divider()
+                HorizontalDivider()
 
                 val mainNavItems = listOf(
                     Screen.Record,
@@ -302,27 +310,29 @@ fun MainAppScreen(
                 Spacer(Modifier.height(12.dp))
 
                 mainNavItems.forEach { screen ->
-                    NavigationDrawerItem(
-                        icon = { Icon(screen.icon, contentDescription = null) },
-                        label = { Text(stringResource(screen.labelResId)) },
-                        selected = currentRoute == screen.route,
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            if (currentRoute != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                    screen.icon?.let { icon ->
+                        NavigationDrawerItem(
+                            icon = { Icon(icon, contentDescription = null) },
+                            label = { Text(stringResource(screen.labelResId)) },
+                            selected = currentRoute == screen.route,
+                            onClick = {
+                                scope.launch { drawerState.close() }
+                                if (currentRoute != screen.route) {
+                                    navController.navigate(screen.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
                                     }
-                                    launchSingleTop = true
                                 }
-                            }
-                        },
-                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                    )
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                        )
+                    }
                 }
 
                 Spacer(Modifier.weight(1f))
-                Divider()
+                HorizontalDivider()
 
                 NavigationDrawerItem(
                     icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
@@ -367,6 +377,7 @@ fun MainAppScreen(
             }
             composable(Screen.Library.route) {
                 LibraryScreen(
+                    navController = navController,
                     drawerState = drawerState,
                     scope = scope
                 )
@@ -409,9 +420,22 @@ fun MainAppScreen(
             composable(Screen.Login.route) {
                 LoginScreenPlaceholder()
             }
+            composable(Screen.ChangePassword.route) {
+                edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
+                    navController = navController
+                )
+            }
+            composable(
+                route = Screen.RecordingDetails.route,
+                arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                    RecordingDetailsScreen(
+                        navController = navController
+                    )
+                }
+            }
         }
     }
-}
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -420,7 +444,7 @@ fun SettingsScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = Screen.Settings.labelResId)) },
+                title = { Text(stringResource(id = Screen.Settings.labelResId ?: R.string.app_name)) },
                 navigationIcon = {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
@@ -443,7 +467,7 @@ fun ProfileScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = Screen.Profile.labelResId)) },
+                title = { Text(stringResource(id = Screen.Profile.labelResId ?: R.string.app_name)) },
                 navigationIcon = {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
@@ -466,7 +490,7 @@ fun AboutScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = Screen.About.labelResId)) },
+                title = { Text(stringResource(id = Screen.About.labelResId ?: R.string.app_name)) },
                 navigationIcon = {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(Icons.Filled.Menu, contentDescription = stringResource(R.string.cd_open_navigation_drawer))
@@ -487,7 +511,7 @@ fun AboutScreenPlaceholder(drawerState: DrawerState, scope: CoroutineScope) {
 @Composable
 fun LoginScreenPlaceholder() {
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(id = Screen.Login.labelResId)) }) }
+        topBar = { TopAppBar(title = { Text(stringResource(id = Screen.Login.labelResId ?: R.string.app_name)) }) }
     ) { paddingValues ->
         Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             Box(contentAlignment = Alignment.Center) {
@@ -496,3 +520,4 @@ fun LoginScreenPlaceholder() {
         }
     }
 }
+

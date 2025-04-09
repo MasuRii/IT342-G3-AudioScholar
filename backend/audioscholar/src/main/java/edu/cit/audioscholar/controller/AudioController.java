@@ -2,6 +2,7 @@ package edu.cit.audioscholar.controller;
 
 import edu.cit.audioscholar.exception.InvalidAudioFileException;
 import edu.cit.audioscholar.model.AudioMetadata;
+import edu.cit.audioscholar.service.AudioProcessingService;
 import edu.cit.audioscholar.service.RecordingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,9 +22,11 @@ public class AudioController {
 
     private static final Logger LOGGER = Logger.getLogger(AudioController.class.getName());
     private final RecordingService recordingService;
+    private final AudioProcessingService audioProcessingService;
 
-    public AudioController(RecordingService recordingService) {
+    public AudioController(RecordingService recordingService, AudioProcessingService audioProcessingService) {
         this.recordingService = recordingService;
+        this.audioProcessingService = audioProcessingService;
     }
 
     @PostMapping("/upload")
@@ -32,7 +35,7 @@ public class AudioController {
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "description", required = false) String description
     ) {
-        String userId = "placeholder_user_id"; // Replace with actual user identification logic
+        String userId = "placeholder_user_id";
         LOGGER.log(Level.INFO, "Using User ID: {0}", userId);
 
         if (file.isEmpty()) {
@@ -67,15 +70,25 @@ public class AudioController {
 
     @GetMapping("/metadata")
     public ResponseEntity<?> getAllMetadata() {
-        // You might want to move this logic to RecordingService as well
-        // For now, I'll leave it as is, assuming AudioProcessingService handles it.
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body("Not implemented yet.");
+        try {
+            List<AudioMetadata> metadataList = audioProcessingService.getAllAudioMetadataList();
+            return ResponseEntity.ok(metadataList);
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.SEVERE, "Error retrieving metadata list: " + e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error retrieving metadata.");
+        }
     }
 
     @DeleteMapping("/metadata/{id}")
     public ResponseEntity<?> deleteMetadata(@PathVariable String id) {
-        // You might want to move this logic to RecordingService as well
-        // For now, I'll leave it as is, assuming AudioProcessingService handles it.
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body("Not implemented yet.");
+        LOGGER.log(Level.INFO, "Received request to delete metadata with ID: {0}", id);
+        boolean success = audioProcessingService.deleteAudioMetadata(id);
+        if (success) {
+             return ResponseEntity.noContent().build();
+        } else {
+            LOGGER.log(Level.WARNING, "Failed to delete metadata with ID: {0}", id);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to delete metadata.");
+        }
     }
 }

@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "edu.cit.audioscholar"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "edu.cit.audioscholar"
@@ -49,7 +49,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer:1.6.0")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
     implementation(libs.androidx.lifecycle.runtime.compose)
 
@@ -72,7 +72,7 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("androidx.compose.ui:ui-text-google-fonts:1.6.7")
+    implementation("androidx.compose.ui:ui-text-google-fonts:1.7.8")
 
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
@@ -85,12 +85,12 @@ dependencies {
     implementation(libs.logging.interceptor)
 
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
-    implementation("com.google.firebase:firebase-analytics")
-    implementation(platform("com.google.firebase:firebase-bom:32.7.4"))
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-analytics-ktx")
-    implementation ("androidx.core:core:1.13.1")
-    implementation ("androidx.core:core-ktx:1.13.1")
+    implementation(libs.firebase.analytics)
+    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
+    implementation(libs.firebase.messaging.ktx)
+    implementation(libs.firebase.analytics.ktx)
+    implementation ("androidx.core:core-ktx:1.15.0")
+    implementation (libs.androidx.core.ktx.v1150)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

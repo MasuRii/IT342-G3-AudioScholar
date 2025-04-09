@@ -56,7 +56,7 @@ fun SettingsScreen(
     scope: CoroutineScope,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
+    LocalContext.current
     val showThemeDialog = remember { mutableStateOf(false) }
     val showQualityDialog = remember { mutableStateOf(false) }
 

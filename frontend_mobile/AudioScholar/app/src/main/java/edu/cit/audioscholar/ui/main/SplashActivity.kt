@@ -41,8 +41,8 @@ class SplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val onboardingPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val settingsPrefs = getSharedPreferences(SETTINGS_PREFS_NAME, Context.MODE_PRIVATE)
+        val onboardingPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val settingsPrefs = getSharedPreferences(SETTINGS_PREFS_NAME, MODE_PRIVATE)
 
         val isOnboardingComplete = onboardingPrefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
         val savedThemeName = settingsPrefs.getString(SettingsViewModel.PREF_KEY_THEME, ThemeSetting.System.name)

@@ -59,7 +59,7 @@ fun UploadScreen(
     scope: CoroutineScope
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
+    LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     val filePickerLauncher = rememberLauncherForActivityResult(

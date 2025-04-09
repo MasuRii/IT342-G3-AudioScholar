@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
-        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, Context.MODE_PRIVATE)
+        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, MODE_PRIVATE)
         with(splashPrefs.edit()) {
             putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true)
             apply()
@@ -155,7 +155,7 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onCreate called. Intent received: $intent")
         logIntentExtras("onCreate", intent)
 
-        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, Context.MODE_PRIVATE)
+        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, MODE_PRIVATE)
         val onboardingComplete = splashPrefs.getBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, false)
 
         val startDestination = if (!onboardingComplete) {

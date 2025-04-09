@@ -170,7 +170,6 @@ class MainActivity : ComponentActivity() {
             }
         Log.d("MainActivity", "Using start destination determined by SplashActivity (or fallback): $startDestination")
 
-
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
                 Log.w("MainActivity", "Fetching FCM registration token failed", task.exception)

@@ -1,5 +1,6 @@
 [versions]
 agp = "8.3.2"
+coreKtxVersion = "1.15.0"
 kotlin = "2.1.0"
 hilt = "2.56"
 
@@ -28,6 +29,7 @@ gson = "2.10.1"
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 
+androidx-core-ktx-v1150 = { module = "androidx.core:core-ktx", version.ref = "coreKtxVersion" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
@@ -45,6 +47,9 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 
+firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
+firebase-messaging-ktx = { module = "com.google.firebase:firebase-messaging-ktx" }
+firebase-analytics-ktx = { module = "com.google.firebase:firebase-analytics-ktx" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }

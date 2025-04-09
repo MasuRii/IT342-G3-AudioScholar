@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import edu.cit.audioscholar.R
+import androidx.core.net.toUri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -278,7 +279,7 @@ private fun DeveloperProfile(
 private fun getAppVersion(context: Context): String {
     return try {
         val packageInfo: PackageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-        packageInfo.versionName
+        packageInfo.versionName ?: "N/A"
     } catch (e: PackageManager.NameNotFoundException) {
         "N/A"
     }
@@ -290,7 +291,7 @@ private fun launchEmailIntent(context: Context) {
     val body = context.getString(R.string.about_contact_email_body)
 
     val intent = Intent(Intent.ACTION_SENDTO).apply {
-        data = Uri.parse("mailto:")
+        data = "mailto:".toUri()
         putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
         putExtra(Intent.EXTRA_SUBJECT, subject)
         putExtra(Intent.EXTRA_TEXT, body)

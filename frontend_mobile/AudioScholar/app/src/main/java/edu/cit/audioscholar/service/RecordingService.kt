@@ -165,11 +165,6 @@ class RecordingService : Service() {
             broadcastError("Cannot pause: Not recording or already paused.")
             return
         }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            Log.w("RecordingService", "Pause requires Android N (API 24) or higher.")
-            broadcastError("Pause/Resume requires Android N (API 24) or higher.")
-            return
-        }
 
         try {
             mediaRecorder?.pause()
@@ -191,11 +186,6 @@ class RecordingService : Service() {
         if (mediaRecorder == null || !isPaused) {
             Log.w("RecordingService", "Resume called but not recording or not paused.")
             broadcastError("Cannot resume: Not recording or not paused.")
-            return
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            Log.w("RecordingService", "Resume requires Android N (API 24) or higher.")
-            broadcastError("Pause/Resume requires Android N (API 24) or higher.")
             return
         }
 
@@ -229,7 +219,7 @@ class RecordingService : Service() {
         val finalDuration = calculateElapsedTime()
         val fileToSave = currentRecordingFile
 
-        if (isPaused && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        if (isPaused && true) {
             try {
                 mediaRecorder?.resume()
                 Log.d("RecordingService", "Briefly resumed before stopping.")
@@ -393,11 +383,9 @@ class RecordingService : Service() {
             builder.setContentTitle(getString(R.string.notification_title_paused))
 
         } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                val pauseIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_PAUSE_RECORDING }
-                val pausePendingIntent = PendingIntent.getService(this, 3, pauseIntent, pendingIntentFlags)
-                builder.addAction(R.drawable.pause_circle_24px, getString(R.string.notification_action_pause), pausePendingIntent)
-            }
+            val pauseIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_PAUSE_RECORDING }
+            val pausePendingIntent = PendingIntent.getService(this, 3, pauseIntent, pendingIntentFlags)
+            builder.addAction(R.drawable.pause_circle_24px, getString(R.string.notification_action_pause), pausePendingIntent)
 
             val stopIntent = Intent(this, RecordingService::class.java).apply { action = ACTION_STOP_RECORDING }
             val stopPendingIntent = PendingIntent.getService(this, 4, stopIntent, pendingIntentFlags)

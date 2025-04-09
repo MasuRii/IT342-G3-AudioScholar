@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.PersonAdd
@@ -41,6 +42,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -81,6 +83,7 @@ import edu.cit.audioscholar.R
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
+import edu.cit.audioscholar.ui.auth.LoginScreen
 import edu.cit.audioscholar.ui.auth.RegistrationScreen
 import edu.cit.audioscholar.ui.details.RecordingDetailsScreen
 import edu.cit.audioscholar.ui.library.LibraryScreen
@@ -134,8 +137,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
-        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, MODE_PRIVATE)
-        with(splashPrefs.edit()) {
+        with(prefs.edit()) {
             putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true)
             apply()
         }
@@ -155,17 +157,18 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onCreate called. Intent received: $intent")
         logIntentExtras("onCreate", intent)
 
-        val splashPrefs = getSharedPreferences(SplashActivity.PREFS_NAME, MODE_PRIVATE)
-        val onboardingComplete = splashPrefs.getBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, false)
-
-        val startDestination = if (!onboardingComplete) {
-            Screen.Onboarding.route
-        } else {
-            intent?.getStringExtra(SplashActivity.EXTRA_START_DESTINATION) ?: Screen.Login.route
-        }
-
-        Log.d("MainActivity", "Onboarding complete: $onboardingComplete. Determined start destination: $startDestination")
-
+        val startDestination = intent?.getStringExtra(SplashActivity.EXTRA_START_DESTINATION)
+            ?: run {
+                Log.w("MainActivity", "Missing EXTRA_START_DESTINATION from SplashActivity! Using fallback logic.")
+                val isOnboardingComplete = prefs.getBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, false)
+                val isLoggedIn = prefs.getBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
+                when {
+                    !isOnboardingComplete -> Screen.Onboarding.route
+                    !isLoggedIn -> Screen.Login.route
+                    else -> Screen.Record.route
+                }
+            }
+        Log.d("MainActivity", "Using start destination determined by SplashActivity (or fallback): $startDestination")
 
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
@@ -196,7 +199,8 @@ class MainActivity : ComponentActivity() {
                 MainAppScreen(
                     navController = navController,
                     startDestination = startDestination,
-                    onOnboardingComplete = onOnboardingCompleteAction
+                    onOnboardingComplete = onOnboardingCompleteAction,
+                    prefs = prefs
                 )
             }
         }
@@ -269,7 +273,8 @@ class MainActivity : ComponentActivity() {
 fun MainAppScreen(
     navController: NavHostController,
     startDestination: String,
-    onOnboardingComplete: () -> Unit
+    onOnboardingComplete: () -> Unit,
+    prefs: SharedPreferences
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -394,7 +399,13 @@ fun MainAppScreen(
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
-                        Log.d("DrawerFooter", "Logout clicked - Navigating to Login")
+                        Log.d("DrawerFooter", "Logout clicked - Clearing login state and Navigating to Login")
+
+                        with(prefs.edit()) {
+                            putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
+                            apply()
+                        }
+
                         navController.navigate(Screen.Login.route) {
                             popUpTo(navController.graph.id) {
                                 inclusive = true
@@ -406,121 +417,90 @@ fun MainAppScreen(
                 )
 
                 Spacer(Modifier.height(12.dp))
-
             }
         }
     ) {
-        NavHost(
-            navController = navController,
-            startDestination = startDestination,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            composable(Screen.Onboarding.route) {
-                OnboardingScreen(
-                    modifier = Modifier.fillMaxSize(),
-                    onOnboardingComplete = onOnboardingComplete
-                )
-            }
-            composable(Screen.Record.route) {
-                RecordingScreen(
-                    navController = navController,
-                    drawerState = drawerState,
-                    scope = scope
-                )
-            }
-            composable(Screen.Library.route) {
-                LibraryScreen(
-                    navController = navController,
-                    drawerState = drawerState,
-                    scope = scope
-                )
-            }
-            composable(Screen.Upload.route) {
-                UploadScreen(
-                    onNavigateToRecording = {
-                        navController.navigate(Screen.Record.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    drawerState = drawerState,
-                    scope = scope
-                )
-            }
-            composable(Screen.Settings.route) {
-                edu.cit.audioscholar.ui.settings.SettingsScreen(
-                    navController = navController,
-                    drawerState = drawerState,
-                    scope = scope
-                )
-            }
-            composable(Screen.Profile.route) {
-                UserProfileScreen(
-                    navController = navController,
-                    drawerState = drawerState,
-                    scope = scope
-                )
-            }
-            composable(Screen.EditProfile.route) {
-                EditProfileScreen(
-                    navController = navController
-                )
-            }
-            composable(Screen.About.route) {
-                AboutScreen(navController = navController)
-            }
-            composable(Screen.Login.route) {
-                LoginScreenPlaceholder(navController = navController)
-            }
-            composable(Screen.Registration.route) {
-                RegistrationScreen(navController = navController)
-            }
-            composable(Screen.ChangePassword.route) {
-                edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
-                    navController = navController
-                )
-            }
-            composable(
-                route = Screen.RecordingDetails.route,
-                arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                RecordingDetailsScreen(
-                    navController = navController
-                )
-            }
-        }
-    }
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LoginScreenPlaceholder(navController: NavController) {
-    val context = LocalContext.current
-    Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(id = Screen.Login.labelResId ?: R.string.app_name)) }) }
-    ) { paddingValues ->
-        Surface(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+        Scaffold { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = startDestination,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                Text("Login Screen Placeholder")
-                Spacer(modifier = Modifier.height(20.dp))
-                Button(onClick = { navController.navigate(Screen.Registration.route) }) {
-                    Text(stringResource(R.string.login_go_to_register))
+                composable(Screen.Onboarding.route) {
+                    OnboardingScreen(
+                        modifier = Modifier.fillMaxSize(),
+                        onOnboardingComplete = onOnboardingComplete
+                    )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(onClick = {
-                    Toast.makeText(context, "Mock Login Success", Toast.LENGTH_SHORT).show()
-                    navController.navigate(Screen.Record.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                        launchSingleTop = true
-                    }
-                }) {
-                    Text("Mock Login to Record Screen")
+                composable(Screen.Record.route) {
+                    RecordingScreen(
+                        navController = navController,
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+                composable(Screen.Library.route) {
+                    LibraryScreen(
+                        navController = navController,
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+                composable(Screen.Upload.route) {
+                    UploadScreen(
+                        onNavigateToRecording = {
+                            navController.navigate(Screen.Record.route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+                composable(Screen.Settings.route) {
+                    edu.cit.audioscholar.ui.settings.SettingsScreen(
+                        navController = navController,
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+                composable(Screen.Profile.route) {
+                    UserProfileScreen(
+                        navController = navController,
+                        drawerState = drawerState,
+                        scope = scope
+                    )
+                }
+                composable(Screen.EditProfile.route) {
+                    EditProfileScreen(
+                        navController = navController
+                    )
+                }
+                composable(Screen.About.route) {
+                    AboutScreen(navController = navController)
+                }
+                composable(Screen.Login.route) {
+                    LoginScreen(navController = navController)
+                }
+                composable(Screen.Registration.route) {
+                    RegistrationScreen(navController = navController)
+                }
+                composable(Screen.ChangePassword.route) {
+                    edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
+                        navController = navController
+                    )
+                }
+                composable(
+                    route = Screen.RecordingDetails.route,
+                    arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
+                ) { backStackEntry ->
+                    RecordingDetailsScreen(
+                        navController = navController
+                    )
                 }
             }
         }

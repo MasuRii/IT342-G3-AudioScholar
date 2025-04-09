@@ -23,7 +23,7 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val BASE_URL = "http://192.168.254.100:8080/"
-    private const val PREFS_NAME = "audioscholar_settings_prefs"
+    private const val PREFS_NAME = "AudioScholarPrefs"
 
     @Provides
     @Singleton

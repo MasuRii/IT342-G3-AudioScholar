@@ -10,14 +10,13 @@ import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.domain.repository.AudioRepository
 import edu.cit.audioscholar.service.PlaybackManager
-import edu.cit.audioscholar.service.PlaybackState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach

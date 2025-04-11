@@ -1,8 +1,5 @@
 package edu.cit.audioscholar.service;
 
-import com.google.cloud.firestore.DocumentReference;
-import com.google.cloud.firestore.Firestore;
-import com.google.firebase.cloud.FirestoreClient;
 import edu.cit.audioscholar.model.User;
 import org.springframework.stereotype.Service;
 

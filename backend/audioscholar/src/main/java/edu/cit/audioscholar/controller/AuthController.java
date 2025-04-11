@@ -1,7 +1,5 @@
 package edu.cit.audioscholar.controller;
 
-import edu.cit.audioscholar.dto.JwtAuthenticationResponse;
-import edu.cit.audioscholar.security.JwtTokenProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +10,9 @@ import org.springframework.security.oauth2.client.authentication.OAuth2Authentic
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import edu.cit.audioscholar.dto.JwtAuthenticationResponse;
+import edu.cit.audioscholar.security.JwtTokenProvider;
 
 @RestController
 @RequestMapping("/api/auth")

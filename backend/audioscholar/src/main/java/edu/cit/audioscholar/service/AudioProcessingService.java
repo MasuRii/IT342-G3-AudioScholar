@@ -31,12 +31,6 @@ public class AudioProcessingService {
     @Autowired
     private NhostStorageService nhostStorageService;
 
-    @Autowired(required = false)
-    private RecordingService recordingService;
-
-    @Autowired(required = false)
-    private SummaryService summaryService;
-
 
     public AudioMetadata uploadAndSaveMetadata(MultipartFile file, String title, String description, String userId)
             throws IOException, ExecutionException, InterruptedException {
@@ -67,23 +61,34 @@ public class AudioProcessingService {
         return savedMetadata;
     }
 
-
     public List<AudioMetadata> getAllAudioMetadataList() throws ExecutionException, InterruptedException {
+        LOGGER.log(Level.WARNING, "Fetching ALL audio metadata. Consider restricting access.");
         return firebaseService.getAllAudioMetadata();
     }
+
+    public List<AudioMetadata> getAudioMetadataListForUser(String userId) throws ExecutionException, InterruptedException {
+        LOGGER.log(Level.INFO, "Fetching audio metadata list for user ID: {0}", userId);
+        return firebaseService.getAudioMetadataByUserId(userId);
+    }
+
+     public AudioMetadata getAudioMetadataById(String metadataId) throws ExecutionException, InterruptedException {
+         LOGGER.log(Level.INFO, "Fetching audio metadata by ID: {0}", metadataId);
+         return firebaseService.getAudioMetadataById(metadataId);
+     }
 
 
     public boolean deleteAudioMetadata(String metadataId) {
         try {
+
             firebaseService.deleteData(firebaseService.getAudioMetadataCollectionName(), metadataId);
             LOGGER.log(Level.INFO, "Deleted AudioMetadata from Firestore with ID: {0}", metadataId);
             return true;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
-            LOGGER.log(Level.SEVERE, "Error deleting audio metadata from Firestore: " + e.getMessage(), e);
+            LOGGER.log(Level.SEVERE, "Error deleting audio metadata from Firestore: " + metadataId, e);
             return false;
         } catch (Exception e) {
-             LOGGER.log(Level.SEVERE, "Unexpected error deleting audio metadata: " + e.getMessage(), e);
+             LOGGER.log(Level.SEVERE, "Unexpected error deleting audio metadata: " + metadataId, e);
             return false;
         }
     }
@@ -92,7 +97,7 @@ public class AudioProcessingService {
     public Summary processAndSummarize(byte[] audioData, MultipartFile fileInfo, String userId) throws Exception {
         LOGGER.log(Level.INFO, "Starting processAndSummarize for file: {0}", fileInfo.getOriginalFilename());
 
-        AudioMetadata metadata = uploadAndSaveMetadata(fileInfo, "", "", userId);
+        AudioMetadata metadata = uploadAndSaveMetadata(fileInfo, fileInfo.getOriginalFilename(), "", userId);
 
         if (metadata == null || metadata.getId() == null) {
             throw new IllegalStateException("Metadata not saved correctly in Firestore for file: " + fileInfo.getOriginalFilename());

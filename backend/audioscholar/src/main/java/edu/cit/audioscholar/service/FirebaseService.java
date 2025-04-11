@@ -16,6 +16,7 @@ import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.cloud.FirestoreClient;
@@ -39,6 +40,7 @@ public class FirebaseService {
     private Firestore getFirestore() {
         return FirestoreClient.getFirestore();
     }
+
 
     public String saveData(String collection, String document, Map<String, Object> data)
             throws ExecutionException, InterruptedException {
@@ -84,11 +86,14 @@ public class FirebaseService {
     }
 
 
+
     public AudioMetadata saveAudioMetadata(AudioMetadata metadata) throws ExecutionException, InterruptedException {
         Firestore firestore = getFirestore();
         CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
 
-        ApiFuture<DocumentReference> future = colRef.add(convertToMap(metadata));
+        Map<String, Object> dataMap = convertToMap(metadata);
+
+        ApiFuture<DocumentReference> future = colRef.add(dataMap);
         String generatedId = future.get().getId();
         metadata.setId(generatedId);
 
@@ -113,6 +118,42 @@ public class FirebaseService {
         LOGGER.log(Level.INFO, "Retrieved {0} AudioMetadata documents from Firestore.", audioMetadataList.size());
         return audioMetadataList;
     }
+
+    public List<AudioMetadata> getAudioMetadataByUserId(String userId) throws ExecutionException, InterruptedException {
+        Firestore firestore = getFirestore();
+        Query query = firestore.collection(audioMetadataCollectionName).whereEqualTo("userId", userId);
+        ApiFuture<QuerySnapshot> future = query.get();
+        List<AudioMetadata> userMetadataList = new ArrayList<>();
+
+        for (DocumentSnapshot document : future.get().getDocuments()) {
+            if (document.exists()) {
+                AudioMetadata metadata = document.toObject(AudioMetadata.class);
+                metadata.setId(document.getId());
+                userMetadataList.add(metadata);
+            }
+        }
+        LOGGER.log(Level.INFO, "Retrieved {0} AudioMetadata documents for user ID: {1}",
+                   new Object[]{userMetadataList.size(), userId});
+        return userMetadataList;
+    }
+
+    public AudioMetadata getAudioMetadataById(String metadataId) throws ExecutionException, InterruptedException {
+        Firestore firestore = getFirestore();
+        DocumentReference docRef = firestore.collection(audioMetadataCollectionName).document(metadataId);
+        ApiFuture<DocumentSnapshot> future = docRef.get();
+        DocumentSnapshot document = future.get();
+
+        if (document.exists()) {
+            AudioMetadata metadata = document.toObject(AudioMetadata.class);
+            metadata.setId(document.getId());
+            LOGGER.log(Level.INFO, "Retrieved AudioMetadata document with ID: {0}", metadataId);
+            return metadata;
+        } else {
+            LOGGER.log(Level.WARNING, "No AudioMetadata document found with ID: {0}", metadataId);
+            return null;
+        }
+    }
+
 
     private Map<String, Object> convertToMap(AudioMetadata metadata) {
         Map<String, Object> map = new HashMap<>();

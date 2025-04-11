@@ -2,7 +2,6 @@ package edu.cit.audioscholar.controller;
 
 import java.util.Map;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,8 +20,7 @@ public class GeminiController {
 
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
-
-    @Autowired
+    
     public GeminiController(GeminiService geminiService, ObjectMapper objectMapper) {
         this.geminiService = geminiService;
         this.objectMapper = objectMapper;

@@ -1,7 +1,10 @@
 package edu.cit.audioscholar.config;
 
-import edu.cit.audioscholar.security.JwtTokenProvider;
-import edu.cit.audioscholar.service.OAuth2LoginSuccessHandler;
+import java.util.Arrays;
+import java.util.List;
+
+import javax.crypto.SecretKey;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,15 +19,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.header.writers.ContentSecurityPolicyHeaderWriter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import javax.crypto.SecretKey;
-import java.util.Arrays;
-import java.util.List;
+import edu.cit.audioscholar.security.JwtTokenProvider;
+import edu.cit.audioscholar.service.OAuth2LoginSuccessHandler;
 
 @Configuration
 @EnableWebSecurity

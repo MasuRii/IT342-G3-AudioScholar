@@ -1,5 +1,9 @@
 package edu.cit.audioscholar.model;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -8,9 +12,17 @@ import java.util.Objects;
 
 public class User {
     private String userId;
+
+    @NotBlank(message = "Email cannot be blank")
+    @Email(message = "Invalid email format")
     private String email;
+
+    @NotBlank(message = "Display name cannot be blank")
+    @Size(min = 1, max = 100, message = "Display name must be between 1 and 100 characters")
     private String displayName;
+
     private String profileImageUrl;
+
     private String provider;
     private String providerId;
     private List<String> roles;
@@ -21,6 +33,8 @@ public class User {
         this.recordingIds = new ArrayList<>();
         this.favoriteRecordingIds = new ArrayList<>();
         this.roles = new ArrayList<>();
+        if (this.roles.isEmpty()) {
+        }
     }
 
     public User(String userId, String email, String displayName, String provider, String providerId) {
@@ -50,13 +64,19 @@ public class User {
     public String getProviderId() { return providerId; }
     public void setProviderId(String providerId) { this.providerId = providerId; }
 
-    public List<String> getRoles() { return roles; }
+    public List<String> getRoles() {
+        return roles == null ? new ArrayList<>() : roles;
+     }
     public void setRoles(List<String> roles) { this.roles = roles; }
 
-    public List<String> getRecordingIds() { return recordingIds; }
+    public List<String> getRecordingIds() {
+        return recordingIds == null ? new ArrayList<>() : recordingIds;
+     }
     public void setRecordingIds(List<String> recordingIds) { this.recordingIds = recordingIds; }
 
-    public List<String> getFavoriteRecordingIds() { return favoriteRecordingIds; }
+    public List<String> getFavoriteRecordingIds() {
+        return favoriteRecordingIds == null ? new ArrayList<>() : favoriteRecordingIds;
+     }
     public void setFavoriteRecordingIds(List<String> favoriteRecordingIds) { this.favoriteRecordingIds = favoriteRecordingIds; }
 
     public Map<String, Object> toMap() {

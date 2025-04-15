@@ -13,7 +13,7 @@ public class Recording {
     private Date updatedAt;
     private String duration;
     private String summaryId;
-    private String fileName; // Added fileName field
+    private String fileName;
 
     public Recording() {
         this.createdAt = new Date();
@@ -28,7 +28,6 @@ public class Recording {
         this.audioUrl = audioUrl;
     }
 
-    // Getters and setters
     public String getRecordingId() { return recordingId; }
     public void setRecordingId(String recordingId) { this.recordingId = recordingId; }
 
@@ -53,7 +52,6 @@ public class Recording {
     public String getSummaryId() { return summaryId; }
     public void setSummaryId(String summaryId) { this.summaryId = summaryId; }
 
-    // Getter and Setter for fileName
     public String getFileName() {
         return fileName;
     }
@@ -63,7 +61,6 @@ public class Recording {
     }
 
 
-    // Convert to Firestore document
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
         map.put("recordingId", recordingId);
@@ -74,11 +71,10 @@ public class Recording {
         map.put("updatedAt", updatedAt);
         map.put("duration", duration);
         map.put("summaryId", summaryId);
-        map.put("fileName", fileName); // Added fileName to the map
+        map.put("fileName", fileName);
         return map;
     }
 
-    // Create from Firestore document
     public static Recording fromMap(Map<String, Object> map) {
         Recording recording = new Recording();
         recording.recordingId = (String) map.get("recordingId");
@@ -89,7 +85,7 @@ public class Recording {
         recording.updatedAt = ((com.google.cloud.Timestamp) map.get("updatedAt")).toDate();
         recording.duration = (String) map.get("duration");
         recording.summaryId = (String) map.get("summaryId");
-        recording.fileName = (String) map.get("fileName"); // Retrieve fileName from the map
+        recording.fileName = (String) map.get("fileName");
         return recording;
     }
 }

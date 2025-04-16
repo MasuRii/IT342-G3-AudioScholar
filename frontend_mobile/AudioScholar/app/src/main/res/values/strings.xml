@@ -109,6 +109,19 @@
     <string name="settings_password_validation_special_1">At least one special character</string>
     <string name="settings_change_password_header">Secure Your Account</string>
 
+    <string name="cd_email_icon">Email Icon</string>
+    <string name="cd_password_icon">Password Icon</string>
+
+    <string name="notification_title_starting">Starting Recording…</string>
+    <string name="notification_title_processing">Processing command…</string>
+
+    <string name="cd_close_multi_select">Close selection mode</string>
+    <string name="cd_select_all">Select all</string>
+    <string name="cd_deselect_all">Deselect all</string>
+    <string name="cd_delete_selected">Delete selected items</string>
+    <string name="dialog_multi_delete_title">Delete Recordings</string>
+    <string name="dialog_multi_delete_message">Delete %d selected recordings? This cannot be undone.</string>
+
     <string name="nav_registration">Register</string>
     <string name="registration_first_name">First Name</string>
     <string name="registration_last_name">Last Name</string>

@@ -79,6 +79,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.foundation.clickable
 
 private fun getFileNameFromUri(contentResolver: ContentResolver, uri: Uri): String? {
     var fileName: String? = null
@@ -217,11 +227,52 @@ fun RecordingDetailsScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp)
             ) {
-                Text(
-                    text = uiState.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
+                val focusRequester = remember { FocusRequester() }
+                val focusManager = LocalFocusManager.current
+
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    if (uiState.isEditingTitle) {
+                        BasicTextField(
+                            value = uiState.editableTitle,
+                            onValueChange = viewModel::onTitleChanged,
+                            textStyle = MaterialTheme.typography.headlineSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = LocalContentColor.current
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    viewModel.onTitleSaveRequested()
+                                    focusManager.clearFocus()
+                                }
+                            ),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { focusState ->
+                                }
+                        )
+                        LaunchedEffect(Unit) {
+                            focusRequester.requestFocus()
+                        }
+                    } else {
+                        Text(
+                            text = uiState.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    onClick = viewModel::onTitleEditRequested,
+                                )
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -356,7 +407,6 @@ fun RecordingDetailsScreen(
                     }
                 }
 
-
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -422,7 +472,6 @@ fun RecordingDetailsScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }
-
 
         if (uiState.showDeleteConfirmation) {
             AlertDialog(

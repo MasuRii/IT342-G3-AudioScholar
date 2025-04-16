@@ -238,7 +238,9 @@ fun RegistrationScreen(
                                 Toast.makeText(context, "T&C Clicked (Placeholder)", Toast.LENGTH_SHORT).show()
                             }
                     },
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 )
             }
 

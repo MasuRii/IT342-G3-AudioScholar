@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 data class LibraryUiState(
@@ -22,17 +25,30 @@ data class LibraryUiState(
     val localRecordings: List<RecordingMetadata> = emptyList(),
     val cloudRecordings: List<AudioMetadataDto> = emptyList(),
     val error: String? = null,
-    val recordingToDelete: RecordingMetadata? = null,
-    val hasAttemptedCloudLoad: Boolean = false
+    val hasAttemptedCloudLoad: Boolean = false,
+
+    val isMultiSelectActive: Boolean = false,
+    val selectedRecordingIds: Set<String> = emptySet(),
+    val showMultiDeleteConfirmation: Boolean = false
 )
 
 @HiltViewModel
-class LocalRecordingsViewModel @Inject constructor(
+class LibraryViewModel @Inject constructor(
     private val audioRepository: AudioRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
+
+    val areAllLocalRecordingsSelected: StateFlow<Boolean> = uiState
+        .map { state ->
+            state.localRecordings.isNotEmpty() && state.selectedRecordingIds.size == state.localRecordings.size
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
 
     init {
         loadLocalRecordings()
@@ -126,27 +142,92 @@ class LocalRecordingsViewModel @Inject constructor(
     }
 
 
-    fun requestDeleteConfirmation(metadata: RecordingMetadata) {
-        _uiState.update { it.copy(recordingToDelete = metadata) }
+    fun enterMultiSelectMode(initialFilePath: String) {
+        _uiState.update {
+            it.copy(
+                isMultiSelectActive = true,
+                selectedRecordingIds = setOf(initialFilePath)
+            )
+        }
+        Log.d("LocalRecordingsVM", "Entered multi-select mode, selected: $initialFilePath")
     }
 
-    fun cancelDelete() {
-        _uiState.update { it.copy(recordingToDelete = null) }
+    fun exitMultiSelectMode() {
+        _uiState.update {
+            it.copy(
+                isMultiSelectActive = false,
+                selectedRecordingIds = emptySet()
+            )
+        }
+        Log.d("LocalRecordingsVM", "Exited multi-select mode")
     }
 
-    fun confirmDelete() {
-        val recording = _uiState.value.recordingToDelete ?: return
-        _uiState.update { it.copy(recordingToDelete = null, isLoadingLocal = true) }
+    fun toggleSelection(filePath: String) {
+        _uiState.update { currentState ->
+            val currentSelection = currentState.selectedRecordingIds
+            val newSelection = if (currentSelection.contains(filePath)) {
+                currentSelection - filePath
+            } else {
+                currentSelection + filePath
+            }
+            val exitMode = newSelection.isEmpty() && currentState.isMultiSelectActive
+            currentState.copy(
+                selectedRecordingIds = newSelection,
+                isMultiSelectActive = !exitMode
+            )
+        }
+        Log.d("LocalRecordingsVM", "Toggled selection for: $filePath. New selection size: ${_uiState.value.selectedRecordingIds.size}")
+    }
+
+    fun selectAllLocal() {
+        _uiState.update { currentState ->
+            val allIds = currentState.localRecordings.map { it.filePath }.toSet()
+            currentState.copy(selectedRecordingIds = allIds)
+        }
+        Log.d("LocalRecordingsVM", "Selected all ${_uiState.value.selectedRecordingIds.size} local recordings.")
+    }
+
+    fun deselectAllLocal() {
+        _uiState.update { it.copy(selectedRecordingIds = emptySet()) }
+        Log.d("LocalRecordingsVM", "Deselected all local recordings.")
+    }
+
+    fun requestMultiDeleteConfirmation() {
+        if (_uiState.value.selectedRecordingIds.isNotEmpty()) {
+            _uiState.update { it.copy(showMultiDeleteConfirmation = true) }
+            Log.d("LocalRecordingsVM", "Requested multi-delete confirmation for ${_uiState.value.selectedRecordingIds.size} items.")
+        } else {
+            Log.w("LocalRecordingsVM", "Multi-delete requested but no items selected.")
+        }
+    }
+
+    fun cancelMultiDelete() {
+        _uiState.update { it.copy(showMultiDeleteConfirmation = false) }
+        Log.d("LocalRecordingsVM", "Cancelled multi-delete confirmation.")
+    }
+
+    fun confirmMultiDelete() {
+        val idsToDelete = _uiState.value.selectedRecordingIds.toList()
+        if (idsToDelete.isEmpty()) {
+            _uiState.update { it.copy(showMultiDeleteConfirmation = false) }
+            return
+        }
+
+        _uiState.update { it.copy(showMultiDeleteConfirmation = false, isLoadingLocal = true) }
+        Log.d("LocalRecordingsVM", "Confirming multi-delete for ${idsToDelete.size} items.")
 
         viewModelScope.launch {
-            val success = audioRepository.deleteLocalRecording(recording)
+            val success = audioRepository.deleteLocalRecordings(idsToDelete)
             if (success) {
+                Log.i("LocalRecordingsVM", "Multi-delete successful via repository.")
+                _uiState.update { it.copy(isMultiSelectActive = false, selectedRecordingIds = emptySet()) }
                 loadLocalRecordings()
             } else {
+                Log.e("LocalRecordingsVM", "Multi-delete failed via repository.")
                 _uiState.update {
                     it.copy(
                         isLoadingLocal = false,
-                        error = "Failed to delete '${recording.fileName}'"
+                        error = "Failed to delete some or all selected recordings."
                     )
                 }
             }

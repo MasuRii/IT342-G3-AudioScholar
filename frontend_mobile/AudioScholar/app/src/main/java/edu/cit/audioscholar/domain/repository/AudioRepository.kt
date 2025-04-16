@@ -23,6 +23,9 @@ interface AudioRepository {
     fun getLocalRecordings(): Flow<List<RecordingMetadata>>
 
     suspend fun deleteLocalRecording(metadata: RecordingMetadata): Boolean
+    suspend fun deleteLocalRecordings(filePaths: List<String>): Boolean
 
     fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>>
+
+    suspend fun updateRecordingTitle(filePath: String, newTitle: String): Boolean
 }

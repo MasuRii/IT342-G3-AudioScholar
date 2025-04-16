@@ -109,13 +109,43 @@ class RecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d("RecordingService", "onStartCommand received: ${intent?.action}")
-        when (intent?.action) {
+        val action = intent?.action
+
+        if (action == null) {
+            Log.w("RecordingService", "Received null action. Stopping service.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        val initialNotification = createNotification(
+            when {
+                action == ACTION_START_RECORDING -> getString(R.string.notification_title_starting)
+                isPaused -> getString(R.string.notification_title_paused)
+                mediaRecorder != null || audioRecord != null -> formatElapsedTime(calculateElapsedTime())
+                else -> getString(R.string.notification_title_processing)
+            }
+        )
+        try {
+            createNotificationChannel()
+            startForeground(NOTIFICATION_ID, initialNotification)
+            Log.d("RecordingService", "Ensured startForeground() is called early for action: $action")
+        } catch (e: Exception) {
+            Log.e("RecordingService", "Error calling startForeground in onStartCommand: ${e.message}", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        when (action) {
             ACTION_START_RECORDING -> startRecording()
             ACTION_STOP_RECORDING -> stopRecording()
             ACTION_PAUSE_RECORDING -> pauseRecording()
             ACTION_RESUME_RECORDING -> resumeRecording()
             ACTION_CANCEL_RECORDING -> cancelRecording()
-            else -> Log.w("RecordingService", "Received unknown or null action: ${intent?.action}")
+            else -> {
+                Log.w("RecordingService", "Received unknown action: $action. Stopping service.")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
         return START_NOT_STICKY
     }
@@ -123,6 +153,7 @@ class RecordingService : Service() {
     private fun startRecording() {
         if (mediaRecorder != null || audioRecord != null) {
             Log.w("RecordingService", "Start recording called but already recording.")
+            updateNotification(formatElapsedTime(calculateElapsedTime()))
             broadcastError("Recording already in progress.")
             return
         }
@@ -142,6 +173,7 @@ class RecordingService : Service() {
             var recorderInstance: MediaRecorder? = null
             var audioRecordInstance: AudioRecord? = null
             var success = false
+            var outputFile: File? = null
 
             try {
                 audioRecordBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
@@ -172,57 +204,64 @@ class RecordingService : Service() {
                     MediaRecorder()
                 }
 
-                recordingFileHandler.setupMediaRecorderOutputFile(recorderInstance)
-                    .onSuccess { outputFile ->
-                        Log.d("RecordingService", "File handler setup successful.")
-                        mediaRecorder = recorderInstance
-                        currentRecordingFile = outputFile
+                val fileResult = recordingFileHandler.setupMediaRecorderOutputFile(recorderInstance)
+                if (fileResult.isFailure) {
+                    throw fileResult.exceptionOrNull() ?: IOException("Unknown error setting up output file")
+                }
+                outputFile = fileResult.getOrThrow()
 
-                        recorderInstance.prepare()
-                        Log.d("RecordingService", "MediaRecorder prepared.")
-                        recorderInstance.start()
-                        Log.d("RecordingService", "MediaRecorder started.")
+                Log.d("RecordingService", "File handler setup successful.")
+                mediaRecorder = recorderInstance
+                currentRecordingFile = outputFile
 
-                        audioRecordInstance.startRecording()
-                        if (audioRecordInstance.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
-                            throw IOException("AudioRecord failed to start recording. State: ${audioRecordInstance.recordingState}")
-                        }
-                        Log.d("RecordingService", "AudioRecord started recording.")
-                        startAudioReadingLoop()
+                recorderInstance.prepare()
+                Log.d("RecordingService", "MediaRecorder prepared.")
+                recorderInstance.start()
+                Log.d("RecordingService", "MediaRecorder started.")
 
-                        recordingStartTime = System.currentTimeMillis()
-                        startForeground(NOTIFICATION_ID, createNotification(formatElapsedTime(0L)))
-                        startTimer()
-                        broadcastStatusUpdate(isRecording = true, isPaused = false, elapsedTimeMillis = 0L, amplitude = 0f)
-                        Log.d("RecordingService", "Recording started successfully. File: ${outputFile.absolutePath}")
-                        success = true
-                    }
-                    .onFailure { exception ->
-                        handleError("Failed to setup recording file: ${exception.message}", exception)
-                        releaseAudioRecord()
-                        recorderInstance?.release()
-                        mediaRecorder = null
-                    }
+                audioRecordInstance.startRecording()
+                if (audioRecordInstance.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                    throw IOException("AudioRecord failed to start recording. State: ${audioRecordInstance.recordingState}")
+                }
+                Log.d("RecordingService", "AudioRecord started recording.")
+                startAudioReadingLoop()
+
+                recordingStartTime = System.currentTimeMillis()
+
+                updateNotification(formatElapsedTime(0L))
+
+                startTimer()
+                broadcastStatusUpdate(isRecording = true, isPaused = false, elapsedTimeMillis = 0L, amplitude = 0f)
+                Log.d("RecordingService", "Recording started successfully. File: ${outputFile?.absolutePath}")
+                success = true
 
             } catch (e: SecurityException) {
                 handleError("Security error during recording setup. Check permissions.", e)
                 releaseAudioRecord()
                 recorderInstance?.release()
+                mediaRecorder = null
             } catch (e: IOException) {
                 handleError("MediaRecorder/AudioRecord setup failed (IO): ${e.message}", e)
                 releaseAudioRecord()
                 recorderInstance?.release()
+                mediaRecorder = null
             } catch (e: IllegalStateException) {
                 handleError("MediaRecorder/AudioRecord state error during start: ${e.message}", e)
                 releaseAudioRecord()
                 recorderInstance?.release()
+                mediaRecorder = null
             } catch (e: Exception) {
                 handleError("An unexpected error occurred during startRecording: ${e.message}", e)
                 releaseAudioRecord()
                 recorderInstance?.release()
+                mediaRecorder = null
             } finally {
                 if (!success) {
                     Log.w("RecordingService", "Start recording failed, stopping service.")
+                    outputFile?.delete()
+                    currentRecordingFile = null
+                    releaseAudioRecord()
+                    releaseMediaRecorder()
                     withContext(Dispatchers.Main) {
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()

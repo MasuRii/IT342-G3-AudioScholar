@@ -14,8 +14,14 @@ import edu.cit.audioscholar.dto.AudioProcessingMessage;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.ProcessingStatus;
+import edu.cit.audioscholar.model.Summary;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 @Service
@@ -27,6 +33,7 @@ public class AudioSummarizationListenerService {
     private final NhostStorageService nhostStorageService;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
+    private static final Pattern KEY_POINT_PATTERN = Pattern.compile("^\\s*([*\\-]|\\d+\\.)\\s+(.*)", Pattern.MULTILINE);
 
 
     public AudioSummarizationListenerService(FirebaseService firebaseService,
@@ -61,13 +68,22 @@ public class AudioSummarizationListenerService {
             }
             log.info("[{}] Found metadata. Current status: {}", metadataId, metadata.getStatus());
 
-            if (metadata.getStatus() != ProcessingStatus.PENDING && metadata.getStatus() != ProcessingStatus.UPLOADED) {
-                 log.warn("[{}] Status is not PENDING or UPLOADED (Current: {}). Skipping processing.", metadataId, metadata.getStatus());
+            if (metadata.getStatus() == ProcessingStatus.COMPLETED || metadata.getStatus() == ProcessingStatus.FAILED) {
+                 log.warn("[{}] Status is already final ({}). Skipping processing.", metadataId, metadata.getStatus());
+                 return;
+            }
+            if (metadata.getStatus() != ProcessingStatus.PENDING && metadata.getStatus() != ProcessingStatus.UPLOADED && metadata.getStatus() != ProcessingStatus.PROCESSING) {
+                 log.warn("[{}] Status is not PENDING, UPLOADED, or PROCESSING (Current: {}). Skipping processing.", metadataId, metadata.getStatus());
                  return;
             }
 
-            log.info("[{}] Updating status to PROCESSING.", metadataId);
-            firebaseService.updateAudioMetadataStatus(metadataId, ProcessingStatus.PROCESSING);
+            if (metadata.getStatus() != ProcessingStatus.PROCESSING) {
+                log.info("[{}] Updating status to PROCESSING.", metadataId);
+                firebaseService.updateAudioMetadataStatus(metadataId, ProcessingStatus.PROCESSING);
+            } else {
+                 log.info("[{}] Resuming processing (status already PROCESSING).", metadataId);
+            }
+
 
             log.info("[{}] Downloading audio from Nhost file ID: {}", metadataId, metadata.getNhostFileId());
             String base64Audio = nhostStorageService.downloadFileAsBase64(metadata.getNhostFileId());
@@ -87,17 +103,25 @@ public class AudioSummarizationListenerService {
             handleGeminiResponse(metadata, geminiResponseString);
 
         } catch (FirestoreInteractionException e) {
-            log.error("[{}] Firestore error during processing.", metadataId, e);
-            updateStatusToFailed(metadataId, "Firestore interaction failed during processing.");
+            log.error("[{}] Firestore error during processing setup (e.g., initial status update or fetch).", metadataId, e);
+            if (metadataId != null) {
+                updateStatusToFailed(metadataId, "Firestore interaction failed during processing setup.");
+            }
         } catch (IOException e) {
             log.error("[{}] I/O error (likely Nhost download/encoding).", metadataId, e);
-            updateStatusToFailed(metadataId, "Audio download or encoding failed.");
+            if (metadataId != null) {
+                updateStatusToFailed(metadataId, "Audio download or encoding failed.");
+            }
         } catch (RuntimeException e) {
-            log.error("[{}] Runtime error during processing.", metadataId, e);
-            updateStatusToFailed(metadataId, "Processing runtime error: " + e.getMessage());
+            log.error("[{}] Runtime error during processing setup.", metadataId, e);
+            if (metadataId != null) {
+                updateStatusToFailed(metadataId, "Processing setup runtime error: " + e.getMessage());
+            }
         } catch (Exception e) {
-            log.error("[{}] Unexpected error during processing.", metadataId, e);
-            updateStatusToFailed(metadataId, "Unexpected processing error: " + e.getMessage());
+            log.error("[{}] Unexpected error during processing setup.", metadataId, e);
+            if (metadataId != null) {
+                updateStatusToFailed(metadataId, "Unexpected processing setup error: " + e.getMessage());
+            }
         }
     }
 
@@ -106,7 +130,7 @@ public class AudioSummarizationListenerService {
          if (metadata.getTitle() != null && !metadata.getTitle().isBlank()) {
               prompt += ", titled '" + metadata.getTitle() + "'";
          }
-         prompt += ". Structure the summary clearly.";
+         prompt += ". Structure the summary clearly. Use Markdown formatting, including bullet points (*) or numbered lists for key points/action items.";
          return prompt;
     }
 
@@ -128,22 +152,45 @@ public class AudioSummarizationListenerService {
                  log.info("[{}] Successfully received raw summary text from Gemini.", metadataId);
                  log.debug("[{}] Raw summary text: {}", metadataId, rawSummaryText.substring(0, Math.min(rawSummaryText.length(), 200)) + "...");
 
+                 Summary structuredSummary = null;
                  try {
-                     log.info("[{}] Proceeding with summary structuring, formatting, and saving...", metadataId);
+                     log.info("[{}] Structuring summary...", metadataId);
+                     structuredSummary = new Summary();
+                     structuredSummary.setSummaryId(UUID.randomUUID().toString());
+                     structuredSummary.setRecordingId(metadataId);
+                     structuredSummary.setFullText(rawSummaryText);
+                     List<String> keyPoints = new ArrayList<>();
+                     Matcher matcher = KEY_POINT_PATTERN.matcher(rawSummaryText);
+                     while (matcher.find()) {
+                         keyPoints.add(matcher.group(2).trim());
+                     }
+                     structuredSummary.setKeyPoints(keyPoints);
+                     structuredSummary.setCondensedSummary(null);
+                     structuredSummary.setTopics(new ArrayList<>());
+                     log.info("[{}] Summary structured. Found {} potential key points.", metadataId, keyPoints.size());
 
+                     log.info("[{}] Formatting summary as Markdown...", metadataId);
+                     String formattedMarkdown = formatSummaryAsMarkdown(structuredSummary);
+                     structuredSummary.setFormattedSummaryText(formattedMarkdown);
+                     log.info("[{}] Summary formatted successfully.", metadataId);
+                     log.debug("[{}] Formatted Markdown Summary (first 200 chars): {}", metadataId, formattedMarkdown.substring(0, Math.min(formattedMarkdown.length(), 200)) + "...");
+                     log.debug("[{}] Final Structured & Formatted Summary object: {}", metadataId, structuredSummary.toMap());
 
+                     log.info("[{}] Attempting to save summary (ID: {}) to Firestore...", metadataId, structuredSummary.getSummaryId());
+                     firebaseService.saveSummary(structuredSummary);
+                     log.info("[{}] Summary (ID: {}) saved successfully.", metadataId, structuredSummary.getSummaryId());
 
-                     String formattedSummary = rawSummaryText;
-
-                     log.warn("[{}] PLACEHOLDER: Summary saving logic not yet implemented.", metadataId);
-
-                     log.info("[{}] Summary processing complete. Updating status to COMPLETED.", metadataId);
+                     log.info("[{}] Updating AudioMetadata status to COMPLETED.", metadataId);
                      firebaseService.updateAudioMetadataStatus(metadataId, ProcessingStatus.COMPLETED);
-                     log.info("[{}] Status successfully updated to COMPLETED.", metadataId);
+                     log.info("[{}] AudioMetadata status successfully updated to COMPLETED.", metadataId);
 
+
+                 } catch (RuntimeException e) {
+                     log.error("[{}] Error during summary post-processing (structuring/formatting/saving/status update).", metadataId, e);
+                     updateStatusToFailed(metadataId, "Failed during summary post-processing: " + e.getMessage());
                  } catch (Exception e) {
-                      log.error("[{}] Error during summary post-processing (structuring/formatting/saving).", metadataId, e);
-                      updateStatusToFailed(metadataId, "Failed during summary post-processing: " + e.getMessage());
+                     log.error("[{}] Unexpected checked exception during summary post-processing.", metadataId, e);
+                     updateStatusToFailed(metadataId, "Unexpected checked exception during summary post-processing: " + e.getMessage());
                  }
 
              } else {
@@ -156,6 +203,35 @@ public class AudioSummarizationListenerService {
          }
     }
 
+    private String formatSummaryAsMarkdown(Summary summary) {
+        StringBuilder markdownBuilder = new StringBuilder();
+
+        if (summary.getFullText() != null && !summary.getFullText().isBlank()) {
+            markdownBuilder.append(summary.getFullText().trim());
+            markdownBuilder.append("\n\n");
+        } else {
+             log.warn("[{}] Full text for summary ID {} is empty or null during formatting.", summary.getRecordingId(), summary.getSummaryId());
+        }
+
+        List<String> keyPoints = summary.getKeyPoints();
+        if (keyPoints != null && !keyPoints.isEmpty()) {
+            boolean alreadyListed = summary.getFullText() != null &&
+                                    keyPoints.stream().allMatch(kp -> summary.getFullText().contains(" " + kp));
+
+            if (!alreadyListed) {
+                 markdownBuilder.append("## Key Points\n\n");
+                 for (String point : keyPoints) {
+                     markdownBuilder.append("* ").append(point).append("\n");
+                 }
+                 markdownBuilder.append("\n");
+            } else {
+                 log.debug("[{}] Key points seem to be already included in the full text for summary ID {}. Skipping explicit list generation.", summary.getRecordingId(), summary.getSummaryId());
+            }
+        }
+        return markdownBuilder.toString().trim();
+    }
+
+
     private void updateStatusToFailed(String metadataId, String reason) {
         if (metadataId == null) {
             log.error("[AMQP Listener] Cannot update status to FAILED: metadataId is null.");
@@ -163,8 +239,15 @@ public class AudioSummarizationListenerService {
         }
         log.warn("[{}] Attempting to set status to FAILED. Reason: {}", metadataId, reason);
         try {
-            firebaseService.updateAudioMetadataStatus(metadataId, ProcessingStatus.FAILED);
-            log.info("[{}] Status successfully updated to FAILED.", metadataId);
+            AudioMetadata currentMeta = firebaseService.getAudioMetadataById(metadataId);
+            if (currentMeta != null && currentMeta.getStatus() != ProcessingStatus.COMPLETED) {
+                 firebaseService.updateAudioMetadataStatus(metadataId, ProcessingStatus.FAILED);
+                 log.info("[{}] Status successfully updated to FAILED.", metadataId);
+            } else if (currentMeta == null) {
+                 log.error("[{}] Cannot update status to FAILED as metadata could not be retrieved.", metadataId);
+            } else {
+                 log.warn("[{}] Status is already COMPLETED. Not updating to FAILED.", metadataId);
+            }
         } catch (RuntimeException e) {
             log.error("[{}] CRITICAL: Failed to update status to FAILED after processing error. Manual intervention likely required.", metadataId, e);
         }

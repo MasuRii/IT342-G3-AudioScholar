@@ -1,6 +1,7 @@
 package edu.cit.audioscholar.service;
 
 import edu.cit.audioscholar.model.ProcessingStatus;
+import edu.cit.audioscholar.model.Summary;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,10 +34,14 @@ public class FirebaseService {
 
     private static final Logger log = LoggerFactory.getLogger(FirebaseService.class);
     private final String audioMetadataCollectionName;
+    private final String summariesCollectionName;
     private static final int DEFAULT_PAGE_SIZE = 20;
 
-    public FirebaseService(@Value("${firebase.firestore.collection.audiometadata}") String audioMetadataCollectionName) {
+    public FirebaseService(
+            @Value("${firebase.firestore.collection.audiometadata}") String audioMetadataCollectionName,
+            @Value("${firebase.firestore.collection.summaries}") String summariesCollectionName) {
         this.audioMetadataCollectionName = audioMetadataCollectionName;
+        this.summariesCollectionName = summariesCollectionName;
     }
 
     public String getAudioMetadataCollectionName() {
@@ -46,7 +51,6 @@ public class FirebaseService {
     private Firestore getFirestore() {
         return FirestoreClient.getFirestore();
     }
-
 
     public String saveData(String collection, String document, Map<String, Object> data) {
         try {
@@ -122,7 +126,6 @@ public class FirebaseService {
             throw new FirestoreInteractionException("Error querying collection in Firestore", e);
         }
     }
-
 
     public AudioMetadata saveAudioMetadata(AudioMetadata metadata) {
         try {
@@ -255,6 +258,31 @@ public class FirebaseService {
             Thread.currentThread().interrupt();
             log.error("Error retrieving AudioMetadata document by ID: {}", metadataId, e);
             throw new FirestoreInteractionException("Failed to retrieve AudioMetadata by ID " + metadataId, e);
+        }
+    }
+
+    public void saveSummary(Summary summary) throws FirestoreInteractionException {
+        if (summary == null || summary.getSummaryId() == null || summary.getSummaryId().isEmpty()) {
+            log.error("Cannot save summary with null object or empty summaryId.");
+            throw new IllegalArgumentException("Summary object and summaryId cannot be null or empty.");
+        }
+        String summaryId = summary.getSummaryId();
+        String recordingId = summary.getRecordingId();
+        log.info("[{}] Attempting to save summary with ID: {} to collection: {}", recordingId, summaryId, summariesCollectionName);
+        try {
+            Firestore firestore = getFirestore();
+            DocumentReference docRef = firestore.collection(summariesCollectionName).document(summaryId);
+            Map<String, Object> dataMap = summary.toMap();
+            ApiFuture<WriteResult> future = docRef.set(dataMap);
+            future.get();
+            log.info("[{}] Successfully saved summary with ID: {} to Firestore.", recordingId, summaryId);
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[{}] Error saving summary with ID: {} to Firestore.", recordingId, summaryId, e);
+            throw new FirestoreInteractionException("Failed to save summary " + summaryId, e);
+        } catch (Exception e) {
+             log.error("[{}] Unexpected error saving summary with ID: {}", recordingId, summaryId, e);
+             throw new FirestoreInteractionException("Unexpected error saving summary " + summaryId, e);
         }
     }
 

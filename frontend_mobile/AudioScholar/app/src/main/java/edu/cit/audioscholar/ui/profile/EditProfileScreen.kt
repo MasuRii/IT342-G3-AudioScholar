@@ -22,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -212,13 +214,16 @@ fun EditProfileScreen(
                 },
                 label = { Text(stringResource(R.string.edit_profile_firstname_label)) },
                 placeholder = { Text(stringResource(R.string.edit_profile_firstname_placeholder)) },
-                singleLine = true, isError = firstNameError,
+                singleLine = true,
+                isError = firstNameError,
                 supportingText = { if (firstNameError) Text(stringResource(R.string.edit_profile_error_required)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(16.dp))
+
             OutlinedTextField(
                 value = lastName,
                 onValueChange = {
@@ -227,15 +232,18 @@ fun EditProfileScreen(
                 },
                 label = { Text(stringResource(R.string.edit_profile_lastname_label)) },
                 placeholder = { Text(stringResource(R.string.edit_profile_lastname_placeholder)) },
-                singleLine = true, isError = lastNameError,
+                singleLine = true,
+                isError = lastNameError,
                 supportingText = { if (lastNameError) Text(stringResource(R.string.edit_profile_error_required)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(lastNameFocusRequester)
             )
             Spacer(modifier = Modifier.height(16.dp))
+
             OutlinedTextField(
                 value = username,
                 onValueChange = {
@@ -244,28 +252,31 @@ fun EditProfileScreen(
                 },
                 label = { Text(stringResource(R.string.edit_profile_username_label)) },
                 placeholder = { Text(stringResource(R.string.edit_profile_username_placeholder)) },
-                singleLine = true, isError = usernameError,
+                singleLine = true,
+                isError = usernameError,
                 supportingText = { if (usernameError) Text(stringResource(R.string.edit_profile_error_required)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .focusRequester(usernameFocusRequester)
             )
             Spacer(modifier = Modifier.height(16.dp))
+
             OutlinedTextField(
                 value = email,
                 onValueChange = { },
                 label = { Text(stringResource(R.string.edit_profile_email_label)) },
-                readOnly = true, enabled = false,
+                readOnly = true,
+                enabled = false,
+                leadingIcon = { Icon(Icons.Outlined.Email, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
-                    disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                    disabledBorderColor = MaterialTheme.colorScheme.outline,
-                    disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    disabledLeadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
             )
             Spacer(modifier = Modifier.height(24.dp))

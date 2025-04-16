@@ -20,9 +20,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,10 +49,16 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.navigation.NavController
 import edu.cit.audioscholar.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AboutScreen(navController: NavController) {
+fun AboutScreen(
+    navController: NavController,
+    drawerState: DrawerState,
+    scope: CoroutineScope
+) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val scrollState = rememberScrollState()
@@ -61,10 +69,12 @@ fun AboutScreen(navController: NavController) {
             TopAppBar(
                 title = { Text(stringResource(id = R.string.about_screen_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
+                    IconButton(onClick = {
+                        scope.launch { drawerState.open() }
+                    }) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.cd_back_button)
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = stringResource(R.string.cd_open_navigation_drawer)
                         )
                     }
                 },
@@ -301,3 +311,4 @@ private fun launchEmailIntent(context: Context) {
         android.util.Log.e("AboutScreen", "Could not launch email intent", e)
     }
 }
+

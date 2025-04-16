@@ -471,7 +471,11 @@ fun MainAppScreen(
                     )
                 }
                 composable(Screen.About.route) {
-                    AboutScreen(navController = navController)
+                    AboutScreen(
+                        navController = navController,
+                        drawerState = drawerState,
+                        scope = scope
+                    )
                 }
                 composable(Screen.Login.route) {
                     LoginScreen(navController = navController)

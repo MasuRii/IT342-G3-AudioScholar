@@ -3,8 +3,10 @@ package edu.cit.audioscholar.data.repository
 import android.app.Application
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.util.Log
+import androidx.annotation.RequiresApi
 import com.google.gson.Gson
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
@@ -465,9 +467,8 @@ class AudioRepositoryImpl @Inject constructor(
             }
         }
 
-        return@withContext audioDeleted
+        return@withContext audioDeleted && jsonDeletedOrNotFound
     }
-
 
     override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
         try {
@@ -490,4 +491,162 @@ class AudioRepositoryImpl @Inject constructor(
             emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
         }
     }.flowOn(Dispatchers.IO)
+
+    override suspend fun deleteLocalRecordings(filePaths: List<String>): Boolean = withContext(Dispatchers.IO) {
+        var allSucceeded = true
+        Log.i(TAG_REPO, "Attempting to delete ${filePaths.size} recordings.")
+
+        for (filePath in filePaths) {
+            val file = File(filePath)
+            val fileName = file.name
+
+            var audioDeleted = false
+            var jsonDeletedOrNotFound = true
+
+            try {
+                if (file.exists()) {
+                    audioDeleted = file.delete()
+                    if (audioDeleted) {
+                        Log.i(TAG_REPO, "Multi-delete: Successfully deleted audio file: $fileName")
+                    } else {
+                        Log.w(TAG_REPO, "Multi-delete: Failed to delete audio file: $fileName")
+                        allSucceeded = false
+                        continue
+                    }
+                } else {
+                    Log.w(TAG_REPO, "Multi-delete: Audio file not found (considered success for this item): $filePath")
+                    audioDeleted = true
+                }
+            } catch (e: SecurityException) {
+                Log.e(TAG_REPO, "Multi-delete: SecurityException during audio file deletion: $fileName", e)
+                allSucceeded = false
+                continue
+            } catch (e: Exception) {
+                Log.e(TAG_REPO, "Multi-delete: Error deleting audio file: $fileName", e)
+                allSucceeded = false
+                continue
+            }
+
+            if (audioDeleted) {
+                try {
+                    val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { fileName.endsWith(it, ignoreCase = true) } ?: ""
+                    val baseName = fileName.removeSuffix(fileExtension)
+                    val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
+
+                    val recordingsDir = file.parentFile
+                    if (recordingsDir != null && recordingsDir.isDirectory) {
+                        val jsonFile = File(recordingsDir, jsonFileName)
+                        if (jsonFile.exists()) {
+                            jsonDeletedOrNotFound = jsonFile.delete()
+                            if (jsonDeletedOrNotFound) {
+                                Log.i(TAG_REPO, "Multi-delete: Successfully deleted metadata file: ${jsonFile.name}")
+                            } else {
+                                Log.w(TAG_REPO, "Multi-delete: Failed to delete metadata file: ${jsonFile.name}")
+                            }
+                        } else {
+                            Log.i(TAG_REPO, "Multi-delete: Metadata file not found (considered success): ${jsonFile.name}")
+                            jsonDeletedOrNotFound = true
+                        }
+                    } else {
+                        Log.w(TAG_REPO, "Multi-delete: Could not get recordings directory for $fileName to find/delete JSON file.")
+                    }
+                } catch (e: SecurityException) {
+                    Log.e(TAG_REPO, "Multi-delete: SecurityException during JSON file deletion for $fileName", e)
+                } catch (e: Exception) {
+                    Log.e(TAG_REPO, "Multi-delete: Error deleting JSON file for $fileName", e)
+                }
+            }
+        }
+        Log.i(TAG_REPO, "Multi-delete operation finished. Overall success: $allSucceeded")
+        return@withContext allSucceeded
+    }
+
+
+    override suspend fun updateRecordingTitle(filePath: String, newTitle: String): Boolean = withContext(Dispatchers.IO) {
+        Log.d(TAG_REPO, "Attempting to update title for $filePath to '$newTitle'")
+        val audioFile = File(filePath)
+        if (!audioFile.exists()) {
+            Log.e(TAG_REPO, "Audio file not found: $filePath")
+            return@withContext false
+        }
+
+        val recordingsDir = audioFile.parentFile
+        if (recordingsDir == null || !recordingsDir.isDirectory) {
+            Log.e(TAG_REPO, "Could not determine parent directory for: $filePath")
+            return@withContext false
+        }
+
+        val fileName = audioFile.name
+        val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { fileName.endsWith(it, ignoreCase = true) } ?: ""
+        val baseName = fileName.removeSuffix(fileExtension)
+        val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
+        val jsonFile = File(recordingsDir, jsonFileName)
+
+        try {
+            val metadata: RecordingMetadata = if (jsonFile.exists() && jsonFile.isFile) {
+                try {
+                    val jsonContent = jsonFile.readText()
+                    gson.fromJson(jsonContent, RecordingMetadata::class.java) ?: run {
+                        Log.w(TAG_REPO, "JSON file exists but failed to parse: ${jsonFile.name}. Creating new metadata object.")
+                        createFallbackMetadata(audioFile, baseName, newTitle)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG_REPO, "Error reading/parsing existing JSON file: ${jsonFile.name}", e)
+                    createFallbackMetadata(audioFile, baseName, newTitle)
+                }
+            } else {
+                Log.w(TAG_REPO, "JSON file not found: ${jsonFile.name}. Creating new metadata object.")
+                createFallbackMetadata(audioFile, baseName, newTitle)
+            }
+
+            val updatedMetadata = metadata.copy(title = newTitle)
+
+            val updatedJsonContent = gson.toJson(updatedMetadata)
+            jsonFile.writeText(updatedJsonContent)
+
+            Log.i(TAG_REPO, "Successfully updated title in metadata file: ${jsonFile.name}")
+            return@withContext true
+
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "IOException during title update for ${jsonFile.name}", e)
+            return@withContext false
+        } catch (e: SecurityException) {
+            Log.e(TAG_REPO, "SecurityException during title update for ${jsonFile.name}", e)
+            return@withContext false
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected error during title update for ${jsonFile.name}", e)
+            return@withContext false
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun createFallbackMetadata(audioFile: File, baseName: String, title: String): RecordingMetadata {
+        val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
+        val timestampString = baseName.removePrefix(FILENAME_PREFIX)
+        val timestampMillis = try {
+            dateFormat.parse(timestampString)?.time ?: audioFile.lastModified()
+        } catch (e: ParseException) {
+            audioFile.lastModified()
+        }
+
+        val durationMillis = try {
+            MediaMetadataRetriever().use { retriever ->
+                retriever.setDataSource(audioFile.absolutePath)
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Fallback: Failed to get duration for ${audioFile.name}", e)
+            0L
+        }
+
+        return RecordingMetadata(
+            id = timestampMillis,
+            filePath = audioFile.absolutePath,
+            fileName = audioFile.name,
+            title = title,
+            timestampMillis = timestampMillis,
+            durationMillis = durationMillis
+        )
+    }
+
 }

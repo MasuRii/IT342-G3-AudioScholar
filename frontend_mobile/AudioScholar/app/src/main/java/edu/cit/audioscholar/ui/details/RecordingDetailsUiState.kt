@@ -23,6 +23,9 @@ data class RecordingDetailsUiState(
     val durationFormatted: String = "00:00",
     val filePath: String = "",
 
+    val isEditingTitle: Boolean = false,
+    val editableTitle: String = "",
+
     val isPlaying: Boolean = false,
     val currentPositionMillis: Long = 0L,
     val currentPositionFormatted: String = "00:00",

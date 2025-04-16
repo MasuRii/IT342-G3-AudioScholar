@@ -15,6 +15,9 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Login
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -144,6 +147,12 @@ fun LoginScreen(
                     keyboardType = KeyboardType.Email,
                     imeAction = ImeAction.Next
                 ),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Email,
+                        contentDescription = stringResource(R.string.cd_email_icon)
+                    )
+                },
                 singleLine = true,
                 isError = uiState.errorMessage != null
             )
@@ -159,6 +168,12 @@ fun LoginScreen(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done
                 ),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = stringResource(R.string.cd_password_icon)
+                    )
+                },
                 trailingIcon = {
                     val image = if (passwordVisible)
                         Icons.Filled.Visibility
@@ -194,6 +209,12 @@ fun LoginScreen(
                         strokeWidth = 2.dp
                     )
                 } else {
+                    Icon(
+                        imageVector = Icons.Filled.Login,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize)
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
                     Text(stringResource(R.string.login_button_text))
                 }
             }
@@ -271,3 +292,4 @@ fun LoginScreen(
         }
     }
 }
+

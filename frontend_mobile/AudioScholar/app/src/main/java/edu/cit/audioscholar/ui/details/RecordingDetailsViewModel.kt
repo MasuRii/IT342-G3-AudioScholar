@@ -28,6 +28,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import androidx.compose.ui.text.input.ImeAction
+import kotlinx.coroutines.flow.update
 
 
 private fun formatDurationMillis(durationMillis: Long): String {
@@ -61,6 +63,7 @@ class RecordingDetailsViewModel @Inject constructor(
     private val recordingId: String = savedStateHandle.get<String>("recordingId") ?: ""
     private val decodedFilePath: String = Uri.decode(recordingId)
 
+
     init {
         Log.d("DetailsViewModel", "Initializing for recordingId: $recordingId, decodedPath: $decodedFilePath")
         if (decodedFilePath.isNotEmpty()) {
@@ -89,10 +92,12 @@ class RecordingDetailsViewModel @Inject constructor(
                 }
                 .collect { result ->
                     result.onSuccess { metadata ->
+                        val currentTitle = metadata.title ?: metadata.fileName
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                title = metadata.title ?: metadata.fileName,
+                                title = currentTitle,
+                                editableTitle = currentTitle,
                                 dateCreated = formatTimestampMillis(metadata.timestampMillis),
                                 durationMillis = metadata.durationMillis,
                                 durationFormatted = formatDurationMillis(metadata.durationMillis),
@@ -303,6 +308,7 @@ class RecordingDetailsViewModel @Inject constructor(
                     )
                 }
             }
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
@@ -311,6 +317,56 @@ class RecordingDetailsViewModel @Inject constructor(
     }
     fun consumeInfoMessage() {
         _uiState.update { it.copy(infoMessage = null) }
+    }
+
+    fun onTitleEditRequested() {
+        _uiState.update { it.copy(isEditingTitle = true) }
+        Log.d("DetailsViewModel", "Title edit requested.")
+    }
+
+    fun onTitleChanged(newTitle: String) {
+        _uiState.update { it.copy(editableTitle = newTitle) }
+    }
+
+    fun onTitleSaveRequested() {
+        val state = _uiState.value
+        val newTitle = state.editableTitle.trim()
+
+        if (newTitle.isEmpty()) {
+            Log.w("DetailsViewModel", "Save requested with empty title. Reverting.")
+            _uiState.update { it.copy(isEditingTitle = false, editableTitle = it.title, error = "Title cannot be empty.") }
+            return
+        }
+
+        if (newTitle != state.title) {
+            Log.d("DetailsViewModel", "Saving new title: $newTitle")
+            _uiState.update { it.copy(isEditingTitle = false, title = newTitle) }
+
+            viewModelScope.launch {
+                try {
+                    val success = audioRepository.updateRecordingTitle(state.filePath, newTitle)
+
+                    if (!success) {
+                        Log.e("DetailsViewModel", "Failed to update title in repository for ${state.filePath}")
+                        _uiState.update { it.copy(title = state.title, error = "Failed to save title.") }
+                    } else {
+                        Log.d("DetailsViewModel", "Title updated successfully in repository.")
+                        _uiState.update { it.copy(infoMessage = "Title updated.") }
+                    }
+                } catch (e: Exception) {
+                    Log.e("DetailsViewModel", "Error saving title for ${state.filePath}", e)
+                    _uiState.update { it.copy(title = state.title, error = "Error saving title: ${e.message}") }
+                }
+            }
+        } else {
+            Log.d("DetailsViewModel", "Title unchanged. Exiting edit mode.")
+            _uiState.update { it.copy(isEditingTitle = false) }
+        }
+    }
+
+    fun onTitleEditCancelled() {
+        _uiState.update { it.copy(isEditingTitle = false, editableTitle = it.title) }
+        Log.d("DetailsViewModel", "Title edit cancelled.")
     }
 
     override fun onCleared() {

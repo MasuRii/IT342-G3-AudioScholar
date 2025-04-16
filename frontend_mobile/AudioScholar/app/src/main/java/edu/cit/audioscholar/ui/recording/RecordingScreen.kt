@@ -8,7 +8,9 @@ import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -48,15 +50,22 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -106,9 +115,6 @@ fun RecordingScreen(
         }
     )
 
-    LaunchedEffect(uiState.permissionGranted) {
-    }
-
 
     LaunchedEffect(uiState.error, uiState.recordingSavedMessage) {
         uiState.error?.let { errorMessage ->
@@ -146,6 +152,7 @@ fun RecordingScreen(
             viewModel.consumeSavedMessage()
         }
     }
+
 
     if (uiState.showTitleDialog) {
         RecordingTitleDialog(
@@ -199,6 +206,7 @@ fun RecordingScreen(
         )
     }
 
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
@@ -215,117 +223,204 @@ fun RecordingScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .padding(paddingValues)
                 .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
         ) {
-            Spacer(modifier = Modifier.weight(0.5f))
-
-            Text(
-                text = uiState.elapsedTimeFormatted,
-                style = MaterialTheme.typography.displayMedium,
-                color = when {
-                    uiState.isRecording && !uiState.isPaused -> MaterialTheme.colorScheme.primary
-                    uiState.isPaused -> MaterialTheme.colorScheme.secondary
-                    uiState.showTitleDialog -> MaterialTheme.colorScheme.tertiary
-                    else -> LocalContentColor.current.copy(alpha = 0.8f)
-                },
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            Text(
-                text = when {
-                    uiState.isRecording && !uiState.isPaused -> stringResource(R.string.status_recording)
-                    uiState.isPaused -> stringResource(R.string.status_paused)
-                    uiState.showTitleDialog -> stringResource(R.string.status_saving)
-                    !uiState.permissionGranted -> stringResource(R.string.status_permission_needed)
-                    else -> stringResource(R.string.status_tap_to_record)
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            LargeFloatingActionButton(
-                onClick = {
-                    if (uiState.showTitleDialog || uiState.showStopConfirmationDialog || uiState.showCancelConfirmationDialog) return@LargeFloatingActionButton
-
-                    if (uiState.isRecording) {
-                        viewModel.requestStopConfirmation()
-                    } else {
-                        if (uiState.permissionGranted) {
-                            viewModel.startRecording()
-                        } else {
-                            multiplePermissionsLauncher.launch(permissionsToRequest)
-                        }
-                    }
-                },
-                modifier = Modifier.size(100.dp),
-                shape = CircleShape
-            ) {
-                Icon(
-                    imageVector = if (uiState.isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
-                    contentDescription = if (uiState.isRecording) {
-                        stringResource(R.string.cd_stop_button)
-                    } else {
-                        stringResource(R.string.cd_record_button)
-                    },
-                    modifier = Modifier.size(48.dp)
+            if (uiState.isRecording) {
+                AudioWaveformVisualizer(
+                    amplitude = uiState.currentAmplitude,
+                    isPaused = uiState.isPaused,
+                    modifier = Modifier.fillMaxSize()
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                if (uiState.isRecording && !uiState.isPaused && uiState.supportsPauseResume) {
-                    Button(
-                        onClick = { viewModel.pauseRecording() },
-                        enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
-                    ) {
-                        Icon(Icons.Filled.Pause, contentDescription = stringResource(R.string.cd_pause_button))
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text(stringResource(R.string.action_pause))
+                Spacer(modifier = Modifier.weight(0.5f))
+
+                Text(
+                    text = uiState.elapsedTimeFormatted,
+                    style = MaterialTheme.typography.displayMedium,
+                    color = when {
+                        uiState.isRecording && !uiState.isPaused -> MaterialTheme.colorScheme.primary
+                        uiState.isPaused -> MaterialTheme.colorScheme.secondary
+                        uiState.showTitleDialog -> MaterialTheme.colorScheme.tertiary
+                        else -> LocalContentColor.current.copy(alpha = 0.8f)
+                    },
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                Text(
+                    text = when {
+                        uiState.isRecording && !uiState.isPaused -> stringResource(R.string.status_recording)
+                        uiState.isPaused -> stringResource(R.string.status_paused)
+                        uiState.showTitleDialog -> stringResource(R.string.status_saving)
+                        !uiState.permissionGranted -> stringResource(R.string.status_permission_needed)
+                        else -> stringResource(R.string.status_tap_to_record)
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                LargeFloatingActionButton(
+                    onClick = {
+                        if (uiState.showTitleDialog || uiState.showStopConfirmationDialog || uiState.showCancelConfirmationDialog) return@LargeFloatingActionButton
+
+                        if (uiState.isRecording) {
+                            viewModel.requestStopConfirmation()
+                        } else {
+                            if (uiState.permissionGranted) {
+                                viewModel.startRecording()
+                            } else {
+                                multiplePermissionsLauncher.launch(permissionsToRequest)
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(100.dp),
+                    shape = CircleShape
+                ) {
+                    Icon(
+                        imageVector = if (uiState.isRecording) Icons.Filled.Stop else Icons.Filled.Mic,
+                        contentDescription = if (uiState.isRecording) {
+                            stringResource(R.string.cd_stop_button)
+                        } else {
+                            stringResource(R.string.cd_record_button)
+                        },
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (uiState.isRecording && !uiState.isPaused) {
+                        Button(
+                            onClick = { viewModel.pauseRecording() },
+                            enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
+                        ) {
+                            Icon(Icons.Filled.Pause, contentDescription = stringResource(R.string.cd_pause_button))
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(stringResource(R.string.action_pause))
+                        }
+                    }
+
+                    if (uiState.isRecording && uiState.isPaused) {
+                        Button(
+                            onClick = { viewModel.resumeRecording() },
+                            enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
+                        ) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.cd_resume_button))
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(stringResource(R.string.action_resume))
+                        }
+
+                        Button(
+                            onClick = { viewModel.requestCancelConfirmation() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
+                        ) {
+                            Icon(Icons.Filled.Cancel, contentDescription = stringResource(R.string.cd_cancel_button))
+                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                            Text(stringResource(R.string.action_cancel))
+                        }
                     }
                 }
 
-                if (uiState.isRecording && uiState.isPaused && uiState.supportsPauseResume) {
-                    Button(
-                        onClick = { viewModel.resumeRecording() },
-                        enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
-                    ) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.cd_resume_button))
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text(stringResource(R.string.action_resume))
-                    }
-
-                    Button(
-                        onClick = { viewModel.requestCancelConfirmation() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        enabled = !uiState.showStopConfirmationDialog && !uiState.showCancelConfirmationDialog
-                    ) {
-                        Icon(Icons.Filled.Cancel, contentDescription = stringResource(R.string.cd_cancel_button))
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text(stringResource(R.string.action_cancel))
-                    }
-                }
+                Spacer(modifier = Modifier.height(32.dp))
             }
-
-            Spacer(modifier = Modifier.height(100.dp))
         }
     }
 }
+
+@Composable
+fun AudioWaveformVisualizer(
+    amplitude: Float,
+    isPaused: Boolean,
+    modifier: Modifier = Modifier,
+    barCount: Int = 50,
+    barWidth: Dp = 3.dp,
+    barGap: Dp = 2.dp,
+    minBarHeight: Dp = 4.dp,
+    lowAmplitudeColor: Color = Color.Unspecified,
+    highAmplitudeColor: Color = Color.Unspecified,
+    barAlpha: Float = 0.4f,
+    amplitudeScaleFactor: Float = 4.0f
+) {
+    val actualLowColor = lowAmplitudeColor.takeIf { it != Color.Unspecified }
+        ?: MaterialTheme.colorScheme.secondary
+    val actualHighColor = highAmplitudeColor.takeIf { it != Color.Unspecified }
+        ?: MaterialTheme.colorScheme.error
+
+    val amplitudeHistory = remember { mutableStateListOf<Float>().apply { addAll(List(barCount) { 0f }) } }
+
+    LaunchedEffect(amplitude, isPaused) {
+        if (!isPaused) {
+            amplitudeHistory.add(amplitude)
+            if (amplitudeHistory.size > barCount) {
+                amplitudeHistory.removeAt(0)
+            }
+            while (amplitudeHistory.size < barCount) {
+                amplitudeHistory.add(0, 0f)
+            }
+            while (amplitudeHistory.size > barCount) {
+                amplitudeHistory.removeAt(0)
+            }
+        }
+    }
+
+    val currentHistory: List<Float> = amplitudeHistory.toList()
+
+    Canvas(modifier = modifier) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+        val totalBarWidthPx = barWidth.toPx()
+        val totalGapWidthPx = barGap.toPx()
+        val segmentWidth = totalBarWidthPx + totalGapWidthPx
+        val totalRequiredWidth = (segmentWidth * barCount) - totalGapWidthPx
+        val startOffset = (canvasWidth - totalRequiredWidth) / 2f
+        val minHeightPx = minBarHeight.toPx()
+
+        drawContext.canvas.save()
+
+        for (i in 0 until barCount) {
+            val historicalAmplitude = currentHistory.getOrElse(i) { 0f }
+            val visuallyScaledAmplitude = (historicalAmplitude * amplitudeScaleFactor).coerceIn(0f, 1f)
+
+            val barHeight = (minHeightPx + (visuallyScaledAmplitude * (canvasHeight - minHeightPx)))
+                .coerceIn(minHeightPx, canvasHeight)
+
+            val barColor = lerp(actualLowColor, actualHighColor, visuallyScaledAmplitude)
+
+            val barX = startOffset + i * segmentWidth
+            val barY = (canvasHeight - barHeight) / 2f
+
+            drawRoundRect(
+                color = barColor.copy(alpha = barAlpha),
+                topLeft = Offset(barX, barY),
+                size = Size(totalBarWidthPx, barHeight),
+                cornerRadius = CornerRadius(x = totalBarWidthPx / 2, y = totalBarWidthPx / 2)
+            )
+        }
+        drawContext.canvas.restore()
+    }
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

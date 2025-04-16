@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import android.util.Patterns
 
 data class LoginUiState(
     val email: String = "",
@@ -48,16 +49,34 @@ class LoginViewModel @Inject constructor(
 
     fun onLoginClick() {
         if (uiState.isLoading) return
-        if (uiState.email.isBlank() || uiState.password.isBlank()) {
+
+        val email = uiState.email.trim()
+        val password = uiState.password
+
+        if (email.isBlank() || password.isBlank()) {
             uiState = uiState.copy(errorMessage = "Email and password cannot be empty.")
             return
         }
+
+        if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+            uiState = uiState.copy(errorMessage = "Please enter a valid email address.")
+            return
+        }
+
+        if (password.length < 8) {
+            uiState = uiState.copy(errorMessage = "Password must be at least 8 characters long.")
+            return
+        }
+
 
         viewModelScope.launch {
             uiState = uiState.copy(isLoading = true, errorMessage = null)
             delay(1500)
 
-            if (uiState.email.contains("@") && uiState.password.length >= 6) {
+            val isValidFormat = Patterns.EMAIL_ADDRESS.matcher(email).matches()
+            val isValidLength = password.length >= 8
+
+            if (isValidFormat && isValidLength) {
                 with(prefs.edit()) {
                     putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                     apply()
@@ -67,7 +86,7 @@ class LoginViewModel @Inject constructor(
             } else {
                 uiState = uiState.copy(
                     isLoading = false,
-                    errorMessage = "Invalid email or password. (Mock)"
+                    errorMessage = "Incorrect email or password. Please try again."
                 )
             }
         }

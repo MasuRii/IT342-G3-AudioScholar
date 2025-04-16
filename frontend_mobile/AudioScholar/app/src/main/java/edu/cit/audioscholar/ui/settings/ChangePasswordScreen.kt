@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -38,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -45,6 +47,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import edu.cit.audioscholar.R
@@ -82,7 +85,7 @@ fun ChangePasswordScreen(
         if (!password.any { it.isUpperCase() }) errors.add(context.getString(R.string.settings_password_validation_uppercase))
         if (!password.any { it.isLowerCase() }) errors.add(context.getString(R.string.settings_password_validation_lowercase))
         if (!password.any { it.isDigit() }) errors.add(context.getString(R.string.settings_password_validation_number))
-        if (!password.any { "!@#$%^&*()".contains(it) }) errors.add(context.getString(R.string.settings_password_validation_special))
+        if (!password.any { """!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~""".contains(it) }) errors.add(context.getString(R.string.settings_password_validation_special_1))
         return errors
     }
 
@@ -92,7 +95,7 @@ fun ChangePasswordScreen(
         if (password.any { it.isUpperCase() }) score.add(1)
         if (password.any { it.isLowerCase() }) score.add(1)
         if (password.any { it.isDigit() }) score.add(1)
-        if (password.any { "!@#$%^&*()".contains(it) }) score.add(1)
+        if (password.any { """!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~""".contains(it) }) score.add(1)
 
         return when (score.size) {
             5 -> PasswordStrength.STRONG
@@ -121,14 +124,21 @@ fun ChangePasswordScreen(
     }
 
     fun validateCurrentPassword(password: String): String? {
+        if (password.isBlank()) {
+            return "Current password cannot be empty."
+        }
         return null
     }
 
     LaunchedEffect(currentPassword) {
-        currentPasswordError = validateCurrentPassword(currentPassword)
+        if (currentPassword.isNotEmpty()) {
+            currentPasswordError = validateCurrentPassword(currentPassword)
+        } else {
+            currentPasswordError = null
+        }
     }
 
-    val isFormValid = currentPassword.isNotEmpty() &&
+    currentPassword.isNotEmpty() &&
             newPassword.isNotEmpty() &&
             confirmNewPassword.isNotEmpty() &&
             currentPasswordError == null &&
@@ -155,11 +165,26 @@ fun ChangePasswordScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = 24.dp)
+                .padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.Center
         ) {
+
+            Text(
+                text = stringResource(R.string.settings_change_password_header),
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Text(
+                text = stringResource(R.string.settings_change_password_description),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
             OutlinedTextField(
                 value = currentPassword,
                 onValueChange = { currentPassword = it },
@@ -170,6 +195,12 @@ fun ChangePasswordScreen(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Next
                 ),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null
+                    )
+                },
                 trailingIcon = {
                     val image = if (currentPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
                     IconButton(onClick = { currentPasswordVisible = !currentPasswordVisible }) {
@@ -181,6 +212,8 @@ fun ChangePasswordScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Spacer(modifier = Modifier.height(16.dp))
+
             OutlinedTextField(
                 value = newPassword,
                 onValueChange = { newPassword = it },
@@ -191,6 +224,12 @@ fun ChangePasswordScreen(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Next
                 ),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null
+                    )
+                },
                 trailingIcon = {
                     val image = if (newPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
                     IconButton(onClick = { newPasswordVisible = !newPasswordVisible }) {
@@ -203,7 +242,7 @@ fun ChangePasswordScreen(
 
             if (newPassword.isNotEmpty()) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     val strengthText = when (passwordStrength) {
@@ -219,7 +258,7 @@ fun ChangePasswordScreen(
                             color = when (passwordStrength) {
                                 PasswordStrength.WEAK -> MaterialTheme.colorScheme.error
                                 PasswordStrength.MEDIUM -> MaterialTheme.colorScheme.primary
-                                PasswordStrength.STRONG -> MaterialTheme.colorScheme.primary
+                                PasswordStrength.STRONG -> Color(0xFF2E7D32)
                                 PasswordStrength.NONE -> LocalContentColor.current
                             }
                         )
@@ -234,8 +273,10 @@ fun ChangePasswordScreen(
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+            } else {
+                Spacer(modifier = Modifier.height(16.dp))
             }
-
 
             OutlinedTextField(
                 value = confirmNewPassword,
@@ -247,6 +288,12 @@ fun ChangePasswordScreen(
                     keyboardType = KeyboardType.Password,
                     imeAction = ImeAction.Done
                 ),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = null
+                    )
+                },
                 trailingIcon = {
                     val image = if (confirmNewPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
                     IconButton(onClick = { confirmNewPasswordVisible = !confirmNewPasswordVisible }) {
@@ -258,13 +305,27 @@ fun ChangePasswordScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Button(
                 onClick = {
                     keyboardController?.hide()
                     currentPasswordError = validateCurrentPassword(currentPassword)
-                    if (isFormValid) {
+                    newPasswordError = validateNewPassword(newPassword)
+                    confirmPasswordError = if (newPassword != confirmNewPassword) {
+                        context.getString(R.string.settings_password_validation_match)
+                    } else {
+                        null
+                    }
+
+                    val stillValid = currentPassword.isNotEmpty() &&
+                            newPassword.isNotEmpty() &&
+                            confirmNewPassword.isNotEmpty() &&
+                            currentPasswordError == null &&
+                            newPasswordError.isEmpty() &&
+                            confirmPasswordError == null
+
+                    if (stillValid) {
                         scope.launch {
                             snackbarHostState.showSnackbar(
                                 message = context.getString(R.string.settings_password_change_success),
@@ -274,17 +335,15 @@ fun ChangePasswordScreen(
                             navController.navigateUp()
                         }
                     } else {
-                        if (currentPasswordError == null && newPasswordError.isEmpty() && confirmPasswordError == null) {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    message = "Please fill all fields correctly.",
-                                    duration = SnackbarDuration.Short
-                                )
-                            }
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                message = currentPasswordError ?: newPasswordError.firstOrNull() ?: confirmPasswordError ?: context.getString(R.string.settings_password_form_invalid),
+                                duration = SnackbarDuration.Short
+                            )
                         }
                     }
                 },
-                enabled = isFormValid,
+                enabled = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -294,3 +353,4 @@ fun ChangePasswordScreen(
         }
     }
 }
+

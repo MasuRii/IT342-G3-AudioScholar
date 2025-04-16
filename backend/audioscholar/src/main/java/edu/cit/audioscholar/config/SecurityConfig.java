@@ -40,7 +40,7 @@ public class SecurityConfig {
 
 
     @Bean
-    public JwtDecoder jwtDecoder() {
+    JwtDecoder jwtDecoder() {
         SecretKey secretKey = tokenProvider.getJwtSecretKey();
         if (secretKey == null) {
             throw new IllegalStateException("JWT Secret Key cannot be null. Check JwtTokenProvider initialization and configuration.");
@@ -49,12 +49,12 @@ public class SecurityConfig {
     }
 
     @Bean
-    public PasswordEncoder passwordEncoder() {
+    PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
+    CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:3000",
@@ -76,7 +76,7 @@ public class SecurityConfig {
 
     @Bean
     @Order(1)
-    public SecurityFilterChain statefulFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain statefulFilterChain(HttpSecurity http) throws Exception {
         http
             .securityMatcher("/login/**", "/oauth2/**", "/error", "/api/auth/**")
             .authorizeHttpRequests(authz -> authz
@@ -100,7 +100,7 @@ public class SecurityConfig {
 
     @Bean
     @Order(2)
-    public SecurityFilterChain statelessFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain statelessFilterChain(HttpSecurity http) throws Exception {
         http
             .securityMatcher("/api/**")
             .authorizeHttpRequests(authz -> authz

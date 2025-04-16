@@ -42,7 +42,8 @@ data class RecordingUiState(
     val notificationPermissionGranted: Boolean = true,
     val supportsPauseResume: Boolean = true,
     val showStopConfirmationDialog: Boolean = false,
-    val showCancelConfirmationDialog: Boolean = false
+    val showCancelConfirmationDialog: Boolean = false,
+    val currentAmplitude: Float = 0f
 )
 
 @HiltViewModel
@@ -68,8 +69,9 @@ class RecordingViewModel @Inject constructor(
                 val finishedPath = intent.getStringExtra(RecordingService.EXTRA_RECORDING_FINISHED_PATH)
                 val finishedDuration = intent.getLongExtra(RecordingService.EXTRA_RECORDING_FINISHED_DURATION, 0L)
                 val isCancelled = intent.getBooleanExtra(RecordingService.EXTRA_RECORDING_CANCELLED, false)
+                val amplitude = intent.getFloatExtra(RecordingService.EXTRA_CURRENT_AMPLITUDE, 0f)
 
-                Log.d("RecordingViewModel", "Broadcast received: isRecording=$isRecording, isPaused=$isPaused, elapsed=$elapsedTime, error=$errorMessage, finishedPath=$finishedPath, cancelled=$isCancelled")
+                Log.d("RecordingViewModel", "Broadcast received: isRecording=$isRecording, isPaused=$isPaused, elapsed=$elapsedTime, amplitude=$amplitude, error=$errorMessage, finishedPath=$finishedPath, cancelled=$isCancelled")
 
                 val wasStopConfirmationShowing = _uiState.value.showStopConfirmationDialog
 
@@ -79,13 +81,22 @@ class RecordingViewModel @Inject constructor(
                         isPaused = isPaused,
                         elapsedTimeMillis = elapsedTime,
                         elapsedTimeFormatted = formatElapsedTime(elapsedTime),
+                        currentAmplitude = if (isRecording && !isPaused) amplitude else 0f,
                         error = errorMessage ?: if (currentState.error != null && finishedPath == null && !isCancelled) null else currentState.error,
                         showStopConfirmationDialog = if (wasStopConfirmationShowing && isPaused && !currentState.isPaused) true else currentState.showStopConfirmationDialog
                     )
                 }
 
                 if (errorMessage != null) {
-                    _uiState.update { it.copy(error = errorMessage, showTitleDialog = false, isRecording = false, isPaused = false, showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
+                    _uiState.update { it.copy(
+                        error = errorMessage,
+                        showTitleDialog = false,
+                        isRecording = false,
+                        isPaused = false,
+                        currentAmplitude = 0f,
+                        showStopConfirmationDialog = false,
+                        showCancelConfirmationDialog = false
+                    ) }
                 } else if (isCancelled) {
                     _uiState.update { it.copy(
                         isRecording = false,
@@ -93,6 +104,7 @@ class RecordingViewModel @Inject constructor(
                         showTitleDialog = false,
                         elapsedTimeMillis = 0L,
                         elapsedTimeFormatted = formatElapsedTime(0L),
+                        currentAmplitude = 0f,
                         recordingSavedMessage = "Recording cancelled.",
                         showStopConfirmationDialog = false,
                         showCancelConfirmationDialog = false
@@ -100,11 +112,22 @@ class RecordingViewModel @Inject constructor(
                 } else if (finishedPath != null) {
                     finishedRecordingPath = finishedPath
                     finishedRecordingDuration = finishedDuration
-                    _uiState.update { it.copy(showTitleDialog = true, isRecording = false, isPaused = false, showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
-                } else if (!isRecording) {
+                    _uiState.update { it.copy(
+                        showTitleDialog = true,
+                        isRecording = false,
+                        isPaused = false,
+                        currentAmplitude = 0f,
+                        showStopConfirmationDialog = false,
+                        showCancelConfirmationDialog = false
+                    ) }
+                } else if (!isRecording && !isPaused) {
                     resetTimerDisplayIfNotSaving()
                     if (!uiState.value.showTitleDialog) {
-                        _uiState.update { it.copy(showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
+                        _uiState.update { it.copy(
+                            showStopConfirmationDialog = false,
+                            showCancelConfirmationDialog = false,
+                            currentAmplitude = 0f
+                        ) }
                     }
                 }
             }
@@ -147,9 +170,9 @@ class RecordingViewModel @Inject constructor(
     private fun unregisterReceiver() {
         try {
             localBroadcastManager.unregisterReceiver(recordingStatusReceiver)
-            Log.d("RecordingViewModel", "Receiver already unregistered or never registered.")
+            Log.d("RecordingViewModel", "BroadcastReceiver unregistered.")
         } catch (e: IllegalArgumentException) {
-            Log.w("RecordingViewModel", "Receiver already unregistered or never registered.")
+            Log.w("RecordingViewModel", "Receiver already unregistered or error during unregister: ${e.message}")
         }
     }
 
@@ -181,6 +204,7 @@ class RecordingViewModel @Inject constructor(
         }
         if (!_uiState.value.permissionGranted) {
             _uiState.update { it.copy(error = "Microphone permission required.") }
+            Log.e("RecordingViewModel", "Start recording failed: Permission not granted.")
             return
         }
         _uiState.update { it.copy(error = null, recordingSavedMessage = null, showStopConfirmationDialog = false, showCancelConfirmationDialog = false) }
@@ -194,7 +218,7 @@ class RecordingViewModel @Inject constructor(
             return
         }
 
-        if (!currentState.isPaused && currentState.supportsPauseResume) {
+        if (!currentState.isPaused) {
             Log.d("RecordingViewModel", "Pausing recording before showing stop confirmation.")
             sendServiceCommand(RecordingService.ACTION_PAUSE_RECORDING)
         }
@@ -222,10 +246,6 @@ class RecordingViewModel @Inject constructor(
             Log.w("RecordingViewModel", "Pause called but not recording or already paused.")
             return
         }
-        if (!currentState.supportsPauseResume) {
-            _uiState.update { it.copy(error = "Pause/Resume not supported on this Android version.") }
-            return
-        }
         sendServiceCommand(RecordingService.ACTION_PAUSE_RECORDING)
     }
 
@@ -237,10 +257,6 @@ class RecordingViewModel @Inject constructor(
         }
         if (!currentState.isRecording || !currentState.isPaused) {
             Log.w("RecordingViewModel", "Resume called but not recording or not paused.")
-            return
-        }
-        if (!currentState.supportsPauseResume) {
-            _uiState.update { it.copy(error = "Pause/Resume not supported on this Android version.") }
             return
         }
         sendServiceCommand(RecordingService.ACTION_RESUME_RECORDING)
@@ -332,7 +348,7 @@ class RecordingViewModel @Inject constructor(
             launch(Dispatchers.Main) {
                 _uiState.update {
                     it.copy(
-                        recordingSavedMessage = if (metadataSavedSuccessfully) "Recording '$savedFileName' saved." else null,
+                        recordingSavedMessage = if (metadataSavedSuccessfully) "Recording '${metadata.title ?: savedFileName}' saved." else null,
                         showTitleDialog = false,
                         error = finalErrorMessage ?: it.error
                     )
@@ -357,7 +373,8 @@ class RecordingViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     elapsedTimeMillis = 0L,
-                    elapsedTimeFormatted = formatElapsedTime(0L)
+                    elapsedTimeFormatted = formatElapsedTime(0L),
+                    currentAmplitude = 0f
                 )
             }
             Log.d("RecordingViewModel", "Timer Display Reset")
@@ -365,13 +382,17 @@ class RecordingViewModel @Inject constructor(
     }
 
     fun consumeSavedMessage() {
-        _uiState.update { it.copy(recordingSavedMessage = null) }
-        Log.d("RecordingViewModel", "Consumed saved message.")
+        if (_uiState.value.recordingSavedMessage != null) {
+            _uiState.update { it.copy(recordingSavedMessage = null) }
+            Log.d("RecordingViewModel", "Consumed saved message.")
+        }
     }
 
     fun consumeErrorMessage() {
-        _uiState.update { it.copy(error = null) }
-        Log.d("RecordingViewModel", "Consumed error message.")
+        if (_uiState.value.error != null) {
+            _uiState.update { it.copy(error = null) }
+            Log.d("RecordingViewModel", "Consumed error message.")
+        }
     }
 
     override fun onCleared() {

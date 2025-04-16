@@ -103,6 +103,12 @@
     <string name="settings_quality_medium">Medium</string>
     <string name="settings_quality_high">High</string>
 
+    <string name="settings_password_validation_check_fields">Please check the fields for errors.</string>
+    <string name="settings_password_form_invalid">Please correct the errors above.</string>
+    <string name="settings_change_password_description">Update your password. For security, choose a strong password you haven\'t used before.</string>
+    <string name="settings_password_validation_special_1">At least one special character</string>
+    <string name="settings_change_password_header">Secure Your Account</string>
+
     <string name="nav_registration">Register</string>
     <string name="registration_first_name">First Name</string>
     <string name="registration_last_name">Last Name</string>

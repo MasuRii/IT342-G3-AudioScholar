@@ -10,7 +10,6 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -80,7 +79,6 @@ private val LightColorScheme = lightColorScheme(
     scrim = md_theme_light_scrim,
 )
 
-
 @Composable
 fun AudioScholarTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -100,18 +98,20 @@ fun AudioScholarTheme(
         SideEffect {
             val window = (view.context as Activity).window
 
-            WindowCompat.setDecorFitsSystemWindows(window, true)
-
-            window.statusBarColor = colorScheme.primary.toArgb()
+            if (darkTheme) {
+                window.statusBarColor = colorScheme.background.toArgb()
+            } else {
+                window.statusBarColor = colorScheme.background.toArgb()
+            }
             window.navigationBarColor = colorScheme.surface.toArgb()
 
             val insetsController = WindowCompat.getInsetsController(window, view)
 
-            val isLightStatusBar = colorScheme.onPrimary != Color.White
-            insetsController.isAppearanceLightStatusBars = isLightStatusBar
+            insetsController.isAppearanceLightStatusBars = !darkTheme
 
             insetsController.isAppearanceLightNavigationBars = !darkTheme
 
+            WindowCompat.setDecorFitsSystemWindows(window, true)
         }
     }
 

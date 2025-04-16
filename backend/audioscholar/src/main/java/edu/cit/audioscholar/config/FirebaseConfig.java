@@ -14,7 +14,7 @@ import java.io.InputStream;
 public class FirebaseConfig {
 
     @Bean
-    public FirebaseApp firebaseApp() throws IOException {
+    FirebaseApp firebaseApp() throws IOException {
         if (FirebaseApp.getApps().isEmpty()) {
             InputStream serviceAccount = 
                 new ClassPathResource("firebase-service-account.json").getInputStream();

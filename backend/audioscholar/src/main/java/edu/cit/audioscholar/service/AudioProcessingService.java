@@ -2,11 +2,14 @@ package edu.cit.audioscholar.service;
 
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import edu.cit.audioscholar.config.RabbitMQConfig;
+import edu.cit.audioscholar.dto.AudioProcessingMessage;
 import edu.cit.audioscholar.model.ProcessingStatus;
 
 import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+
 import edu.cit.audioscholar.exception.InvalidAudioFileException;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
@@ -14,7 +17,6 @@ import edu.cit.audioscholar.model.Summary;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -35,20 +37,25 @@ public class AudioProcessingService {
     private static final String CACHE_METADATA_BY_ID = "audioMetadataById";
     private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
 
-    @Autowired
-    private GeminiService geminiService;
+    private final GeminiService geminiService;
+    private final FirebaseService firebaseService;
+    private final NhostStorageService nhostStorageService;
+    private final RabbitTemplate rabbitTemplate;
+    private final String maxFileSizeValue;
 
-    @Autowired
-    private FirebaseService firebaseService;
+    public AudioProcessingService(
+            GeminiService geminiService,
+            FirebaseService firebaseService,
+            NhostStorageService nhostStorageService,
+            RabbitTemplate rabbitTemplate,
+            @Value("${spring.servlet.multipart.max-file-size}") String maxFileSizeValue) {
+        this.geminiService = geminiService;
+        this.firebaseService = firebaseService;
+        this.nhostStorageService = nhostStorageService;
+        this.rabbitTemplate = rabbitTemplate;
+        this.maxFileSizeValue = maxFileSizeValue;
+    }
 
-    @Autowired
-    private NhostStorageService nhostStorageService;
-
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
-
-    @Value("${spring.servlet.multipart.max-file-size}")
-    private String maxFileSizeValue;
 
     private long getMaxFileSizeInBytes() {
         return DataSize.parse(maxFileSizeValue).toBytes();
@@ -103,24 +110,20 @@ public class AudioProcessingService {
         metadata.setNhostFileId(nhostFileId);
         metadata.setStorageUrl(storageUrl);
         metadata.setUploadTimestamp(Timestamp.now());
+        metadata.setStatus(ProcessingStatus.UPLOADED);
 
-        AudioMetadata savedMetadata;
+        AudioMetadata savedMetadata = null;
         try {
             savedMetadata = firebaseService.saveAudioMetadata(metadata);
             log.info("AudioMetadata saved initially to Firestore with ID: {}", savedMetadata.getId());
 
-            try {
-                savedMetadata.setStatus(ProcessingStatus.PENDING);
-                firebaseService.updateAudioMetadataStatus(savedMetadata.getId(), ProcessingStatus.PENDING);
-                log.info("Updated metadata status to PENDING for ID: {}", savedMetadata.getId());
+            firebaseService.updateAudioMetadataStatus(savedMetadata.getId(), ProcessingStatus.PENDING);
+            log.info("Updated metadata status to PENDING for ID: {}", savedMetadata.getId());
+            savedMetadata.setStatus(ProcessingStatus.PENDING);
 
-                rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.ROUTING_KEY, savedMetadata.getId());
-                log.info("Successfully enqueued message for audio processing. Metadata ID: {}", savedMetadata.getId());
-
-            } catch (Exception queueEx) {
-                log.error("Failed to enqueue message for metadata ID {} after saving. Status remains {}. Error: {}",
-                          savedMetadata.getId(), savedMetadata.getStatus(), queueEx.getMessage(), queueEx);
-            }
+            AudioProcessingMessage message = new AudioProcessingMessage(savedMetadata.getId());
+            rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.ROUTING_KEY, message);
+            log.info("Successfully enqueued message for audio processing. Metadata ID: {}", savedMetadata.getId());
 
             log.info("Evicting cache '{}' (all entries) after processing metadata ID: {}",
                      CACHE_METADATA_BY_USER, savedMetadata.getId());
@@ -129,12 +132,13 @@ public class AudioProcessingService {
         } catch (FirestoreInteractionException e) {
              log.error("Firestore interaction failed during metadata save/update for user {}, file {}", userId, file.getOriginalFilename(), e);
              throw e;
-        } catch (RuntimeException e) {
-             log.error("Unexpected runtime exception saving/updating AudioMetadata for user {}, file {}", userId, file.getOriginalFilename(), e);
-             throw e;
+        } catch (Exception queueEx) {
+            String metadataIdForLog = (savedMetadata != null) ? savedMetadata.getId() : "[unknown ID, save likely failed]";
+            log.error("Failed to enqueue message for metadata ID {} after saving/updating status. Status remains PENDING. Error: {}",
+                      metadataIdForLog, queueEx.getMessage(), queueEx);
+            throw new RuntimeException("Failed to queue audio for processing after saving metadata.", queueEx);
         }
     }
-
 
 
     public List<AudioMetadata> getAllAudioMetadataList() {

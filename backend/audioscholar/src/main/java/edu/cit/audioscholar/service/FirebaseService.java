@@ -2,6 +2,7 @@ package edu.cit.audioscholar.service;
 
 import edu.cit.audioscholar.model.ProcessingStatus;
 import edu.cit.audioscholar.model.Summary;
+import edu.cit.audioscholar.model.LearningRecommendation;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,6 +16,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 import com.google.api.core.ApiFuture;
+import com.google.api.core.ApiFutures;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
@@ -23,6 +25,7 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
+import com.google.cloud.firestore.WriteBatch;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.cloud.FirestoreClient;
 
@@ -35,13 +38,16 @@ public class FirebaseService {
     private static final Logger log = LoggerFactory.getLogger(FirebaseService.class);
     private final String audioMetadataCollectionName;
     private final String summariesCollectionName;
+    private final String recommendationsCollectionName;
     private static final int DEFAULT_PAGE_SIZE = 20;
 
     public FirebaseService(
             @Value("${firebase.firestore.collection.audiometadata}") String audioMetadataCollectionName,
-            @Value("${firebase.firestore.collection.summaries}") String summariesCollectionName) {
+            @Value("${firebase.firestore.collection.summaries}") String summariesCollectionName,
+            @Value("${firebase.firestore.collection.recommendations}") String recommendationsCollectionName) {
         this.audioMetadataCollectionName = audioMetadataCollectionName;
         this.summariesCollectionName = summariesCollectionName;
+        this.recommendationsCollectionName = recommendationsCollectionName;
     }
 
     public String getAudioMetadataCollectionName() {
@@ -51,6 +57,7 @@ public class FirebaseService {
     private Firestore getFirestore() {
         return FirestoreClient.getFirestore();
     }
+
 
     public String saveData(String collection, String document, Map<String, Object> data) {
         try {
@@ -126,6 +133,7 @@ public class FirebaseService {
             throw new FirestoreInteractionException("Error querying collection in Firestore", e);
         }
     }
+
 
     public AudioMetadata saveAudioMetadata(AudioMetadata metadata) {
         try {
@@ -261,6 +269,7 @@ public class FirebaseService {
         }
     }
 
+
     public void saveSummary(Summary summary) throws FirestoreInteractionException {
         if (summary == null || summary.getSummaryId() == null || summary.getSummaryId().isEmpty()) {
             log.error("Cannot save summary with null object or empty summaryId.");
@@ -286,11 +295,93 @@ public class FirebaseService {
         }
     }
 
+
+    public void saveLearningRecommendations(List<LearningRecommendation> recommendations) throws FirestoreInteractionException {
+        if (recommendations == null || recommendations.isEmpty()) {
+            log.warn("Attempted to save an empty or null list of recommendations.");
+            return;
+        }
+
+        String recordingId = recommendations.get(0).getRecordingId();
+        log.info("[{}] Attempting to save {} recommendations to collection: {}",
+                 recordingId != null ? recordingId : "UNKNOWN", recommendations.size(), recommendationsCollectionName);
+
+        try {
+            Firestore firestore = getFirestore();
+            WriteBatch batch = firestore.batch();
+            CollectionReference colRef = firestore.collection(recommendationsCollectionName);
+
+            for (LearningRecommendation recommendation : recommendations) {
+                DocumentReference docRef = colRef.document();
+                batch.set(docRef, recommendation);
+            }
+
+            ApiFuture<List<WriteResult>> future = batch.commit();
+            future.get();
+
+            log.info("[{}] Successfully saved {} recommendations to Firestore.",
+                     recordingId != null ? recordingId : "UNKNOWN", recommendations.size());
+
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("[{}] Error saving batch of recommendations to Firestore.",
+                      recordingId != null ? recordingId : "UNKNOWN", e);
+            throw new FirestoreInteractionException("Failed to save batch of recommendations for recording " + (recordingId != null ? recordingId : "UNKNOWN"), e);
+        } catch (Exception e) {
+             log.error("[{}] Unexpected error saving batch of recommendations.",
+                       recordingId != null ? recordingId : "UNKNOWN", e);
+             throw new FirestoreInteractionException("Unexpected error saving recommendations for recording " + (recordingId != null ? recordingId : "UNKNOWN"), e);
+        }
+    }
+
+    public List<LearningRecommendation> getLearningRecommendationsByRecordingId(String recordingId) throws FirestoreInteractionException {
+        if (recordingId == null || recordingId.isEmpty()) {
+            log.error("Cannot retrieve recommendations with a null or empty recordingId.");
+            throw new IllegalArgumentException("Recording ID cannot be null or empty.");
+        }
+
+        log.info("Retrieving recommendations for recording ID: {} from collection: {}", recordingId, recommendationsCollectionName);
+        List<LearningRecommendation> recommendationList = new ArrayList<>();
+
+        try {
+            Firestore firestore = getFirestore();
+            CollectionReference colRef = firestore.collection(recommendationsCollectionName);
+
+            Query query = colRef.whereEqualTo("recordingId", recordingId)
+                                .orderBy("createdAt", Query.Direction.ASCENDING);
+
+            ApiFuture<QuerySnapshot> future = query.get();
+            QuerySnapshot querySnapshot = future.get();
+
+            List<QueryDocumentSnapshot> documents = querySnapshot.getDocuments();
+            for (QueryDocumentSnapshot document : documents) {
+                try {
+                    LearningRecommendation recommendation = document.toObject(LearningRecommendation.class);
+                    recommendationList.add(recommendation);
+                } catch (Exception e) {
+                    log.error("Error mapping Firestore document {} to LearningRecommendation object for recordingId {}: {}",
+                              document.getId(), recordingId, e.getMessage(), e);
+                }
+            }
+
+            log.info("Retrieved {} recommendations for recording ID: {}", recommendationList.size(), recordingId);
+            return recommendationList;
+
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Error retrieving recommendations for recording ID: {}", recordingId, e);
+            throw new FirestoreInteractionException("Failed to retrieve recommendations for recording " + recordingId, e);
+        } catch (Exception e) {
+             log.error("Unexpected error retrieving recommendations for recording ID: {}", recordingId, e);
+             throw new FirestoreInteractionException("Unexpected error retrieving recommendations for recording " + recordingId, e);
+        }
+    }
+
+
+
+
     private Map<String, Object> convertToMap(AudioMetadata metadata) {
         Map<String, Object> map = new HashMap<>();
-        if (metadata.getId() != null) {
-             map.put("id", metadata.getId());
-        }
         map.put("userId", metadata.getUserId());
         map.put("fileName", metadata.getFileName());
         map.put("fileSize", metadata.getFileSize());
@@ -328,7 +419,14 @@ public class FirebaseService {
             metadata.setDescription((String) data.get("description"));
             metadata.setNhostFileId((String) data.get("nhostFileId"));
             metadata.setStorageUrl((String) data.get("storageUrl"));
-            metadata.setUploadTimestamp((Timestamp) data.get("uploadTimestamp"));
+
+            Object timestampObj = data.get("uploadTimestamp");
+            if (timestampObj instanceof Timestamp) {
+                 metadata.setUploadTimestamp((Timestamp) timestampObj);
+            } else if (timestampObj != null) {
+                log.warn("uploadTimestamp field was not of expected type com.google.cloud.Timestamp for document ID: {}. Type found: {}", document.getId(), timestampObj.getClass().getName());
+            }
+
 
             String statusStr = (String) data.get("status");
             if (statusStr != null) {

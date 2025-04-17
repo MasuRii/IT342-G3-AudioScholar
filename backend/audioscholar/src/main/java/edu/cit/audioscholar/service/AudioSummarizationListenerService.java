@@ -13,6 +13,7 @@ import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.dto.AudioProcessingMessage;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
+import edu.cit.audioscholar.model.LearningRecommendation;
 import edu.cit.audioscholar.model.ProcessingStatus;
 import edu.cit.audioscholar.model.Summary;
 
@@ -33,18 +34,21 @@ public class AudioSummarizationListenerService {
     private final NhostStorageService nhostStorageService;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper;
+    private final LearningMaterialRecommenderService learningMaterialRecommenderService;
     private static final Pattern KEY_POINT_PATTERN = Pattern.compile("^\\s*([*\\-]|\\d+\\.)\\s+(.*)", Pattern.MULTILINE);
 
 
     public AudioSummarizationListenerService(FirebaseService firebaseService,
                                              NhostStorageService nhostStorageService,
                                              GeminiService geminiService,
-                                             ObjectMapper objectMapper
-) {
+                                             ObjectMapper objectMapper,
+                                             LearningMaterialRecommenderService learningMaterialRecommenderService
+                                            ) {
         this.firebaseService = firebaseService;
         this.nhostStorageService = nhostStorageService;
         this.geminiService = geminiService;
         this.objectMapper = objectMapper;
+        this.learningMaterialRecommenderService = learningMaterialRecommenderService;
     }
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE_NAME)
@@ -184,6 +188,17 @@ public class AudioSummarizationListenerService {
                      firebaseService.updateAudioMetadataStatus(metadataId, ProcessingStatus.COMPLETED);
                      log.info("[{}] AudioMetadata status successfully updated to COMPLETED.", metadataId);
 
+                     try {
+                         log.info("[{}] Triggering recommendation generation...", metadataId);
+                         List<LearningRecommendation> recommendations = learningMaterialRecommenderService.generateAndSaveRecommendations(metadataId);
+                         if (recommendations.isEmpty()) {
+                             log.warn("[{}] Recommendation generation completed, but no recommendations were generated or saved.", metadataId);
+                         } else {
+                             log.info("[{}] Successfully generated and saved {} recommendations.", metadataId, recommendations.size());
+                         }
+                     } catch (Exception e) {
+                         log.error("[{}] Failed to generate or save recommendations after successful summarization.", metadataId, e);
+                     }
 
                  } catch (RuntimeException e) {
                      log.error("[{}] Error during summary post-processing (structuring/formatting/saving/status update).", metadataId, e);

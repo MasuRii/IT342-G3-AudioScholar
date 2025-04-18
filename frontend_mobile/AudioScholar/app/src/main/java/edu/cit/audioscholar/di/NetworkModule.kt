@@ -3,6 +3,7 @@ package edu.cit.audioscholar.di
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import com.google.firebase.auth.FirebaseAuth
 import com.google.gson.Gson
 import dagger.Module
 import dagger.Provides
@@ -73,7 +74,7 @@ object NetworkModule {
         application: Application,
         gson: Gson
     ): AudioRepository {
-        return AudioRepositoryImpl(apiService, application, gson)
+        return edu.cit.audioscholar.data.repository.AudioRepositoryImpl(apiService, application, gson)
     }
 
     @Provides
@@ -81,4 +82,11 @@ object NetworkModule {
     fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
+
+    @Provides
+    @Singleton
+    fun provideFirebaseAuth(): FirebaseAuth {
+        return FirebaseAuth.getInstance()
+    }
+
 }

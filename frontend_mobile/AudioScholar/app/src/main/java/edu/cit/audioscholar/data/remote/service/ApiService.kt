@@ -2,6 +2,8 @@ package edu.cit.audioscholar.data.remote.service
 
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
+import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -28,6 +30,16 @@ interface ApiService {
     @POST("/api/auth/register")
     suspend fun registerUser(
         @Body registrationRequest: RegistrationRequest
+    ): Response<AuthResponse>
+
+    @POST("/api/auth/login")
+    suspend fun loginUser(
+        @Body loginRequest: LoginRequest
+    ): Response<AuthResponse>
+
+    @POST("/api/auth/verify-firebase-token")
+    suspend fun verifyFirebaseToken(
+        @Body tokenRequest: FirebaseTokenRequest
     ): Response<AuthResponse>
 
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -71,31 +72,61 @@ class RegistrationViewModel @Inject constructor(
     }
 
     val isFormValid: Boolean
-        get() = _uiState.value.firstName.isNotBlank() &&
-                _uiState.value.lastName.isNotBlank() &&
-                _uiState.value.email.isNotBlank() &&
-                _uiState.value.password.isNotBlank() &&
-                _uiState.value.confirmPassword.isNotBlank() &&
-                _uiState.value.password == _uiState.value.confirmPassword &&
-                _uiState.value.termsAccepted
+        get() {
+            val state = _uiState.value
+            val isEmailValid = android.util.Patterns.EMAIL_ADDRESS.matcher(state.email).matches()
+            val isPasswordStrongEnough = passwordStrength != PasswordStrength.WEAK && passwordStrength != PasswordStrength.NONE
+
+            return state.firstName.isNotBlank() &&
+                    state.lastName.isNotBlank() &&
+                    state.email.isNotBlank() && isEmailValid &&
+                    state.password.isNotBlank() && isPasswordStrongEnough &&
+                    state.confirmPassword.isNotBlank() &&
+                    state.password == state.confirmPassword &&
+                    state.termsAccepted
+        }
 
     val passwordStrength: PasswordStrength
         get() {
             val password = _uiState.value.password
+            val hasLetter = password.any { it.isLetter() }
+            val hasDigit = password.any { it.isDigit() }
+            val hasSpecial = password.any { !it.isLetterOrDigit() }
+
             return when {
                 password.length == 0 -> PasswordStrength.NONE
                 password.length < 8 -> PasswordStrength.WEAK
-                password.length >= 8 && password.any { it.isDigit() } && password.any { it.isLetter() } -> PasswordStrength.STRONG
-                password.length >= 8 -> PasswordStrength.MEDIUM
+                password.length >= 12 && hasLetter && hasDigit && hasSpecial -> PasswordStrength.STRONG
+                password.length >= 8 && hasLetter && hasDigit -> PasswordStrength.MEDIUM
                 else -> PasswordStrength.WEAK
             }
         }
 
     fun registerUser() {
-        if (!isFormValid) {
-            _uiState.update { it.copy(registrationError = "Please fill all fields correctly, ensure passwords match, and accept terms.") }
+        val state = _uiState.value
+        val isEmailValid = android.util.Patterns.EMAIL_ADDRESS.matcher(state.email).matches()
+        val passwordsMatch = state.password == state.confirmPassword
+        val strength = passwordStrength
+        val terms = state.termsAccepted
+
+        var errorMessage = ""
+        if (state.firstName.isBlank() || state.lastName.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank()) {
+            errorMessage = "Please fill all required fields."
+        } else if (!isEmailValid) {
+            errorMessage = "Please enter a valid email address."
+        } else if (strength == PasswordStrength.WEAK || strength == PasswordStrength.NONE) {
+            errorMessage = "Password is too weak. Please use at least 8 characters including letters and numbers."
+        } else if (!passwordsMatch) {
+            errorMessage = "Passwords do not match."
+        } else if (!terms) {
+            errorMessage = "You must accept the terms and conditions."
+        }
+
+        if (errorMessage.isNotEmpty()) {
+            _uiState.update { it.copy(registrationError = errorMessage) }
             return
         }
+
 
         viewModelScope.launch {
             _uiState.update { it.copy(registrationInProgress = true, registrationError = null) }
@@ -108,23 +139,26 @@ class RegistrationViewModel @Inject constructor(
                 password = currentState.password
             )
 
-            val result = audioRepository.registerUser(request)
-
-            result.onSuccess { authResponse ->
-                _uiState.update {
-                    it.copy(
-                        registrationInProgress = false,
-                        registrationSuccess = true,
-                        registrationError = null
-                    )
+            when (val result = audioRepository.registerUser(request)) {
+                is Resource.Success -> {
+                    _uiState.update {
+                        it.copy(
+                            registrationInProgress = false,
+                            registrationSuccess = true,
+                            registrationError = null
+                        )
+                    }
                 }
-            }.onFailure { exception ->
-                _uiState.update {
-                    it.copy(
-                        registrationInProgress = false,
-                        registrationSuccess = false,
-                        registrationError = exception.message ?: "An unknown error occurred"
-                    )
+                is Resource.Error -> {
+                    _uiState.update {
+                        it.copy(
+                            registrationInProgress = false,
+                            registrationSuccess = false,
+                            registrationError = result.message ?: "An unknown error occurred during registration."
+                        )
+                    }
+                }
+                is Resource.Loading -> {
                 }
             }
         }

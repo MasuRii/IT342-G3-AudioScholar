@@ -11,9 +11,14 @@ import com.google.gson.Gson
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
+import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
+import edu.cit.audioscholar.data.remote.dto.LoginRequest
+import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.domain.repository.AudioRepository
 import edu.cit.audioscholar.domain.repository.UploadResult
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -30,7 +35,8 @@ import okio.Buffer
 import okio.BufferedSink
 import okio.ForwardingSink
 import okio.buffer
-import okio.use
+
+import retrofit2.HttpException
 import retrofit2.Response
 import java.io.File
 import java.io.IOException
@@ -39,9 +45,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
-import edu.cit.audioscholar.data.remote.dto.AuthResponse
-import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
-import edu.cit.audioscholar.domain.repository.AuthResult
+
 
 private const val RECORDINGS_DIRECTORY_NAME = "Recordings"
 private const val FILENAME_DATE_FORMAT = "yyyy-MM-dd_HH-mm-ss"
@@ -91,14 +95,15 @@ class AudioRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Failed to read file bytes", e)
             trySend(UploadResult.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Unknown reason")))
-            close()
+            close(e)
             return@callbackFlow
         }
 
         if (fileBytes == null) {
             Log.e(TAG_REPO, "Failed to read file content (stream was null or empty).")
-            trySend(UploadResult.Error(application.getString(R.string.upload_error_read_empty)))
-            close()
+            val error = IOException(application.getString(R.string.upload_error_read_empty))
+            trySend(UploadResult.Error(error.message ?: "Empty file error"))
+            close(error)
             return@callbackFlow
         }
         Log.d(TAG_REPO, "Read ${fileBytes.size} bytes from file.")
@@ -123,7 +128,7 @@ class AudioRepositoryImpl @Inject constructor(
 
 
         try {
-            Log.d(TAG_REPO, "Executing API call...")
+            Log.d(TAG_REPO, "Executing API call: apiService.uploadAudio")
             val response: Response<AudioMetadataDto> = apiService.uploadAudio(
                 file = filePart,
                 title = titlePart,
@@ -144,17 +149,22 @@ class AudioRepositoryImpl @Inject constructor(
             } else {
                 val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
                 Log.e(TAG_REPO, "Upload failed with HTTP error: ${response.code()} - $errorBody")
+                val error = HttpException(response)
                 trySend(UploadResult.Error(application.getString(R.string.upload_error_server_http, response.code(), errorBody)))
-                close()
+                close(error)
             }
         } catch (e: IOException) {
             Log.e(TAG_REPO, "Network/IO exception during upload: ${e.message}", e)
             trySend(UploadResult.Error(application.getString(R.string.upload_error_network_connection)))
-            close()
+            close(e)
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during upload: ${e.code()} - ${e.message()}", e)
+            trySend(UploadResult.Error(application.getString(R.string.upload_error_server_http, e.code(), e.message())))
+            close(e)
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Unexpected exception during upload: ${e.message}", e)
             trySend(UploadResult.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error")))
-            close()
+            close(e)
         }
 
         awaitClose {
@@ -207,9 +217,9 @@ class AudioRepositoryImpl @Inject constructor(
                 }
             }
 
-            val bufferedCountingSink = countingSink.buffer()
-            delegate.writeTo(bufferedCountingSink)
-            bufferedCountingSink.flush()
+            countingSink.buffer().use { bufferedCountingSink ->
+                delegate.writeTo(bufferedCountingSink)
+            }
 
             if (lastPercentage != 100 && bytesWritten == totalBytes) {
                 Log.d("ProgressRequestBody", "Ensuring 100% progress sent at the end.")
@@ -321,39 +331,6 @@ class AudioRepositoryImpl @Inject constructor(
 
     }.flowOn(Dispatchers.IO)
 
-    override suspend fun registerUser(request: RegistrationRequest): AuthResult {
-        return try {
-            Log.d(TAG_REPO, "Attempting registration for email: ${request.email}")
-            val response = apiService.registerUser(request)
-
-            if (response.isSuccessful) {
-                val authResponse = response.body()
-                if (authResponse != null) {
-                    Log.i(TAG_REPO, "Registration successful: ${authResponse.message ?: "No message"}")
-                    Result.success(authResponse)
-                } else {
-                    Log.w(TAG_REPO, "Registration successful (Code: ${response.code()}) but response body was null.")
-                    Result.success(AuthResponse(message = "Registration successful"))
-                }
-            } else {
-                val errorBody = response.errorBody()?.string()
-                val errorMessage = try {
-                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
-                } catch (e: Exception) {
-                    errorBody ?: "Unknown server error (Code: ${response.code()})"
-                }
-                Log.e(TAG_REPO, "Registration failed: ${response.code()} - $errorMessage")
-                Result.failure(IOException("Registration failed: $errorMessage"))
-            }
-        } catch (e: IOException) {
-            Log.e(TAG_REPO, "Network/IO exception during registration: ${e.message}", e)
-            Result.failure(IOException(application.getString(R.string.error_network_connection), e))
-        } catch (e: Exception) {
-            Log.e(TAG_REPO, "Unexpected exception during registration: ${e.message}", e)
-            Result.failure(IOException(application.getString(R.string.error_unexpected_registration, e.message ?: "Unknown error"), e))
-        }
-    }
-
     override fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>> = flow {
         val file = File(filePath)
         if (!file.exists() || !file.isFile) {
@@ -375,7 +352,6 @@ class AudioRepositoryImpl @Inject constructor(
         }
 
         val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
-        val retriever = MediaMetadataRetriever()
         var metadataResult: Result<RecordingMetadata>? = null
 
         try {
@@ -391,13 +367,13 @@ class AudioRepositoryImpl @Inject constructor(
             }
 
             val durationMillis = try {
-                retriever.setDataSource(filePath)
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                MediaMetadataRetriever().use { retriever ->
+                    retriever.setDataSource(filePath)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                }
             } catch (e: Exception) {
                 Log.e(TAG_REPO, "Failed to get duration for file: $fileName", e)
                 0L
-            } finally {
-                try { retriever.release() } catch (e: Exception) { Log.e(TAG_REPO, "Error releasing MediaMetadataRetriever", e) }
             }
 
             val jsonFileName = "$baseNameWithTimestamp$FILENAME_EXTENSION_METADATA"
@@ -470,37 +446,36 @@ class AudioRepositoryImpl @Inject constructor(
             return@withContext false
         }
 
-        if (audioDeleted) {
-            try {
-                val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { metadata.fileName.endsWith(it, ignoreCase = true) } ?: ""
-                val baseName = metadata.fileName.removeSuffix(fileExtension)
-                val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
+        try {
+            val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { metadata.fileName.endsWith(it, ignoreCase = true) } ?: ""
+            val baseName = metadata.fileName.removeSuffix(fileExtension)
+            val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
 
-                val recordingsDir = getRecordingsDirectory()
-                if (recordingsDir != null) {
-                    val jsonFile = File(recordingsDir, jsonFileName)
-                    if (jsonFile.exists()) {
-                        jsonDeletedOrNotFound = jsonFile.delete()
-                        if (jsonDeletedOrNotFound) {
-                            Log.i(TAG_REPO, "Successfully deleted metadata file: ${jsonFile.name}")
-                        } else {
-                            Log.w(TAG_REPO, "Failed to delete metadata file: ${jsonFile.name}")
-                        }
+            val recordingsDir = File(metadata.filePath).parentFile
+
+            if (recordingsDir != null) {
+                val jsonFile = File(recordingsDir, jsonFileName)
+                if (jsonFile.exists()) {
+                    jsonDeletedOrNotFound = jsonFile.delete()
+                    if (jsonDeletedOrNotFound) {
+                        Log.i(TAG_REPO, "Successfully deleted metadata file: ${jsonFile.name}")
                     } else {
-                        Log.i(TAG_REPO, "Metadata file not found (considered success): ${jsonFile.name}")
-                        jsonDeletedOrNotFound = true
+                        Log.w(TAG_REPO, "Failed to delete metadata file: ${jsonFile.name}")
                     }
                 } else {
-                    Log.w(TAG_REPO, "Could not get recordings directory to find/delete JSON file.")
-                    jsonDeletedOrNotFound = false
+                    Log.i(TAG_REPO, "Metadata file not found (considered success): ${jsonFile.name}")
+                    jsonDeletedOrNotFound = true
                 }
-            } catch (e: SecurityException) {
-                Log.e(TAG_REPO, "SecurityException during JSON file deletion: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
-                jsonDeletedOrNotFound = false
-            } catch (e: Exception) {
-                Log.e(TAG_REPO, "Error deleting JSON file: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
+            } else {
+                Log.w(TAG_REPO, "Could not get parent directory to find/delete JSON file for ${metadata.fileName}.")
                 jsonDeletedOrNotFound = false
             }
+        } catch (e: SecurityException) {
+            Log.e(TAG_REPO, "SecurityException during JSON file deletion: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
+            jsonDeletedOrNotFound = false
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Error deleting JSON file: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
+            jsonDeletedOrNotFound = false
         }
 
         return@withContext audioDeleted && jsonDeletedOrNotFound
@@ -508,20 +483,25 @@ class AudioRepositoryImpl @Inject constructor(
 
     override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
         try {
-            Log.d(TAG_REPO, "Fetching cloud recordings metadata from API...")
-            val response = apiService.getAudioMetadataList()
+            Log.d(TAG_REPO, "Fetching cloud recordings metadata from API: apiService.getAudioMetadataList")
+            val response: Response<List<AudioMetadataDto>> = apiService.getAudioMetadataList()
+
             if (response.isSuccessful) {
-                val metadataList = response.body() ?: emptyList()
+                val metadataList: List<AudioMetadataDto> = response.body() ?: emptyList()
                 Log.i(TAG_REPO, "Successfully fetched ${metadataList.size} cloud recordings metadata.")
                 emit(Result.success(metadataList))
             } else {
                 val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
                 Log.e(TAG_REPO, "Failed to fetch cloud recordings: ${response.code()} - $errorBody")
-                emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, response.code(), errorBody))))
+                val exception = IOException(application.getString(R.string.upload_error_server_http, response.code(), errorBody))
+                emit(Result.failure(exception))
             }
         } catch (e: IOException) {
             Log.e(TAG_REPO, "Network/IO exception fetching cloud recordings: ${e.message}", e)
             emit(Result.failure(IOException(application.getString(R.string.upload_error_network_connection), e)))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception fetching cloud recordings: ${e.code()} - ${e.message()}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, e.code(), e.message()))))
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Unexpected exception fetching cloud recordings: ${e.message}", e)
             emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
@@ -534,24 +514,23 @@ class AudioRepositoryImpl @Inject constructor(
 
         for (filePath in filePaths) {
             val file = File(filePath)
+            if (!file.exists()) {
+                Log.w(TAG_REPO, "Multi-delete: File not found, skipping: $filePath")
+                continue
+            }
             val fileName = file.name
 
             var audioDeleted = false
             var jsonDeletedOrNotFound = true
 
             try {
-                if (file.exists()) {
-                    audioDeleted = file.delete()
-                    if (audioDeleted) {
-                        Log.i(TAG_REPO, "Multi-delete: Successfully deleted audio file: $fileName")
-                    } else {
-                        Log.w(TAG_REPO, "Multi-delete: Failed to delete audio file: $fileName")
-                        allSucceeded = false
-                        continue
-                    }
+                audioDeleted = file.delete()
+                if (audioDeleted) {
+                    Log.i(TAG_REPO, "Multi-delete: Successfully deleted audio file: $fileName")
                 } else {
-                    Log.w(TAG_REPO, "Multi-delete: Audio file not found (considered success for this item): $filePath")
-                    audioDeleted = true
+                    Log.w(TAG_REPO, "Multi-delete: Failed to delete audio file: $fileName")
+                    allSucceeded = false
+                    continue
                 }
             } catch (e: SecurityException) {
                 Log.e(TAG_REPO, "Multi-delete: SecurityException during audio file deletion: $fileName", e)
@@ -563,34 +542,32 @@ class AudioRepositoryImpl @Inject constructor(
                 continue
             }
 
-            if (audioDeleted) {
-                try {
-                    val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { fileName.endsWith(it, ignoreCase = true) } ?: ""
-                    val baseName = fileName.removeSuffix(fileExtension)
-                    val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
+            try {
+                val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { fileName.endsWith(it, ignoreCase = true) } ?: ""
+                val baseName = fileName.removeSuffix(fileExtension)
+                val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
 
-                    val recordingsDir = file.parentFile
-                    if (recordingsDir != null && recordingsDir.isDirectory) {
-                        val jsonFile = File(recordingsDir, jsonFileName)
-                        if (jsonFile.exists()) {
-                            jsonDeletedOrNotFound = jsonFile.delete()
-                            if (jsonDeletedOrNotFound) {
-                                Log.i(TAG_REPO, "Multi-delete: Successfully deleted metadata file: ${jsonFile.name}")
-                            } else {
-                                Log.w(TAG_REPO, "Multi-delete: Failed to delete metadata file: ${jsonFile.name}")
-                            }
+                val recordingsDir = file.parentFile
+                if (recordingsDir != null && recordingsDir.isDirectory) {
+                    val jsonFile = File(recordingsDir, jsonFileName)
+                    if (jsonFile.exists()) {
+                        jsonDeletedOrNotFound = jsonFile.delete()
+                        if (jsonDeletedOrNotFound) {
+                            Log.i(TAG_REPO, "Multi-delete: Successfully deleted metadata file: ${jsonFile.name}")
                         } else {
-                            Log.i(TAG_REPO, "Multi-delete: Metadata file not found (considered success): ${jsonFile.name}")
-                            jsonDeletedOrNotFound = true
+                            Log.w(TAG_REPO, "Multi-delete: Failed to delete metadata file: ${jsonFile.name}")
                         }
                     } else {
-                        Log.w(TAG_REPO, "Multi-delete: Could not get recordings directory for $fileName to find/delete JSON file.")
+                        Log.i(TAG_REPO, "Multi-delete: Metadata file not found (considered success): ${jsonFile.name}")
+                        jsonDeletedOrNotFound = true
                     }
-                } catch (e: SecurityException) {
-                    Log.e(TAG_REPO, "Multi-delete: SecurityException during JSON file deletion for $fileName", e)
-                } catch (e: Exception) {
-                    Log.e(TAG_REPO, "Multi-delete: Error deleting JSON file for $fileName", e)
+                } else {
+                    Log.w(TAG_REPO, "Multi-delete: Could not get parent directory for $fileName to find/delete JSON file.")
                 }
+            } catch (e: SecurityException) {
+                Log.e(TAG_REPO, "Multi-delete: SecurityException during JSON file deletion for $fileName", e)
+            } catch (e: Exception) {
+                Log.e(TAG_REPO, "Multi-delete: Error deleting JSON file for $fileName", e)
             }
         }
         Log.i(TAG_REPO, "Multi-delete operation finished. Overall success: $allSucceeded")
@@ -654,7 +631,8 @@ class AudioRepositoryImpl @Inject constructor(
             return@withContext false
         }
     }
-@RequiresApi(Build.VERSION_CODES.Q)
+
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun createFallbackMetadata(audioFile: File, baseName: String, title: String): RecordingMetadata {
         val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
         val timestampString = baseName.removePrefix(FILENAME_PREFIX)
@@ -684,4 +662,117 @@ class AudioRepositoryImpl @Inject constructor(
         )
     }
 
+    override suspend fun loginUser(request: LoginRequest): Resource<AuthResponse> {
+        return try {
+            Log.d(TAG_REPO, "Attempting login for email: ${request.email}")
+            val response = apiService.loginUser(request)
+
+            if (response.isSuccessful) {
+                val authResponse = response.body()
+                if (authResponse != null) {
+                    if (authResponse.token != null) {
+                        Log.i(TAG_REPO, "Login successful. Token received.")
+                        Resource.Success(authResponse)
+                    } else {
+                        Log.w(TAG_REPO, "Login successful (Code: ${response.code()}) but token was null in response.")
+                        Resource.Error("Login successful but token missing.", authResponse)
+                    }
+                } else {
+                    Log.w(TAG_REPO, "Login successful (Code: ${response.code()}) but response body was null.")
+                    Resource.Error("Login successful but response body was empty.")
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Login failed: ${response.code()} - $errorMessage")
+                Resource.Error(errorMessage)
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during login: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during login: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during login: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected_login, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun registerUser(request: RegistrationRequest): Resource<AuthResponse> {
+        return try {
+            Log.d(TAG_REPO, "Attempting registration for email: ${request.email}")
+            val response = apiService.registerUser(request)
+
+            if (response.isSuccessful) {
+                val authResponse = response.body()
+                if (authResponse != null) {
+                    Log.i(TAG_REPO, "Registration successful: ${authResponse.message ?: "No message"}")
+                    Resource.Success(authResponse)
+                } else {
+                    Log.w(TAG_REPO, "Registration successful (Code: ${response.code()}) but response body was null.")
+                    Resource.Success(AuthResponse(success = true, message = "Registration successful"))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Registration failed: ${response.code()} - $errorMessage")
+                Resource.Error(errorMessage)
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during registration: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during registration: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during registration: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected_registration, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun verifyFirebaseToken(request: FirebaseTokenRequest): Resource<AuthResponse> {
+        return try {
+            Log.d(TAG_REPO, "Sending Firebase ID token to backend for verification.")
+            val response = apiService.verifyFirebaseToken(request)
+
+            if (response.isSuccessful) {
+                val authResponse = response.body()
+                if (authResponse != null && authResponse.token != null) {
+                    Log.i(TAG_REPO, "Firebase token verified successfully by backend. API JWT received.")
+                    Resource.Success(authResponse)
+                } else {
+                    val errorMsg = "Backend verification successful but response or API token was null."
+                    Log.w(TAG_REPO, errorMsg)
+                    Resource.Error(errorMsg, authResponse)
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown backend verification error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown backend verification error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Backend verification failed: ${response.code()} - $errorMessage")
+                Resource.Error(errorMessage)
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during token verification call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during token verification call: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during token verification call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
+        }
+    }
 }

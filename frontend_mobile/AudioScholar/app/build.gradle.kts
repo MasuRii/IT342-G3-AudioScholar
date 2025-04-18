@@ -49,6 +49,10 @@ android {
 }
 
 dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:33.1.1"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+
+
     implementation("androidx.media3:media3-exoplayer:1.6.0")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
     implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.22")

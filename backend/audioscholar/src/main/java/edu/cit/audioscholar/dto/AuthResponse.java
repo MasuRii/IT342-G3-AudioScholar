@@ -4,6 +4,9 @@ public class AuthResponse {
     private String message;
     private boolean success;
     private String userId;
+    private String token;
+
+    public AuthResponse() {}
 
     public AuthResponse(boolean success, String message) {
         this.success = success;
@@ -16,27 +19,12 @@ public class AuthResponse {
         this.userId = userId;
     }
 
-    public String getMessage() {
-        return message;
-    }
-
-    public void setMessage(String message) {
-        this.message = message;
-    }
-
-    public boolean isSuccess() {
-        return success;
-    }
-
-    public void setSuccess(boolean success) {
-        this.success = success;
-    }
-
-     public String getUserId() {
-        return userId;
-    }
-
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
+    public String getMessage() { return message; }
+    public void setMessage(String message) { this.message = message; }
+    public boolean isSuccess() { return success; }
+    public void setSuccess(boolean success) { this.success = success; }
+    public String getUserId() { return userId; }
+    public void setUserId(String userId) { this.userId = userId; }
+    public String getToken() { return token; }
+    public void setToken(String token) { this.token = token; }
 }

@@ -42,4 +42,9 @@ interface ApiService {
         @Body tokenRequest: FirebaseTokenRequest
     ): Response<AuthResponse>
 
+    @POST("/api/auth/verify-google-token")
+    suspend fun verifyGoogleToken(
+        @Body tokenRequest: FirebaseTokenRequest
+    ): Response<AuthResponse>
+
 }

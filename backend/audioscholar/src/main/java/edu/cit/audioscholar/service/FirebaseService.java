@@ -1,22 +1,25 @@
 package edu.cit.audioscholar.service;
 
-import edu.cit.audioscholar.model.ProcessingStatus;
-import edu.cit.audioscholar.model.Summary;
-import edu.cit.audioscholar.model.LearningRecommendation;
-
+import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.core.ApiFuture;
-import com.google.api.core.ApiFutures;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentReference;
@@ -27,18 +30,18 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteBatch;
 import com.google.cloud.firestore.WriteResult;
-import com.google.firebase.cloud.FirestoreClient;
-import com.google.firebase.auth.FirebaseToken;
-
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
-import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.google.firebase.cloud.FirestoreClient;
 
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
+import edu.cit.audioscholar.model.LearningRecommendation;
+import edu.cit.audioscholar.model.ProcessingStatus;
+import edu.cit.audioscholar.model.Summary;
 
 @Service
 public class FirebaseService {
@@ -50,6 +53,12 @@ public class FirebaseService {
     private static final int DEFAULT_PAGE_SIZE = 20;
 
     private final FirebaseApp firebaseApp;
+
+    @Value("${google.oauth.web.client.id}")
+    private String webClientIdFromTokenAud;
+
+    @Value("${google.oauth.android.client.id}")
+    private String androidClientId;
 
     @Autowired
     public FirebaseService(
@@ -95,6 +104,45 @@ public class FirebaseService {
     public FirebaseApp getFirebaseApp() {
         return firebaseApp;
     }
+
+    public GoogleIdToken verifyGoogleIdToken(String googleIdTokenString) throws GeneralSecurityException, IOException, IllegalArgumentException {
+        if (googleIdTokenString == null || googleIdTokenString.isBlank()) {
+            log.warn("Attempted to verify a null or blank Google ID token.");
+            throw new IllegalArgumentException("Google ID token cannot be null or blank.");
+        }
+
+        List<String> audiences = new ArrayList<>();
+        if (webClientIdFromTokenAud != null && !webClientIdFromTokenAud.isBlank()) {
+            audiences.add(webClientIdFromTokenAud);
+        }
+        if (androidClientId != null && !androidClientId.isBlank()) {
+            audiences.add(androidClientId);
+        }
+
+        if (audiences.isEmpty()) {
+             log.error("No Google OAuth Client IDs configured for audience verification. Check application.properties");
+             throw new IllegalStateException("Missing Google OAuth Client ID configuration for token verification.");
+        }
+
+        log.debug("Attempting to verify Google ID token using GoogleIdTokenVerifier. Expected audience(s): {}", audiences);
+
+        GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), GsonFactory.getDefaultInstance())
+                .setAudience(audiences)
+                .build();
+
+        GoogleIdToken idToken = verifier.verify(googleIdTokenString);
+
+        if (idToken != null) {
+            GoogleIdToken.Payload payload = idToken.getPayload();
+            String userId = payload.getSubject();
+            log.info("Successfully verified Google ID token for Google User ID (sub): {}", userId);
+            return idToken;
+        } else {
+            log.warn("Google ID token verification failed (verifier.verify() returned null). Token might be invalid, expired, or signature check failed.");
+            return null;
+        }
+    }
+
 
     public UserRecord createFirebaseUser(String email, String password, String displayName) throws FirebaseAuthException {
         UserRecord.CreateRequest request = new UserRecord.CreateRequest()

@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -33,6 +34,7 @@ data class LoginUiState(
 sealed class LoginEvent {
     object LoginSuccess : LoginEvent()
     data class ShowInfoMessage(val message: String) : LoginEvent()
+    object LaunchGoogleSignIn : LoginEvent()
 }
 
 @HiltViewModel
@@ -157,7 +159,6 @@ class LoginViewModel @Inject constructor(
                         firebaseAuth.signOut()
                     }
                     is Resource.Loading -> {
-                        uiState = uiState.copy(isLoading = true)
                     }
                 }
 
@@ -176,6 +177,10 @@ class LoginViewModel @Inject constructor(
                     isLoading = false,
                     errorMessage = "Login failed: ${e.localizedMessage ?: "An unexpected error occurred."}"
                 )
+            } finally {
+                if (uiState.isLoading) {
+                    uiState = uiState.copy(isLoading = false)
+                }
             }
         }
     }
@@ -188,9 +193,65 @@ class LoginViewModel @Inject constructor(
 
     fun onGoogleSignInClick() {
         viewModelScope.launch {
-            _eventFlow.emit(LoginEvent.ShowInfoMessage("Google Sign-In not implemented yet."))
+            if (!uiState.isLoading) {
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
+                _eventFlow.emit(LoginEvent.LaunchGoogleSignIn)
+            }
         }
     }
+
+    fun handleGoogleSignInResult(account: GoogleSignInAccount?) {
+        if (account != null) {
+            val googleIdToken = account.idToken
+            if (googleIdToken != null) {
+                Log.i(TAG, "Google Sign-In successful. ID Token received. Verifying with backend...")
+                viewModelScope.launch {
+                    val tokenRequest = FirebaseTokenRequest(idToken = googleIdToken)
+                    when (val backendResult = audioRepository.verifyGoogleToken(tokenRequest)) {
+                        is Resource.Success -> {
+                            val apiJwt = backendResult.data?.token
+                            if (apiJwt != null) {
+                                Log.i(TAG, "Backend Google verification successful. API JWT received.")
+                                with(prefs.edit()) {
+                                    putString(KEY_AUTH_TOKEN, apiJwt)
+                                    putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
+                                    apply()
+                                }
+                                uiState = uiState.copy(isLoading = false)
+                                _eventFlow.emit(LoginEvent.LoginSuccess)
+                            } else {
+                                Log.w(TAG, "Backend Google verification successful but API JWT was null.")
+                                uiState = uiState.copy(
+                                    isLoading = false,
+                                    errorMessage = backendResult.message ?: "Login failed: Missing API token from server after Google Sign-In."
+                                )
+                            }
+                        }
+                        is Resource.Error -> {
+                            Log.w(TAG, "Backend Google verification failed: ${backendResult.message}")
+                            uiState = uiState.copy(
+                                isLoading = false,
+                                errorMessage = backendResult.message ?: "Login failed: Server validation error for Google Sign-In."
+                            )
+                        }
+                        is Resource.Loading -> {
+                        }
+                    }
+                }
+            } else {
+                Log.w(TAG, "Google Sign-In successful but ID Token is null.")
+                uiState = uiState.copy(isLoading = false, errorMessage = "Google Sign-In failed: Could not retrieve token.")
+            }
+        } else {
+            Log.w(TAG, "Google Sign-In failed or was cancelled by user.")
+            if (uiState.errorMessage == null) {
+                uiState = uiState.copy(isLoading = false, errorMessage = "Google Sign-In failed or cancelled.")
+            } else {
+                uiState = uiState.copy(isLoading = false)
+            }
+        }
+    }
+
 
     fun onGitHubSignInClick() {
         viewModelScope.launch {
@@ -203,6 +264,5 @@ class LoginViewModel @Inject constructor(
     }
 
     fun consumeInfoMessage() {
-        uiState = uiState.copy(infoMessage = null)
     }
 }

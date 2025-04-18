@@ -127,6 +127,8 @@
     <string name="dialog_multi_delete_title">Delete Recordings</string>
     <string name="dialog_multi_delete_message">Delete %d selected recordings? This cannot be undone.</string>
 
+    <string name="default_web_client_id" translatable="false">94663253748-ofnpqjepvrupp7ud1gf03lp0i4ucmb6q.apps.googleusercontent.com</string>
+
     <string name="nav_registration">Register</string>
     <string name="registration_first_name">First Name</string>
     <string name="registration_last_name">Last Name</string>

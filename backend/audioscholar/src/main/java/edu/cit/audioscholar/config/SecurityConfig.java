@@ -108,7 +108,11 @@ public class SecurityConfig {
         http
             .securityMatcher("/api/**")
             .authorizeHttpRequests(authz -> authz
-                .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/verify-firebase-token").permitAll()
+                .requestMatchers(HttpMethod.POST,
+                        "/api/auth/register",
+                        "/api/auth/verify-firebase-token",
+                        "/api/auth/verify-google-token"
+                ).permitAll()
                 .requestMatchers(AntPathRequestMatcher.antMatcher("/api/**")).authenticated()
                 .anyRequest().denyAll()
             )

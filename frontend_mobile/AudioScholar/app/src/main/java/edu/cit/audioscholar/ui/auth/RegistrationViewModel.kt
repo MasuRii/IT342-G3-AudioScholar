@@ -3,6 +3,8 @@ package edu.cit.audioscholar.ui.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.domain.repository.AudioRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +31,9 @@ enum class PasswordStrength {
 }
 
 @HiltViewModel
-class RegistrationViewModel @Inject constructor() : ViewModel() {
+class RegistrationViewModel @Inject constructor(
+    private val audioRepository: AudioRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RegistrationUiState())
     val uiState: StateFlow<RegistrationUiState> = _uiState.asStateFlow()
@@ -81,20 +85,48 @@ class RegistrationViewModel @Inject constructor() : ViewModel() {
             return when {
                 password.length == 0 -> PasswordStrength.NONE
                 password.length < 8 -> PasswordStrength.WEAK
-                password.any { it.isDigit() } && password.any { it.isLetter() } -> PasswordStrength.STRONG
-                else -> PasswordStrength.MEDIUM
+                password.length >= 8 && password.any { it.isDigit() } && password.any { it.isLetter() } -> PasswordStrength.STRONG
+                password.length >= 8 -> PasswordStrength.MEDIUM
+                else -> PasswordStrength.WEAK
             }
         }
 
     fun registerUser() {
         if (!isFormValid) {
-            _uiState.update { it.copy(registrationError = "Please fill all fields correctly and accept terms.") }
+            _uiState.update { it.copy(registrationError = "Please fill all fields correctly, ensure passwords match, and accept terms.") }
             return
         }
+
         viewModelScope.launch {
             _uiState.update { it.copy(registrationInProgress = true, registrationError = null) }
-            kotlinx.coroutines.delay(1500)
-            _uiState.update { it.copy(registrationInProgress = false, registrationSuccess = true) }
+
+            val currentState = _uiState.value
+            val request = RegistrationRequest(
+                firstName = currentState.firstName.trim(),
+                lastName = currentState.lastName.trim(),
+                email = currentState.email.trim(),
+                password = currentState.password
+            )
+
+            val result = audioRepository.registerUser(request)
+
+            result.onSuccess { authResponse ->
+                _uiState.update {
+                    it.copy(
+                        registrationInProgress = false,
+                        registrationSuccess = true,
+                        registrationError = null
+                    )
+                }
+            }.onFailure { exception ->
+                _uiState.update {
+                    it.copy(
+                        registrationInProgress = false,
+                        registrationSuccess = false,
+                        registrationError = exception.message ?: "An unknown error occurred"
+                    )
+                }
+            }
         }
     }
 

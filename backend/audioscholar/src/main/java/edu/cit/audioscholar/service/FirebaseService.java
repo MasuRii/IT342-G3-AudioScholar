@@ -29,6 +29,13 @@ import com.google.cloud.firestore.WriteBatch;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.cloud.FirestoreClient;
 
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.UserRecord;
+import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 
@@ -41,13 +48,22 @@ public class FirebaseService {
     private final String recommendationsCollectionName;
     private static final int DEFAULT_PAGE_SIZE = 20;
 
+    private final FirebaseApp firebaseApp;
+
+    @Autowired
     public FirebaseService(
             @Value("${firebase.firestore.collection.audiometadata}") String audioMetadataCollectionName,
             @Value("${firebase.firestore.collection.summaries}") String summariesCollectionName,
-            @Value("${firebase.firestore.collection.recommendations}") String recommendationsCollectionName) {
+            @Value("${firebase.firestore.collection.recommendations}") String recommendationsCollectionName,
+            FirebaseApp firebaseApp) {
         this.audioMetadataCollectionName = audioMetadataCollectionName;
         this.summariesCollectionName = summariesCollectionName;
         this.recommendationsCollectionName = recommendationsCollectionName;
+        this.firebaseApp = firebaseApp;
+    }
+
+    private FirebaseAuth getFirebaseAuth() {
+        return FirebaseAuth.getInstance(this.firebaseApp);
     }
 
     public String getAudioMetadataCollectionName() {
@@ -55,9 +71,27 @@ public class FirebaseService {
     }
 
     private Firestore getFirestore() {
-        return FirestoreClient.getFirestore();
+        return FirestoreClient.getFirestore(this.firebaseApp);
     }
 
+    public UserRecord createFirebaseUser(String email, String password, String displayName) throws FirebaseAuthException {
+        UserRecord.CreateRequest request = new UserRecord.CreateRequest()
+                .setEmail(email)
+                .setPassword(password)
+                .setDisplayName(displayName)
+                .setEmailVerified(false)
+                .setDisabled(false);
+
+        log.info("Attempting to create Firebase Auth user for email: {}", email);
+        try {
+            UserRecord userRecord = getFirebaseAuth().createUser(request);
+            log.info("Successfully created Firebase Auth user: {} (UID: {})", userRecord.getEmail(), userRecord.getUid());
+            return userRecord;
+        } catch (FirebaseAuthException e) {
+            log.error("Failed to create Firebase Auth user for email {}: {}", email, e.getMessage());
+            throw e;
+        }
+    }
 
     public String saveData(String collection, String document, Map<String, Object> data) {
         try {

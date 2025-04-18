@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -78,22 +79,21 @@ public class SecurityConfig {
     @Order(1)
     SecurityFilterChain statefulFilterChain(HttpSecurity http) throws Exception {
         http
-            .securityMatcher("/login/**", "/oauth2/**", "/error", "/api/auth/**")
+            .securityMatcher("/login/**", "/oauth2/**", "/error", "/api/auth/token")
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers("/login/**", "/oauth2/**", "/error").permitAll()
-                .requestMatchers("/api/auth/**").authenticated()
+                .requestMatchers("/api/auth/token").authenticated()
                 .anyRequest().denyAll()
             )
             .oauth2Login(oauth2 -> oauth2
                 .successHandler(oAuth2LoginSuccessHandler)
             )
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(AbstractHttpConfigurer::disable)
             .headers(headers -> headers
                 .frameOptions(frameOptions -> frameOptions.sameOrigin())
                 .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'"))
-                .contentTypeOptions(contentTypeOptions -> contentTypeOptions.disable())
             );
-
 
         return http.build();
     }
@@ -104,6 +104,7 @@ public class SecurityConfig {
         http
             .securityMatcher("/api/**")
             .authorizeHttpRequests(authz -> authz
+                .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                 .requestMatchers(AntPathRequestMatcher.antMatcher("/api/**")).authenticated()
                 .anyRequest().denyAll()
             )
@@ -118,7 +119,6 @@ public class SecurityConfig {
             .headers(headers -> headers
                 .frameOptions(frameOptions -> frameOptions.sameOrigin())
                 .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'"))
-                .contentTypeOptions(contentTypeOptions -> contentTypeOptions.disable())
             );
 
         return http.build();

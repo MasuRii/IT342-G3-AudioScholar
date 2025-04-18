@@ -3,6 +3,8 @@ package edu.cit.audioscholar.domain.repository
 import android.net.Uri
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
+import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import kotlinx.coroutines.flow.Flow
 
 sealed class UploadResult {
@@ -11,6 +13,8 @@ sealed class UploadResult {
     data class Progress(val percentage: Int) : UploadResult()
     data object Loading : UploadResult()
 }
+
+typealias AuthResult = Result<AuthResponse>
 
 interface AudioRepository {
     fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>>
@@ -28,4 +32,6 @@ interface AudioRepository {
     fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>>
 
     suspend fun updateRecordingTitle(filePath: String, newTitle: String): Boolean
+
+    suspend fun registerUser(request: RegistrationRequest): AuthResult
 }

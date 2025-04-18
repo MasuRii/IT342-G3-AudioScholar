@@ -39,6 +39,9 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.domain.repository.AuthResult
 
 private const val RECORDINGS_DIRECTORY_NAME = "Recordings"
 private const val FILENAME_DATE_FORMAT = "yyyy-MM-dd_HH-mm-ss"
@@ -317,6 +320,39 @@ class AudioRepositoryImpl @Inject constructor(
         emit(metadataList)
 
     }.flowOn(Dispatchers.IO)
+
+    override suspend fun registerUser(request: RegistrationRequest): AuthResult {
+        return try {
+            Log.d(TAG_REPO, "Attempting registration for email: ${request.email}")
+            val response = apiService.registerUser(request)
+
+            if (response.isSuccessful) {
+                val authResponse = response.body()
+                if (authResponse != null) {
+                    Log.i(TAG_REPO, "Registration successful: ${authResponse.message ?: "No message"}")
+                    Result.success(authResponse)
+                } else {
+                    Log.w(TAG_REPO, "Registration successful (Code: ${response.code()}) but response body was null.")
+                    Result.success(AuthResponse(message = "Registration successful"))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Registration failed: ${response.code()} - $errorMessage")
+                Result.failure(IOException("Registration failed: $errorMessage"))
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during registration: ${e.message}", e)
+            Result.failure(IOException(application.getString(R.string.error_network_connection), e))
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during registration: ${e.message}", e)
+            Result.failure(IOException(application.getString(R.string.error_unexpected_registration, e.message ?: "Unknown error"), e))
+        }
+    }
 
     override fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>> = flow {
         val file = File(filePath)
@@ -618,8 +654,7 @@ class AudioRepositoryImpl @Inject constructor(
             return@withContext false
         }
     }
-
-    @RequiresApi(Build.VERSION_CODES.Q)
+@RequiresApi(Build.VERSION_CODES.Q)
     private fun createFallbackMetadata(audioFile: File, baseName: String, title: String): RecordingMetadata {
         val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
         val timestampString = baseName.removePrefix(FILENAME_PREFIX)

@@ -36,17 +36,20 @@ public class GeminiService {
     @Value("${google.ai.api.key}")
     private String apiKey;
 
-    private static final String API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent";
+    private static final String API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
+    private static final String MODEL_NAME = "gemini-2.0-flash";
+    private static final String API_URL = API_BASE_URL + MODEL_NAME + ":generateContent";
+
     private static final int MAX_RETRIES = 3;
     private static final long RETRY_DELAY_MS = 1000;
-    private static final int MAX_OUTPUT_TOKENS_GENERAL = 4096;
+    private static final int MAX_OUTPUT_TOKENS_GENERAL = 8192;
     private static final int MAX_OUTPUT_TOKENS_KEYWORDS = 512;
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public String callGeminiAPI(String inputText) {
-        return callGeminiAPIBase(inputText, MAX_OUTPUT_TOKENS_GENERAL, "Text");
+        return callGeminiAPIBase(inputText, MAX_OUTPUT_TOKENS_GENERAL, "Text", API_URL);
     }
 
     public String callGeminiAPIWithAudio(String promptText, String base64Audio, String fileName) {
@@ -68,8 +71,8 @@ public class GeminiService {
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("contents", contents);
         requestBody.put("generationConfig", Map.of(
-            "temperature", 0.1,
-            "topP", 0.8,
+            "temperature", 0.3,
+            "topP", 0.95,
             "topK", 40,
             "maxOutputTokens", MAX_OUTPUT_TOKENS_GENERAL
         ));
@@ -77,7 +80,7 @@ public class GeminiService {
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
         String url = API_URL + "?key=" + apiKey;
 
-        log.debug("Calling Gemini API (Audio) at URL: {}", API_URL);
+        log.debug("Calling Gemini API (Audio) using model {} at URL: {}", MODEL_NAME, API_URL);
         log.debug("Prompt text length: {}", promptText.length());
         log.debug("Base64 audio data length: {}", base64Audio.length());
 
@@ -86,15 +89,15 @@ public class GeminiService {
                 ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST, requestEntity, String.class
                 );
-                log.info("Gemini API (Audio) call successful on attempt {}", attempt);
+                log.info("Gemini API (Audio) call successful on attempt {} using model {}", attempt, MODEL_NAME);
                 String responseText = processGeminiResponse(response.getBody());
                 return createSuccessResponse(responseText);
 
             } catch (HttpServerErrorException | ResourceAccessException e) {
-                log.warn("Gemini API (Audio) call failed on attempt {}/{}. Error: {}. Retrying...",
-                         attempt, MAX_RETRIES, e.getMessage());
+                log.warn("Gemini API (Audio) call failed on attempt {}/{} using model {}. Error: {}. Retrying...",
+                         attempt, MAX_RETRIES, MODEL_NAME, e.getMessage());
                 if (attempt == MAX_RETRIES) {
-                    log.error("Gemini API (Audio) call failed after {} attempts.", MAX_RETRIES, e);
+                    log.error("Gemini API (Audio) call failed after {} attempts using model {}.", MAX_RETRIES, MODEL_NAME, e);
                     return createErrorResponse("API Request Failed after retries", e.getMessage());
                 }
                 try {
@@ -105,15 +108,24 @@ public class GeminiService {
                     return createErrorResponse("API call interrupted during retry wait", ie.getMessage());
                 }
             } catch (HttpClientErrorException e) {
-                 log.error("Gemini API (Audio) client error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+                 log.error("Gemini API (Audio) client error using model {}: {} - {}", MODEL_NAME, e.getStatusCode(), e.getResponseBodyAsString(), e);
                  return createErrorResponse("API Client Error: " + e.getStatusCode(), e.getResponseBodyAsString());
             } catch (GeminiApiException e) {
-                 log.error("Error processing Gemini API (Audio) response: {}", e.getMessage());
+                 log.error("Error processing Gemini API (Audio) response using model {}: {}", MODEL_NAME, e.getMessage());
                  return createErrorResponse(e.getErrorTitle(), e.getDetails());
             } catch (Exception e) {
-                log.error("Unexpected error during Gemini API (Audio) call on attempt {}", attempt, e);
-                if (attempt == MAX_RETRIES) {
-                     return createErrorResponse("Unexpected API Request Failed", e.getMessage());
+                log.error("Unexpected error during Gemini API (Audio) call on attempt {} using model {}", attempt, MODEL_NAME, e);
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.error("API call interrupted during retry wait after unexpected error.", ie);
+                        return createErrorResponse("API call interrupted during retry wait", ie.getMessage());
+                    }
+                } else {
+                    log.error("Gemini API (Audio) call failed after {} attempts due to unexpected error.", MAX_RETRIES, e);
+                    return createErrorResponse("Unexpected API Request Failed", e.getMessage());
                 }
             }
         }
@@ -123,8 +135,10 @@ public class GeminiService {
     public List<String> extractKeywordsAndTopics(String summaryText) {
         String prompt = String.format(
             """
-            Analyze the following lecture summary and extract the main keywords and key topics discussed.
-            Return the results ONLY as a valid JSON array of strings (e.g., ["keyword1", "topic 2", "key concept 3"]).
+            Analyze the following lecture summary. Extract the 3 to 5 most important and concise keywords or short phrases
+            that would be effective for searching for related educational videos on platforms like YouTube.
+            Prioritize terms that capture the core subject matter.
+            Return the results ONLY as a valid JSON array of strings (e.g., ["keyword1", "search phrase 2", "topic 3"]).
             Do not include any introductory text, explanations, markdown formatting, or anything else before or after the JSON array.
 
             Summary:
@@ -132,18 +146,19 @@ public class GeminiService {
             %s
             ---
 
-            JSON Array Output:
+            JSON Array Output (3-5 items):
             """,
             summaryText
         );
 
-        log.info("Attempting to extract keywords/topics from summary (length: {} chars)", summaryText.length());
-        String apiResponseJson = callGeminiAPIBase(prompt, MAX_OUTPUT_TOKENS_KEYWORDS, "Keyword Extraction");
+        log.info("Attempting to extract keywords/topics from summary (length: {} chars) using model {}", summaryText.length(), MODEL_NAME);
+        String apiResponseJson = callGeminiAPIBase(prompt, MAX_OUTPUT_TOKENS_KEYWORDS, "Keyword Extraction", API_URL);
 
         try {
             JsonNode responseNode = objectMapper.readTree(apiResponseJson);
             if (responseNode.has("error")) {
-                log.error("Gemini API call for keywords failed: {} - {}",
+                log.error("Gemini API call for keywords failed using model {}: {} - {}",
+                          MODEL_NAME,
                           responseNode.path("error").asText(),
                           responseNode.path("details").asText());
                 return Collections.emptyList();
@@ -151,45 +166,44 @@ public class GeminiService {
 
             if (responseNode.has("text")) {
                 String rawGeminiOutput = responseNode.path("text").asText();
-                log.debug("Raw Gemini output for keywords: {}", rawGeminiOutput);
+                log.debug("Raw Gemini output for keywords from model {}: {}", MODEL_NAME, rawGeminiOutput);
 
                  try {
                      String cleanedOutput = rawGeminiOutput.trim();
                      if (cleanedOutput.startsWith("```json")) {
-                         cleanedOutput = cleanedOutput.substring(7);
-                     }
-                     if (cleanedOutput.startsWith("```")) {
-                         cleanedOutput = cleanedOutput.substring(3);
+                         cleanedOutput = cleanedOutput.substring(7).trim();
+                     } else if (cleanedOutput.startsWith("```")) {
+                         cleanedOutput = cleanedOutput.substring(3).trim();
                      }
                      if (cleanedOutput.endsWith("```")) {
-                         cleanedOutput = cleanedOutput.substring(0, cleanedOutput.length() - 3);
+                         cleanedOutput = cleanedOutput.substring(0, cleanedOutput.length() - 3).trim();
                      }
-                     cleanedOutput = cleanedOutput.trim();
 
                      if (!cleanedOutput.startsWith("[") || !cleanedOutput.endsWith("]")) {
-                         log.error("Gemini output for keywords is not a valid JSON array string: {}", cleanedOutput);
+                         log.warn("Gemini output for keywords from model {} is not a valid JSON array string: {}", MODEL_NAME, cleanedOutput);
                          return parseKeywordsFallback(rawGeminiOutput);
                      }
 
                      List<String> keywords = objectMapper.readValue(cleanedOutput, new TypeReference<List<String>>() {});
-                     log.info("Successfully extracted {} keywords/topics via JSON parsing.", keywords.size());
+                     log.info("Successfully extracted {} keywords/topics via JSON parsing using model {}.", keywords.size(), MODEL_NAME);
                      keywords.replaceAll(String::trim);
                      keywords.removeIf(String::isBlank);
                      return keywords;
+
                  } catch (JsonProcessingException jsonEx) {
-                     log.error("Failed to parse Gemini keyword response JSON array: {}. Raw output: {}", jsonEx.getMessage(), rawGeminiOutput);
+                     log.error("Failed to parse Gemini keyword response JSON array from model {}: {}. Raw output: {}", MODEL_NAME, jsonEx.getMessage(), rawGeminiOutput);
                      return parseKeywordsFallback(rawGeminiOutput);
                  }
             } else {
-                 log.error("Unexpected JSON structure in Gemini API response for keywords: {}", apiResponseJson);
+                 log.error("Unexpected JSON structure returned from callGeminiAPIBase (keywords) using model {}: {}", MODEL_NAME, apiResponseJson);
                  return Collections.emptyList();
             }
 
         } catch (JsonProcessingException e) {
-            log.error("Failed to parse the outer JSON response from callGeminiAPIBase: {}", e.getMessage(), e);
+            log.error("Failed to parse the outer JSON response from callGeminiAPIBase (keywords) using model {}: {}", MODEL_NAME, e.getMessage(), e);
             return Collections.emptyList();
         } catch (Exception e) {
-             log.error("Unexpected error processing keyword extraction result: {}", e.getMessage(), e);
+             log.error("Unexpected error processing keyword extraction result using model {}: {}", MODEL_NAME, e.getMessage(), e);
              return Collections.emptyList();
         }
     }
@@ -227,14 +241,13 @@ public class GeminiService {
         if (!fallbackKeywords.isEmpty()) {
             log.info("Fallback parsing extracted {} keywords/topics.", fallbackKeywords.size());
         } else {
-            log.warn("Fallback keyword parsing failed to extract any keywords.");
+            log.warn("Fallback keyword parsing failed to extract any keywords from: {}", rawOutput);
         }
         return fallbackKeywords;
     }
 
 
-
-    private String callGeminiAPIBase(String inputText, int maxOutputTokens, String contextLog) {
+    private String callGeminiAPIBase(String inputText, int maxOutputTokens, String contextLog, String apiUrl) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
@@ -249,41 +262,51 @@ public class GeminiService {
         );
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
-        String url = API_URL + "?key=" + apiKey;
+        String url = apiUrl + "?key=" + apiKey;
 
-        log.debug("Calling Gemini API ({}) at URL: {}", contextLog, API_URL);
+        log.debug("Calling Gemini API ({}) using model {} at URL: {}", contextLog, MODEL_NAME, apiUrl);
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             try {
                 ResponseEntity<String> response = restTemplate.exchange(
                     url, HttpMethod.POST, requestEntity, String.class
                 );
-                log.info("Gemini API ({}) call successful on attempt {}", contextLog, attempt);
+                log.info("Gemini API ({}) call successful on attempt {} using model {}", contextLog, attempt, MODEL_NAME);
                 String responseText = processGeminiResponse(response.getBody());
                 return createSuccessResponse(responseText);
 
             } catch (HttpServerErrorException | ResourceAccessException e) {
-                log.warn("Gemini API ({}) call failed on attempt {}/{}. Error: {}. Retrying...",
-                         contextLog, attempt, MAX_RETRIES, e.getMessage());
+                log.warn("Gemini API ({}) call failed on attempt {}/{} using model {}. Error: {}. Retrying...",
+                         contextLog, attempt, MAX_RETRIES, MODEL_NAME, e.getMessage());
                 if (attempt == MAX_RETRIES) {
-                    log.error("Gemini API ({}) call failed after {} attempts.", contextLog, MAX_RETRIES, e);
+                    log.error("Gemini API ({}) call failed after {} attempts using model {}.", contextLog, MAX_RETRIES, MODEL_NAME, e);
                     return createErrorResponse("API Request Failed after retries", e.getMessage());
                 }
                 try {
                     TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
+                    log.error("API call interrupted during retry wait.", ie);
                     return createErrorResponse("API call interrupted during retry wait", ie.getMessage());
                 }
             } catch (HttpClientErrorException e) {
-                 log.error("Gemini API ({}) client error: {} - {}", contextLog, e.getStatusCode(), e.getResponseBodyAsString(), e);
+                 log.error("Gemini API ({}) client error using model {}: {} - {}", contextLog, MODEL_NAME, e.getStatusCode(), e.getResponseBodyAsString(), e);
                  return createErrorResponse("API Client Error: " + e.getStatusCode(), e.getResponseBodyAsString());
             } catch (GeminiApiException e) {
-                 log.error("Error processing Gemini API ({}) response: {}", contextLog, e.getMessage());
+                 log.error("Error processing Gemini API ({}) response using model {}: {}", contextLog, MODEL_NAME, e.getMessage());
                  return createErrorResponse(e.getErrorTitle(), e.getDetails());
             } catch (Exception e) {
-                log.error("Unexpected error during Gemini API ({}) call", contextLog, e);
-                if (attempt == MAX_RETRIES) {
+                log.error("Unexpected error during Gemini API ({}) call on attempt {} using model {}", contextLog, attempt, MODEL_NAME, e);
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.error("API call interrupted during retry wait after unexpected error.", ie);
+                        return createErrorResponse("API call interrupted during retry wait", ie.getMessage());
+                    }
+                } else {
+                     log.error("Gemini API ({}) call failed after {} attempts due to unexpected error.", contextLog, MAX_RETRIES, e);
                      return createErrorResponse("Unexpected API Request Failed", e.getMessage());
                 }
             }
@@ -297,14 +320,31 @@ public class GeminiService {
             log.debug("Raw Gemini Response: {}", rawResponse);
             JsonNode jsonNode = objectMapper.readTree(rawResponse);
 
+            if (jsonNode.has("error")) {
+                JsonNode errorNode = jsonNode.path("error");
+                String errorMessage = errorNode.path("message").asText("Unknown error message");
+                String errorStatus = errorNode.path("status").asText("UNKNOWN_STATUS");
+                int errorCode = errorNode.path("code").asInt(-1);
+                log.error("Gemini API returned an error object. Code: {}, Status: {}, Message: {}", errorCode, errorStatus, errorMessage);
+                throw new GeminiApiException("Gemini API Error: " + errorStatus, "Code: " + errorCode + ", Message: " + errorMessage + ". Raw: " + rawResponse);
+            }
+
             if (jsonNode.has("promptFeedback")) {
                 JsonNode feedback = jsonNode.path("promptFeedback");
                 if (feedback.has("blockReason")) {
                      String reason = feedback.path("blockReason").asText("Unknown");
+                     String details = "Reason: " + reason;
+                     if (feedback.has("safetyRatings")) {
+                         details += ". SafetyRatings: " + feedback.path("safetyRatings").toString();
+                     }
                      log.warn("Gemini API request blocked. Reason: {}. Feedback: {}", reason, feedback.toString());
-                     throw new GeminiApiException("Gemini API Error: Content Blocked", "Reason: " + reason + ". Raw: " + rawResponse);
+                     throw new GeminiApiException("Gemini API Error: Content Blocked", details + ". Raw: " + rawResponse);
                 }
-                 log.warn("Gemini Response Prompt Feedback present: {}", feedback.toString());
+                 if (feedback.has("safetyRatings")) {
+                    log.info("Gemini Response Prompt Feedback Safety Ratings: {}", feedback.path("safetyRatings").toString());
+                 } else {
+                    log.warn("Gemini Response Prompt Feedback present but no blockReason or safetyRatings: {}", feedback.toString());
+                 }
             }
 
             if (!jsonNode.has("candidates") || !jsonNode.path("candidates").isArray() || jsonNode.path("candidates").isEmpty()) {
@@ -312,6 +352,9 @@ public class GeminiService {
                  String details = "Missing or empty 'candidates' array. Raw: " + rawResponse;
                  if (jsonNode.has("promptFeedback")) {
                     details += " Feedback: " + jsonNode.path("promptFeedback").toString();
+                 }
+                 if (jsonNode.has("error")) {
+                     details += " Top-level error present: " + jsonNode.path("error").toString();
                  }
                  throw new GeminiApiException("Invalid response structure from Gemini API", details);
             }
@@ -321,42 +364,61 @@ public class GeminiService {
              if (firstCandidate.has("finishReason")) {
                  String finishReason = firstCandidate.path("finishReason").asText();
                  if (!"STOP".equalsIgnoreCase(finishReason) && !"MAX_TOKENS".equalsIgnoreCase(finishReason)) {
-                     log.warn("Gemini response candidate finished with reason: {}", finishReason);
+                     log.warn("Gemini response candidate finished with non-standard reason: {}", finishReason);
+                     if ("SAFETY".equalsIgnoreCase(finishReason) || "RECITATION".equalsIgnoreCase(finishReason) || "OTHER".equalsIgnoreCase(finishReason)) {
+                         String finishMessage = firstCandidate.path("finishMessage").asText("No finish message provided.");
+                         throw new GeminiApiException("Gemini API Error: Candidate Finish Reason " + finishReason, finishMessage + ". Raw: " + rawResponse);
+                     }
                  }
                  if ("MAX_TOKENS".equalsIgnoreCase(finishReason)) {
                      log.warn("Gemini response may be truncated due to MAX_TOKENS limit.");
                  }
+             } else {
+                 log.warn("Gemini response candidate is missing a 'finishReason'.");
              }
-
 
             if (!firstCandidate.has("content") || !firstCandidate.path("content").has("parts") || !firstCandidate.path("content").path("parts").isArray() || firstCandidate.path("content").path("parts").isEmpty()) {
                  log.warn("Missing 'content' or 'parts' in the first candidate.");
-                 throw new GeminiApiException("Invalid response structure", "Missing 'content' or 'parts' in candidate. Raw: " + rawResponse);
+                 String reason = firstCandidate.path("finishReason").asText("UNKNOWN");
+                 if (!"STOP".equalsIgnoreCase(reason) && !"MAX_TOKENS".equalsIgnoreCase(reason)) {
+                    throw new GeminiApiException("Invalid response structure", "Missing 'content' or 'parts' in candidate. Finish Reason: " + reason + ". Raw: " + rawResponse);
+                 } else {
+                    log.warn("Candidate content/parts missing, but finish reason was {}. Returning empty text.", reason);
+                    return "";
+                 }
             }
 
-            JsonNode firstPart = firstCandidate.path("content").path("parts").get(0);
-            if (!firstPart.has("text")) {
-                 log.warn("Missing 'text' field in the first part of the candidate's content.");
-                  if (jsonNode.has("promptFeedback") && jsonNode.path("promptFeedback").has("blockReason")) {
-                       String reason = jsonNode.path("promptFeedback").path("blockReason").asText("Unknown");
-                       throw new GeminiApiException("Gemini API Error: Content Blocked (detected in parts)", "Reason: " + reason + ". Raw: " + rawResponse);
-                  }
-                 throw new GeminiApiException("Invalid response structure", "Missing 'text' in content part. Raw: " + rawResponse);
+            StringBuilder responseTextBuilder = new StringBuilder();
+            for (JsonNode part : firstCandidate.path("content").path("parts")) {
+                 if (part.has("text")) {
+                     responseTextBuilder.append(part.path("text").asText());
+                 } else {
+                     log.warn("Part is missing 'text' field within the candidate's content. Part: {}", part.toString());
+                 }
             }
 
-            String responseText = firstPart.path("text").asText();
-            log.info("Successfully extracted text content from Gemini response.");
+            String responseText = responseTextBuilder.toString();
+
+            if (responseText.isEmpty()) {
+                String reason = firstCandidate.path("finishReason").asText("UNKNOWN");
+                 log.warn("Extracted text content from Gemini response is empty. Finish Reason: {}", reason);
+                 if (!"STOP".equalsIgnoreCase(reason) && !"MAX_TOKENS".equalsIgnoreCase(reason)) {
+                      throw new GeminiApiException("Empty Content Received", "The response contained no text content despite parts being present. Finish Reason: " + reason + ". Raw: " + rawResponse);
+                 }
+            }
+
+            log.info("Successfully extracted text content (length: {}) from Gemini response.", responseText.length());
             return responseText;
 
         } catch (JsonProcessingException e) {
             log.error("Failed to parse Gemini API JSON response", e);
-            throw new GeminiApiException("JSON Parsing Error", e.getMessage());
+            throw new GeminiApiException("JSON Parsing Error", e.getMessage() + ". Raw: " + rawResponse);
         } catch (Exception e) {
-             log.error("Unexpected error processing Gemini response", e);
              if (e instanceof GeminiApiException) {
                  throw (GeminiApiException) e;
              }
-             throw new GeminiApiException("Response Processing Error", e.getMessage());
+             log.error("Unexpected error processing Gemini response", e);
+             throw new GeminiApiException("Response Processing Error", e.getMessage() + ". Raw: " + rawResponse);
         }
     }
 
@@ -367,10 +429,9 @@ public class GeminiService {
              return objectMapper.writeValueAsString(successResponse);
          } catch (JsonProcessingException ex) {
              log.error("Failed to serialize success response JSON", ex);
-             return "{\"error\": \"Failed to serialize success response\", \"details\": \"Original content was present but could not be formatted.\"}";
+             return "{\"error\": \"Internal Server Error\", \"details\": \"Failed to serialize success response. Original content was present but could not be formatted.\"}";
          }
     }
-
 
     private String createErrorResponse(String errorTitle, String details) {
         ObjectNode errorResponse = objectMapper.createObjectNode();
@@ -380,15 +441,9 @@ public class GeminiService {
             return objectMapper.writeValueAsString(errorResponse);
         } catch (JsonProcessingException ex) {
             log.error("Failed to serialize error response JSON", ex);
-            return "{\"error\": \"Failed to serialize error response\", \"details\": \"" + escapeJson(errorTitle) + "\"}";
+            return "{\"error\": \"Internal Server Error\", \"details\": \"Failed to serialize error response details.\"}";
         }
     }
-
-    private String escapeJson(String text) {
-        if (text == null) return "";
-        return text.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
 
     private String getAudioMimeType(String fileName) {
         if (fileName == null || fileName.isEmpty()) {
@@ -401,13 +456,13 @@ public class GeminiService {
         if (lowercaseFileName.endsWith(".mp3")) return "audio/mp3";
         if (lowercaseFileName.endsWith(".ogg")) return "audio/ogg";
         if (lowercaseFileName.endsWith(".opus")) return "audio/opus";
-        if (lowercaseFileName.endsWith(".m4a") || lowercaseFileName.endsWith(".mp4")) return "audio/mp4";
+        if (lowercaseFileName.endsWith(".m4a")) return "audio/m4a";
+        if (lowercaseFileName.endsWith(".mp4")) return "audio/mp4";
         if (lowercaseFileName.endsWith(".aac")) return "audio/aac";
         if (lowercaseFileName.endsWith(".aiff") || lowercaseFileName.endsWith(".aif")) return "audio/aiff";
         if (lowercaseFileName.endsWith(".amr")) return "audio/amr";
-        if (lowercaseFileName.endsWith(".webm")) return "audio/webm";
 
-        log.warn("Unknown audio file extension in '{}', defaulting MIME type to audio/mpeg", fileName);
+        log.warn("Unknown or potentially unsupported audio file extension in '{}', defaulting MIME type to audio/mpeg. Verify Gemini API support for this format.", fileName);
         return "audio/mpeg";
     }
 

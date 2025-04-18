@@ -4,7 +4,10 @@ import android.net.Uri
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
+import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.Flow
 
 sealed class UploadResult {
@@ -14,7 +17,7 @@ sealed class UploadResult {
     data object Loading : UploadResult()
 }
 
-typealias AuthResult = Result<AuthResponse>
+typealias AuthResult = Resource<AuthResponse>
 
 interface AudioRepository {
     fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>>
@@ -34,4 +37,8 @@ interface AudioRepository {
     suspend fun updateRecordingTitle(filePath: String, newTitle: String): Boolean
 
     suspend fun registerUser(request: RegistrationRequest): AuthResult
+
+    suspend fun loginUser(request: LoginRequest): Resource<AuthResponse>
+
+    suspend fun verifyFirebaseToken(request: FirebaseTokenRequest): Resource<AuthResponse>
 }

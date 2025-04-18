@@ -118,6 +118,8 @@
     <string name="notification_title_starting">Starting Recording…</string>
     <string name="notification_title_processing">Processing command…</string>
 
+    <string name="error_unexpected_login">An unexpected error occurred during login: %1$s</string>
+
     <string name="cd_close_multi_select">Close selection mode</string>
     <string name="cd_select_all">Select all</string>
     <string name="cd_deselect_all">Deselect all</string>

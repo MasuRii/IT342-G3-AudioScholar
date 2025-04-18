@@ -28,6 +28,7 @@ import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.WriteBatch;
 import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.cloud.FirestoreClient;
+import com.google.firebase.auth.FirebaseToken;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
@@ -72,6 +73,27 @@ public class FirebaseService {
 
     private Firestore getFirestore() {
         return FirestoreClient.getFirestore(this.firebaseApp);
+    }
+
+    public FirebaseToken verifyFirebaseIdToken(String idToken) throws FirebaseAuthException {
+        if (idToken == null || idToken.isBlank()) {
+            log.warn("Attempted to verify a null or blank Firebase ID token.");
+            throw new IllegalArgumentException("ID token cannot be null or blank.");
+        }
+        log.debug("Attempting to verify Firebase ID token.");
+        try {
+            boolean checkRevoked = true;
+            FirebaseToken decodedToken = getFirebaseAuth().verifyIdToken(idToken, checkRevoked);
+            log.info("Successfully verified Firebase ID token for UID: {}", decodedToken.getUid());
+            return decodedToken;
+        } catch (FirebaseAuthException e) {
+            log.error("Firebase ID token verification failed: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    public FirebaseApp getFirebaseApp() {
+        return firebaseApp;
     }
 
     public UserRecord createFirebaseUser(String email, String password, String displayName) throws FirebaseAuthException {

@@ -1,166 +1,196 @@
 package edu.cit.audioscholar.controller;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
+import com.google.firebase.auth.AuthErrorCode;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
+import com.google.firebase.auth.UserRecord;
+
 import edu.cit.audioscholar.dto.AuthResponse;
-import edu.cit.audioscholar.dto.JwtAuthenticationResponse;
 import edu.cit.audioscholar.dto.FirebaseTokenRequest;
 import edu.cit.audioscholar.dto.RegistrationRequest;
+import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.User;
 import edu.cit.audioscholar.security.JwtTokenProvider;
 import edu.cit.audioscholar.service.FirebaseService;
 import edu.cit.audioscholar.service.UserService;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import com.google.firebase.auth.FirebaseAuthException;
-import com.google.firebase.auth.FirebaseToken;
-import edu.cit.audioscholar.dto.AuthResponse;
-import edu.cit.audioscholar.dto.JwtAuthenticationResponse;
-import edu.cit.audioscholar.dto.FirebaseTokenRequest;
-
-import java.util.ArrayList;
 
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
 
-    private final JwtTokenProvider tokenProvider;
     private final UserService userService;
     private final FirebaseService firebaseService;
+    private final JwtTokenProvider jwtTokenProvider;
 
-    @Autowired
-    public AuthController(JwtTokenProvider tokenProvider, UserService userService, FirebaseService firebaseService) {
-        this.tokenProvider = tokenProvider;
+    public AuthController(UserService userService, FirebaseService firebaseService, JwtTokenProvider jwtTokenProvider) {
         this.userService = userService;
         this.firebaseService = firebaseService;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
 
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegistrationRequest registrationRequest) {
-        logger.info("Received registration request for email: {}", registrationRequest.getEmail());
+        log.info("Received registration request for email: {}", registrationRequest.getEmail());
         try {
             User registeredUser = userService.registerNewUser(registrationRequest);
-            logger.info("User registered successfully with UID: {}", registeredUser.getUserId());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                                 .body(new AuthResponse(true, "User registered successfully.", registeredUser.getUserId()));
-
+            AuthResponse response = new AuthResponse(true, "User registered successfully.", registeredUser.getUserId());
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (FirebaseAuthException e) {
-            logger.error("Firebase registration failed: {}", e.getMessage());
-            String message = "Registration failed: " + e.getMessage();
-            HttpStatus status = HttpStatus.BAD_REQUEST;
-            if ("EMAIL_ALREADY_EXISTS".equals(e.getErrorCode())) {
-                message = "Registration failed: Email address is already in use.";
-                status = HttpStatus.CONFLICT;
+            log.error("Firebase Auth error during registration for {}: {}", registrationRequest.getEmail(), e.getMessage());
+            if (e.getAuthErrorCode() == AuthErrorCode.EMAIL_ALREADY_EXISTS) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(new AuthResponse(false, "Email address is already in use."));
             }
-            return ResponseEntity.status(status).body(new AuthResponse(false, message));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "Registration failed due to Firebase error: " + e.getMessage() + " (Code: " + e.getAuthErrorCode() + ")"));
+        } catch (FirestoreInteractionException e) {
+             log.error("Firestore error during registration for {}: {}", registrationRequest.getEmail(), e.getMessage(), e);
+             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "Registration failed due to database error."));
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Concurrency error during registration for {}: {}", registrationRequest.getEmail(), e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "Registration process was interrupted."));
         } catch (Exception e) {
-            logger.error("An unexpected error occurred during registration: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                 .body(new AuthResponse(false, "An unexpected error occurred during registration."));
+            log.error("Unexpected error during registration for {}: {}", registrationRequest.getEmail(), e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "An unexpected error occurred during registration."));
         }
     }
 
 
     @PostMapping("/verify-firebase-token")
-    public ResponseEntity<?> verifyTokenAndAuthenticate(@Valid @RequestBody FirebaseTokenRequest tokenRequest) {
-        logger.info("Received request to verify Firebase ID token.");
+    public ResponseEntity<?> verifyFirebaseToken(@Valid @RequestBody FirebaseTokenRequest tokenRequest) {
+        log.info("Received request to verify Firebase ID token.");
         try {
             FirebaseToken decodedToken = firebaseService.verifyFirebaseIdToken(tokenRequest.getIdToken());
             String uid = decodedToken.getUid();
             String email = decodedToken.getEmail();
             String name = decodedToken.getName();
-            logger.info("Firebase ID Token verified successfully for UID: {}, Email: {}", uid, email);
 
+            log.info("Firebase token verified for UID: {}. Finding or creating user profile.", uid);
             User user = userService.findOrCreateUserByFirebaseDetails(uid, email, name);
-            if (user == null) {
-                 logger.error("Failed to find or create local user record for verified Firebase user UID: {}", uid);
-                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                      .body(new AuthResponse(false, "Failed to process user profile after verification."));
-            }
-            logger.info("Local user record processed for UID: {}", uid);
 
-            UserDetails userDetails = org.springframework.security.core.userdetails.User
-                    .withUsername(uid)
-                    .password("")
-                    .authorities(new ArrayList<>())
-                    .accountExpired(false)
-                    .accountLocked(false)
-                    .credentialsExpired(false)
-                    .disabled(false)
-                    .build();
-            Authentication authentication = new UsernamePasswordAuthenticationToken(
-                    userDetails, null, userDetails.getAuthorities()
-            );
+            List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
+                    .map(SimpleGrantedAuthority::new)
+                    .collect(Collectors.toList());
+            Authentication authentication = new UsernamePasswordAuthenticationToken(user.getUserId(), null, authorities);
 
-            String jwt = tokenProvider.generateToken(authentication);
-            logger.info("Generated API JWT for verified user UID: {}", uid);
+            String jwt = jwtTokenProvider.generateToken(authentication);
+            log.info("Generated API JWT for user UID: {}", uid);
 
-            AuthResponse successResponse = new AuthResponse(true, "Token verified successfully.");
-            successResponse.setToken(jwt);
-            successResponse.setUserId(uid);
+            AuthResponse response = new AuthResponse(true, "Firebase token verified successfully.");
+            response.setToken(jwt);
+            response.setUserId(user.getUserId());
 
-            return ResponseEntity.ok(successResponse);
+            return ResponseEntity.ok(response);
 
         } catch (FirebaseAuthException e) {
-            logger.warn("Firebase ID token verification failed: {}", e.getMessage());
-            HttpStatus status = HttpStatus.UNAUTHORIZED;
-            String message = "Firebase token verification failed: ";
-            if ("ID_TOKEN_EXPIRED".equals(e.getErrorCode())) {
-                message += "Token has expired.";
-            } else if ("ID_TOKEN_REVOKED".equals(e.getErrorCode())) {
-                message += "Token has been revoked.";
-            } else {
-                message += "Invalid token.";
-            }
-            return ResponseEntity.status(status).body(new AuthResponse(false, message));
-        } catch (IllegalArgumentException e) {
-             logger.warn("Illegal argument during token verification: {}", e.getMessage());
-             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new AuthResponse(false, e.getMessage()));
+            log.warn("Firebase ID token verification failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "Invalid Firebase token: " + e.getMessage()));
+        } catch (FirestoreInteractionException e) {
+            log.error("Firestore error during user profile lookup/creation after Firebase token verification: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "Error accessing user profile data."));
         } catch (Exception e) {
-            logger.error("An unexpected error occurred during token verification: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                                 .body(new AuthResponse(false, "An unexpected error occurred during token verification."));
+            log.error("Unexpected error during Firebase token verification flow: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "An unexpected error occurred."));
         }
     }
 
+    @PostMapping("/verify-google-token")
+    public ResponseEntity<?> verifyGoogleToken(@Valid @RequestBody FirebaseTokenRequest tokenRequest) {
+        log.info("Received request to verify Google ID token.");
+        log.debug("Received Google Token String for verification: {}", tokenRequest.getIdToken());
+        try {
+            GoogleIdToken idToken = firebaseService.verifyGoogleIdToken(tokenRequest.getIdToken());
+            if (idToken == null) {
+                log.warn("Google ID token verification failed (invalid/expired token).");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "Invalid or expired Google token."));
+            }
 
-    @GetMapping("/token")
-    public ResponseEntity<?> getAuthenticationToken() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            GoogleIdToken.Payload payload = idToken.getPayload();
+            String googleUserId = payload.getSubject();
+            String email = payload.getEmail();
+            boolean emailVerified = payload.getEmailVerified();
+            String name = (String) payload.get("name");
 
-        if (authentication == null || !authentication.isAuthenticated() || !(authentication instanceof OAuth2AuthenticationToken)) {
-            logger.warn("User requested /api/auth/token without valid OAuth2 authentication.");
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "User is not authenticated via OAuth2 session."));
+            log.info("Google ID token verified for Google User ID (sub): {}, Email: {}", googleUserId, email);
+
+            UserRecord firebaseUserRecord;
+            try {
+                firebaseUserRecord = FirebaseAuth.getInstance(firebaseService.getFirebaseApp()).getUserByEmail(email);
+                log.info("Found existing Firebase user by email {} with UID: {}", email, firebaseUserRecord.getUid());
+
+            } catch (FirebaseAuthException e) {
+                if (e.getAuthErrorCode() == AuthErrorCode.USER_NOT_FOUND) {
+                    log.info("No existing Firebase user found for email {}. Creating new Firebase user.", email);
+                    UserRecord.CreateRequest createRequest = new UserRecord.CreateRequest()
+                            .setEmail(email)
+                            .setEmailVerified(emailVerified)
+                            .setDisplayName(name)
+                            .setDisabled(false);
+                    firebaseUserRecord = FirebaseAuth.getInstance(firebaseService.getFirebaseApp()).createUser(createRequest);
+                    log.info("Created new Firebase user for email {} with UID: {}", email, firebaseUserRecord.getUid());
+                } else {
+                    log.error("FirebaseAuthException while finding/creating user for email {}: {}", email, e.getMessage(), e);
+                    throw e;
+                }
+            }
+
+            String firebaseUid = firebaseUserRecord.getUid();
+            log.info("Finding or creating Firestore user profile for Firebase UID: {}", firebaseUid);
+            User user = userService.findOrCreateUserByFirebaseDetails(firebaseUid, email, name);
+            user.setProvider("google");
+
+            List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
+                    .map(SimpleGrantedAuthority::new)
+                    .collect(Collectors.toList());
+            Authentication authentication = new UsernamePasswordAuthenticationToken(firebaseUid, null, authorities);
+
+            String jwt = jwtTokenProvider.generateToken(authentication);
+            log.info("Generated API JWT for user UID: {} after Google Sign-In.", firebaseUid);
+
+            AuthResponse response = new AuthResponse(true, "Google token verified successfully.");
+            response.setToken(jwt);
+            response.setUserId(firebaseUid);
+
+            return ResponseEntity.ok(response);
+
+        } catch (GeneralSecurityException | IOException e) {
+            log.error("Google ID token verification failed due to security/IO error: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "Google token verification failed."));
+        } catch (IllegalArgumentException e) {
+             log.warn("Google ID token verification failed: {}", e.getMessage());
+             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new AuthResponse(false, e.getMessage()));
+        } catch (FirebaseAuthException e) {
+             log.error("FirebaseAuthException during Google Sign-In flow for email lookup/creation: {}", e.getMessage(), e);
+             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "Error processing user account: " + e.getMessage()));
+        } catch (FirestoreInteractionException e) {
+            log.error("Firestore error during user profile lookup/creation after Google token verification: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "Error accessing user profile data after Google Sign-In."));
+        } catch (Exception e) {
+            log.error("Unexpected error during Google token verification flow: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "An unexpected error occurred during Google Sign-In processing."));
         }
-
-        String jwt = tokenProvider.generateToken(authentication);
-        logger.info("Generated JWT token for user {} via /api/auth/token endpoint (from OAuth2 session).", authentication.getName());
-
-        return ResponseEntity.ok(new JwtAuthenticationResponse(jwt));
     }
 
-    @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser() {
-         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-         if (authentication == null || !authentication.isAuthenticated()) {
-             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "User is not authenticated."));
-         }
-         Object principal = authentication.getPrincipal();
-         logger.debug("Fetching /me for principal: {}", principal);
-         return ResponseEntity.ok(principal);
-    }
 }

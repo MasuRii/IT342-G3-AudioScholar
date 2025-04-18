@@ -13,7 +13,20 @@
           "package_name": "edu.cit.audioscholar"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "94663253748-3ar07uapoptre1fakroesknatsndcar9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "edu.cit.audioscholar",
+            "certificate_hash": "3c3dc2f38b79d038b22bdca5bbb9719403e475e3"
+          }
+        },
+        {
+          "client_id": "94663253748-ofnpqjepvrupp7ud1gf03lp0i4ucmb6q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCeO8wox0SPC1WXh2DdzZ4UITmlIM7FY6o"
@@ -21,7 +34,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "94663253748-h5lkuafkhtsphepepuqqgjntd5n79n4g.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

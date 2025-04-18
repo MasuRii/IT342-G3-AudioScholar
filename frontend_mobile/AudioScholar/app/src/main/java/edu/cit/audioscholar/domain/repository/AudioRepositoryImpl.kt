@@ -775,4 +775,41 @@ class AudioRepositoryImpl @Inject constructor(
             Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
         }
     }
+
+    override suspend fun verifyGoogleToken(request: FirebaseTokenRequest): Resource<AuthResponse> {
+        return try {
+            Log.d(TAG_REPO, "Sending Google ID token to backend for verification.")
+            val response = apiService.verifyGoogleToken(request)
+
+            if (response.isSuccessful) {
+                val authResponse = response.body()
+                if (authResponse != null && authResponse.token != null) {
+                    Log.i(TAG_REPO, "Google token verified successfully by backend. API JWT received.")
+                    Resource.Success(authResponse)
+                } else {
+                    val errorMsg = "Backend Google verification successful but response or API token was null."
+                    Log.w(TAG_REPO, errorMsg)
+                    Resource.Error(errorMsg, authResponse)
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown backend Google verification error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown backend Google verification error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Backend Google verification failed: ${response.code()} - $errorMessage")
+                Resource.Error(errorMessage)
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during Google token verification call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during Google token verification call: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during Google token verification call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
+        }
+    }
 }

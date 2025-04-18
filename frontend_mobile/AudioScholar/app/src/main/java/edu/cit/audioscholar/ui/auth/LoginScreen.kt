@@ -1,48 +1,20 @@
 package edu.cit.audioscholar.ui.auth
 
+import android.app.Activity.RESULT_OK
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Login
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,6 +33,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.flow.collectLatest
@@ -74,9 +50,37 @@ fun LoginScreen(
     val uiState = viewModel.uiState
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    LocalContext.current
+    val context = LocalContext.current
 
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+
+    val googleSignInClient = remember {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(context.getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        GoogleSignIn.getClient(context, gso)
+    }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                Log.d("LoginScreen", "Google Sign-In success in launcher, passing to ViewModel.")
+                viewModel.handleGoogleSignInResult(account)
+            } catch (e: ApiException) {
+                Log.w("LoginScreen", "Google Sign-In failed in launcher: ${e.statusCode}", e)
+                viewModel.handleGoogleSignInResult(null)
+            }
+        } else {
+            Log.w("LoginScreen", "Google Sign-In cancelled or failed. Result code: ${result.resultCode}")
+            viewModel.handleGoogleSignInResult(null)
+        }
+    }
+
 
     LaunchedEffect(key1 = true) {
         viewModel.eventFlow.collectLatest { event ->
@@ -94,6 +98,11 @@ fun LoginScreen(
                             duration = SnackbarDuration.Short
                         )
                     }
+                }
+
+                is LoginEvent.LaunchGoogleSignIn -> {
+                    Log.d("LoginScreen", "Launching Google Sign-In Intent...")
+                    googleSignInLauncher.launch(googleSignInClient.signInIntent)
                 }
             }
         }
@@ -154,7 +163,7 @@ fun LoginScreen(
                     )
                 },
                 singleLine = true,
-                isError = uiState.errorMessage != null
+                isError = uiState.errorMessage != null && !uiState.isLoading
             )
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -185,13 +194,14 @@ fun LoginScreen(
                     }
                 },
                 singleLine = true,
-                isError = uiState.errorMessage != null
+                isError = uiState.errorMessage != null && !uiState.isLoading
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             TextButton(
                 onClick = viewModel::onForgotPasswordClick,
-                modifier = Modifier.align(Alignment.End)
+                modifier = Modifier.align(Alignment.End),
+                enabled = !uiState.isLoading
             ) {
                 Text(stringResource(R.string.login_forgot_password))
             }
@@ -233,21 +243,27 @@ fun LoginScreen(
             ) {
                 OutlinedButton(
                     onClick = viewModel::onGoogleSignInClick,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    enabled = !uiState.isLoading
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_google_icon),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color.Unspecified
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Google")
+                    if (uiState.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_google_icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = Color.Unspecified
+                        )
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Google")
+                    }
                 }
 
                 OutlinedButton(
                     onClick = viewModel::onGitHubSignInClick,
-                    modifier = Modifier.padding(horizontal = 8.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                    enabled = !uiState.isLoading
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_github_icon),
@@ -279,12 +295,14 @@ fun LoginScreen(
             ClickableText(
                 text = annotatedString,
                 onClick = { offset ->
-                    annotatedString.getStringAnnotations(tag = "REGISTER", start = offset, end = offset)
-                        .firstOrNull()?.let { annotation ->
-                            navController.navigate(annotation.item) {
-                                launchSingleTop = true
+                    if (!uiState.isLoading) {
+                        annotatedString.getStringAnnotations(tag = "REGISTER", start = offset, end = offset)
+                            .firstOrNull()?.let { annotation ->
+                                navController.navigate(annotation.item) {
+                                    launchSingleTop = true
+                                }
                             }
-                        }
+                    }
                 },
                 style = MaterialTheme.typography.bodyMedium.copy(textAlign = TextAlign.Center),
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -292,4 +310,3 @@ fun LoginScreen(
         }
     }
 }
-

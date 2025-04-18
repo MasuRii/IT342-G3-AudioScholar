@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.androidApplication)
+    id("com.android.application")
     alias(libs.plugins.jetbrainsKotlinAndroid)
     kotlin("kapt")
     id("com.google.dagger.hilt.android")
@@ -52,6 +52,8 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.1.1"))
     implementation("com.google.firebase:firebase-auth-ktx")
 
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    implementation("com.google.firebase:firebase-analytics")
 
     implementation("androidx.media3:media3-exoplayer:1.6.0")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
@@ -91,7 +93,6 @@ dependencies {
 
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation(libs.firebase.analytics)
-    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation(libs.firebase.messaging.ktx)
     implementation(libs.firebase.analytics.ktx)
     implementation ("androidx.core:core-ktx:1.15.0")

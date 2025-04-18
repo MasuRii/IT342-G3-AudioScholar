@@ -41,4 +41,6 @@ interface AudioRepository {
     suspend fun loginUser(request: LoginRequest): Resource<AuthResponse>
 
     suspend fun verifyFirebaseToken(request: FirebaseTokenRequest): Resource<AuthResponse>
+
+    suspend fun verifyGoogleToken(request: FirebaseTokenRequest): Resource<AuthResponse>
 }

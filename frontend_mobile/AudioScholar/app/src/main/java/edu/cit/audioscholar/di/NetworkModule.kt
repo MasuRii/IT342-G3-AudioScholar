@@ -12,8 +12,9 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import edu.cit.audioscholar.data.remote.service.ApiService
-import edu.cit.audioscholar.data.repository.AudioRepositoryImpl
+import edu.cit.audioscholar.domain.repository.AudioRepositoryImpl
 import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.ui.auth.LoginViewModel
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -27,6 +28,7 @@ import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
+import javax.inject.Inject
 import javax.inject.Singleton
 
 @Module
@@ -34,16 +36,38 @@ import javax.inject.Singleton
 object NetworkModule {
 
     private const val PRIMARY_BASE_URL = "https://mastodon-balanced-randomly.ngrok-free.app/"
-    private const val FALLBACK_BASE_URL = "http://192.168.254.100:8080/"
+    private const val FALLBACK_BASE_URL = "http://192.168.254.104:8080/"
 
     private const val PREFS_NAME = "AudioScholarPrefs"
     private const val TAG = "NetworkModule"
+
+    @Singleton
+    class AuthInterceptor @Inject constructor(
+        private val prefs: SharedPreferences
+    ) : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val token = prefs.getString(LoginViewModel.KEY_AUTH_TOKEN, null)
+            val originalRequest = chain.request()
+
+            val requestBuilder = originalRequest.newBuilder()
+            if (!token.isNullOrBlank()) {
+                Log.d(TAG, "AuthInterceptor: Adding Authorization header")
+                requestBuilder.addHeader("Authorization", "Bearer $token")
+            } else {
+                Log.d(TAG, "AuthInterceptor: No token found, proceeding without Authorization header")
+            }
+
+            val request = requestBuilder.build()
+            return chain.proceed(request)
+        }
+    }
+
 
     @Provides
     @Singleton
     fun provideHttpLoggingInterceptor(): HttpLoggingInterceptor {
         return HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = HttpLoggingInterceptor.Level.HEADERS
         }
     }
 
@@ -62,69 +86,59 @@ object NetworkModule {
 
         return Interceptor { chain ->
             val originalRequest: Request = chain.request()
-            var response: Response? = null
-            var exception: IOException? = null
+            var primaryException: IOException? = null
+            var primaryResponse: Response? = null
 
-            try {
-                Log.d(TAG, "Attempting request to primary URL: ${originalRequest.url}")
-                response = chain.proceed(originalRequest)
-                if (response.isSuccessful || response.code >= 400) {
-                    Log.d(TAG, "Primary URL request returned code: ${response.code}. Not falling back.")
-                    return@Interceptor response
-                }
-                exception = IOException("Request to primary URL failed unexpectedly, code: ${response.code}")
-                response.close()
+            if (primaryHttpUrl != null && originalRequest.url.host == primaryHttpUrl.host) {
+                try {
+                    Log.d(TAG, "Attempting request to primary URL: ${originalRequest.url}")
+                    primaryResponse = chain.proceed(originalRequest)
 
-            } catch (e: ConnectException) {
-                Log.w(TAG, "Primary URL connection failed (ConnectException): ${e.message}")
-                exception = e
-            } catch (e: UnknownHostException) {
-                Log.w(TAG, "Primary URL host unknown (UnknownHostException): ${e.message}")
-                exception = e
-            } catch (e: SocketTimeoutException) {
-                Log.w(TAG, "Primary URL timed out (SocketTimeoutException): ${e.message}")
-                exception = e
-            } catch (e: IOException) {
-                Log.w(TAG, "Primary URL IO Exception: ${e.message}. Attempting fallback.")
-                exception = e
-            }
-
-            if (exception != null) {
-                if (originalRequest.url.host == primaryHttpUrl?.host && fallbackHttpUrl != null) {
-                    try {
-                        val fallbackUrl = originalRequest.url.newBuilder()
-                            .scheme(fallbackHttpUrl.scheme)
-                            .host(fallbackHttpUrl.host)
-                            .port(fallbackHttpUrl.port)
-                            .build()
-
-                        val fallbackRequest = originalRequest.newBuilder()
-                            .url(fallbackUrl)
-                            .build()
-
-                        Log.w(TAG, "Primary URL failed. Falling back to: $fallbackUrl")
-                        response?.close()
-
-                        response = chain.proceed(fallbackRequest)
-                        Log.d(TAG, "Fallback URL request returned code: ${response.code}")
-                        return@Interceptor response
-
-                    } catch (e: IOException) {
-                        Log.e(TAG, "Fallback URL also failed: ${e.message}")
-                        exception.addSuppressed(e)
-                    }
-                } else {
-                    if (originalRequest.url.host != primaryHttpUrl?.host) {
-                        Log.d(TAG, "Request was not to primary host (${primaryHttpUrl?.host}), not falling back.")
-                    } else if (fallbackHttpUrl == null) {
-                        Log.e(TAG, "Fallback URL is invalid ($FALLBACK_BASE_URL), cannot fallback.")
+                    if (primaryResponse.isSuccessful) {
+                        Log.d(TAG, "Primary URL request successful (code: ${primaryResponse.code}). Not falling back.")
+                        return@Interceptor primaryResponse
                     } else {
-                        Log.d(TAG, "Fallback condition not met, not falling back.")
+                        Log.w(TAG, "Primary URL request returned unsuccessful code: ${primaryResponse.code}. Will attempt fallback.")
+                        primaryResponse.close()
+                        primaryResponse = null
                     }
+
+                } catch (e: IOException) {
+                    Log.w(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Will attempt fallback.")
+                    primaryException = e
+                    primaryResponse?.close()
+                    primaryResponse = null
                 }
+            } else {
+                Log.d(TAG, "Request URL host (${originalRequest.url.host}) does not match primary host (${primaryHttpUrl?.host}). Proceeding without fallback interceptor logic.")
+                return@Interceptor chain.proceed(originalRequest)
             }
 
-            throw exception ?: IOException("Unknown network error after attempting primary and potentially fallback URLs.")
+
+            if (fallbackHttpUrl != null) {
+                val fallbackUrl = originalRequest.url.newBuilder()
+                    .scheme(fallbackHttpUrl.scheme)
+                    .host(fallbackHttpUrl.host)
+                    .port(fallbackHttpUrl.port)
+                    .build()
+                val fallbackRequest = originalRequest.newBuilder()
+                    .url(fallbackUrl)
+                    .build()
+
+                Log.w(TAG, "Attempting fallback request to: $fallbackUrl")
+                try {
+                    val fallbackResponse = chain.proceed(fallbackRequest)
+                    Log.d(TAG, "Fallback URL request finished (code: ${fallbackResponse.code})")
+                    return@Interceptor fallbackResponse
+                } catch (fallbackException: IOException) {
+                    Log.e(TAG, "Fallback URL request also failed with IOException (${fallbackException::class.java.simpleName}): ${fallbackException.message}")
+                    primaryException?.addSuppressed(fallbackException)
+                    throw primaryException ?: fallbackException
+                }
+            } else {
+                Log.e(TAG, "Primary URL failed, but fallback URL is not configured or invalid. Cannot fallback.")
+                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (unsuccessful response) and no valid fallback URL configured.")
+            }
         }
     }
 
@@ -133,14 +147,16 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
-        fallbackInterceptor: Interceptor
+        fallbackInterceptor: Interceptor,
+        authInterceptor: AuthInterceptor
     ): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(authInterceptor)
             .addInterceptor(fallbackInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(90, TimeUnit.SECONDS)
             .build()
     }
 

@@ -1,12 +1,10 @@
-package edu.cit.audioscholar.data.repository
+package edu.cit.audioscholar.domain.repository
 
 import android.app.Application
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.os.Build
 import android.provider.OpenableColumns
 import android.util.Log
-import androidx.annotation.RequiresApi
 import com.google.gson.Gson
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
@@ -16,8 +14,6 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import edu.cit.audioscholar.data.remote.service.ApiService
-import edu.cit.audioscholar.domain.repository.AudioRepository
-import edu.cit.audioscholar.domain.repository.UploadResult
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -35,7 +31,6 @@ import okio.Buffer
 import okio.BufferedSink
 import okio.ForwardingSink
 import okio.buffer
-
 import retrofit2.HttpException
 import retrofit2.Response
 import java.io.File
@@ -109,9 +104,11 @@ class AudioRepositoryImpl @Inject constructor(
         Log.d(TAG_REPO, "Read ${fileBytes.size} bytes from file.")
 
         val baseRequestBody = fileBytes.toRequestBody(mimeType.toMediaTypeOrNull())
+
         val progressRequestBody = ProgressReportingRequestBody(baseRequestBody) { percentage ->
             trySend(UploadResult.Progress(percentage))
         }
+
 
         val filePart = MultipartBody.Part.createFormData(
             "file",
@@ -129,6 +126,7 @@ class AudioRepositoryImpl @Inject constructor(
 
         try {
             Log.d(TAG_REPO, "Executing API call: apiService.uploadAudio")
+
             val response: Response<AudioMetadataDto> = apiService.uploadAudio(
                 file = filePart,
                 title = titlePart,
@@ -193,14 +191,6 @@ class AudioRepositoryImpl @Inject constructor(
         @Throws(IOException::class)
         override fun writeTo(sink: BufferedSink) {
             val totalBytes = contentLength()
-            if (totalBytes <= 0L) {
-                Log.w("ProgressRequestBody", "Content length unknown or zero ($totalBytes), cannot report progress accurately.")
-                if (totalBytes == -1L) onProgressUpdate(0)
-                delegate.writeTo(sink)
-                if (totalBytes == -1L) onProgressUpdate(100)
-                return
-            }
-
             var bytesWritten: Long = 0
             var lastPercentage = -1
 
@@ -208,25 +198,37 @@ class AudioRepositoryImpl @Inject constructor(
                 @Throws(IOException::class)
                 override fun write(source: Buffer, byteCount: Long) {
                     super.write(source, byteCount)
+
                     bytesWritten += byteCount
-                    val percentage = ((bytesWritten * 100) / totalBytes).toInt()
-                    if (percentage != lastPercentage && percentage in 0..100) {
-                        lastPercentage = percentage
-                        onProgressUpdate(percentage)
+                    if (totalBytes > 0) {
+                        val percentage = ((bytesWritten * 100) / totalBytes).toInt()
+                        if (percentage != lastPercentage && percentage in 0..100) {
+                            lastPercentage = percentage
+                            Log.v("ProgressRequestBody", "Progress: $percentage%")
+                            onProgressUpdate(percentage)
+                        }
+                    } else if (totalBytes == -1L && lastPercentage != 0) {
+                        lastPercentage = 0
+                        Log.v("ProgressRequestBody", "Progress: 0% (unknown total size)")
+                        onProgressUpdate(0)
                     }
                 }
             }
 
-            countingSink.buffer().use { bufferedCountingSink ->
-                delegate.writeTo(bufferedCountingSink)
-            }
+            val bufferedCountingSink = countingSink.buffer()
+            delegate.writeTo(bufferedCountingSink)
+            bufferedCountingSink.flush()
 
-            if (lastPercentage != 100 && bytesWritten == totalBytes) {
+            if (totalBytes > 0 && bytesWritten == totalBytes && lastPercentage != 100) {
                 Log.d("ProgressRequestBody", "Ensuring 100% progress sent at the end.")
+                onProgressUpdate(100)
+            } else if (totalBytes == -1L && lastPercentage != 100) {
+                Log.d("ProgressRequestBody", "Reporting 100% (unknown total size finished)")
                 onProgressUpdate(100)
             }
         }
     }
+
 
     private fun getRecordingsDirectory(): File? {
         val baseDir = application.getExternalFilesDir(null)
@@ -366,14 +368,21 @@ class AudioRepositoryImpl @Inject constructor(
                 file.lastModified()
             }
 
-            val durationMillis = try {
-                MediaMetadataRetriever().use { retriever ->
-                    retriever.setDataSource(filePath)
-                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                }
+            var durationMillis: Long
+            var retriever: MediaMetadataRetriever? = null
+            try {
+                retriever = MediaMetadataRetriever()
+                retriever.setDataSource(filePath)
+                durationMillis = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             } catch (e: Exception) {
                 Log.e(TAG_REPO, "Failed to get duration for file: $fileName", e)
-                0L
+                durationMillis = 0L
+            } finally {
+                try {
+                    retriever?.release()
+                } catch (e: Exception) {
+                    Log.e(TAG_REPO, "Error releasing MediaMetadataRetriever in getRecordingMetadata", e)
+                }
             }
 
             val jsonFileName = "$baseNameWithTimestamp$FILENAME_EXTENSION_METADATA"
@@ -446,6 +455,7 @@ class AudioRepositoryImpl @Inject constructor(
             return@withContext false
         }
 
+
         try {
             val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { metadata.fileName.endsWith(it, ignoreCase = true) } ?: ""
             val baseName = metadata.fileName.removeSuffix(fileExtension)
@@ -478,7 +488,7 @@ class AudioRepositoryImpl @Inject constructor(
             jsonDeletedOrNotFound = false
         }
 
-        return@withContext audioDeleted && jsonDeletedOrNotFound
+        return@withContext jsonDeletedOrNotFound
     }
 
     override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
@@ -632,7 +642,6 @@ class AudioRepositoryImpl @Inject constructor(
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
     private fun createFallbackMetadata(audioFile: File, baseName: String, title: String): RecordingMetadata {
         val dateFormat = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US)
         val timestampString = baseName.removePrefix(FILENAME_PREFIX)
@@ -642,14 +651,21 @@ class AudioRepositoryImpl @Inject constructor(
             audioFile.lastModified()
         }
 
-        val durationMillis = try {
-            MediaMetadataRetriever().use { retriever ->
-                retriever.setDataSource(audioFile.absolutePath)
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            }
+        var durationMillis: Long
+        var retriever: MediaMetadataRetriever? = null
+        try {
+            retriever = MediaMetadataRetriever()
+            retriever.setDataSource(audioFile.absolutePath)
+            durationMillis = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Fallback: Failed to get duration for ${audioFile.name}", e)
-            0L
+            durationMillis = 0L
+        } finally {
+            try {
+                retriever?.release()
+            } catch (e: Exception) {
+                Log.e(TAG_REPO, "Error releasing MediaMetadataRetriever in createFallbackMetadata", e)
+            }
         }
 
         return RecordingMetadata(

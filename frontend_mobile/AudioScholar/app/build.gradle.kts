@@ -5,7 +5,7 @@ plugins {
     id("com.google.dagger.hilt.android")
     alias(libs.plugins.compose.compiler)
     id("com.google.gms.google-services")
-    }
+}
 
 android {
     namespace = "edu.cit.audioscholar"
@@ -49,15 +49,15 @@ android {
 }
 
 dependencies {
-    implementation(platform("com.google.firebase:firebase-bom:33.1.1"))
+    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
 
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    implementation("com.google.android.gms:play-services-auth:21.3.0")
     implementation("com.google.firebase:firebase-analytics")
 
-    implementation("androidx.media3:media3-exoplayer:1.6.0")
+    implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
-    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.22")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.9.24")
     implementation(libs.androidx.lifecycle.runtime.compose)
 
     implementation(libs.google.android.material)
@@ -67,7 +67,6 @@ dependencies {
 
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation(libs.androidx.lifecycle.runtime.compose)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -91,12 +90,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.logging.interceptor)
 
-    implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.messaging.ktx)
     implementation(libs.firebase.analytics.ktx)
-    implementation ("androidx.core:core-ktx:1.15.0")
-    implementation (libs.androidx.core.ktx.v1150)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

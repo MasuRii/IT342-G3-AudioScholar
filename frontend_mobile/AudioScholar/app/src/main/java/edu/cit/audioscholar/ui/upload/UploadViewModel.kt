@@ -168,7 +168,8 @@ class UploadViewModel @Inject constructor(
                 Log.e(TAG, "Validation Error: File size ($size bytes) exceeds limit ($MAX_FILE_SIZE_BYTES bytes). Uri: $uri")
                 val sizeInMB = size / (1024.0 * 1024.0)
                 val maxSizeInMB = MAX_FILE_SIZE_BYTES / (1024.0 * 1024.0)
-                return application.getString(R.string.upload_error_size_exceeded, String.format("%.2f", sizeInMB), String.format("%.0f", maxSizeInMB))
+
+                return application.getString(R.string.upload_error_size_exceeded, sizeInMB, maxSizeInMB)
             }
         }
 

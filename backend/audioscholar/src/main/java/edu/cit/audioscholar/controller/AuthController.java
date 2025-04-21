@@ -36,6 +36,12 @@ import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
 
+import edu.cit.audioscholar.service.TokenRevocationService;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import edu.cit.audioscholar.dto.AuthResponse;
 import edu.cit.audioscholar.dto.FirebaseTokenRequest;
 import edu.cit.audioscholar.dto.GitHubCodeRequest;
@@ -58,6 +64,7 @@ public class AuthController {
     private final FirebaseService firebaseService;
     private final JwtTokenProvider jwtTokenProvider;
     private final WebClient webClient;
+    private final TokenRevocationService tokenRevocationService;
 
     @Value("${spring.security.oauth2.client.registration.github.client-id}")
     private String githubClientId;
@@ -75,11 +82,18 @@ public class AuthController {
     private String githubEmailsUrl;
 
 
-    public AuthController(UserService userService, FirebaseService firebaseService, JwtTokenProvider jwtTokenProvider, WebClient.Builder webClientBuilder) {
+    public AuthController(
+            UserService userService,
+            FirebaseService firebaseService,
+            JwtTokenProvider jwtTokenProvider,
+            WebClient.Builder webClientBuilder,
+            TokenRevocationService tokenRevocationService
+    ) {
         this.userService = userService;
         this.firebaseService = firebaseService;
         this.jwtTokenProvider = jwtTokenProvider;
         this.webClient = webClientBuilder.build();
+        this.tokenRevocationService = tokenRevocationService;
     }
 
     @PostMapping("/register")
@@ -105,6 +119,29 @@ public class AuthController {
         } catch (Exception e) {
             log.error("Unexpected error during registration for {}: {}", registrationRequest.getEmail(), e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new AuthResponse(false, "An unexpected error occurred during registration."));
+        }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logoutUser(HttpServletRequest request) {
+        log.info("Received request to logout user.");
+        String bearerToken = request.getHeader(HttpHeaders.AUTHORIZATION);
+
+        if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
+            String token = bearerToken.substring(7);
+            try {
+                tokenRevocationService.revokeToken(token);
+                log.info("Token successfully added to denylist (revoked).");
+
+                return ResponseEntity.ok(new AuthResponse(true, "Logout successful."));
+            } catch (Exception e) {
+                log.error("Error processing logout: {}", e.getMessage(), e);
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(new AuthResponse(false, "Logout processing failed on server."));
+            }
+        } else {
+            log.warn("Logout request received without a valid Bearer token.");
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "Authorization token not provided."));
         }
     }
 

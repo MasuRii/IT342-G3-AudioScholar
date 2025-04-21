@@ -11,6 +11,7 @@ import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
+import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import edu.cit.audioscholar.data.remote.service.ApiService
@@ -752,6 +753,43 @@ class AudioRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG_REPO, "Unexpected exception during registration: ${e.message}", e)
             Resource.Error(application.getString(R.string.error_unexpected_registration, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun verifyGitHubCode(request: GitHubCodeRequest): Resource<AuthResponse> {
+        return try {
+            Log.d(TAG_REPO, "Sending GitHub code to backend for verification.")
+            val response = apiService.verifyGitHubCode(request)
+
+            if (response.isSuccessful) {
+                val authResponse = response.body()
+                if (authResponse != null && authResponse.token != null) {
+                    Log.i(TAG_REPO, "GitHub code verified successfully by backend. API JWT received.")
+                    Resource.Success(authResponse)
+                } else {
+                    val errorMsg = "Backend GitHub verification successful but response or API token was null."
+                    Log.w(TAG_REPO, errorMsg)
+                    Resource.Error(errorMsg, authResponse)
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown backend GitHub verification error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown backend GitHub verification error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Backend GitHub verification failed: ${response.code()} - $errorMessage")
+                Resource.Error(errorMessage)
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during GitHub code verification call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during GitHub code verification call: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during GitHub code verification call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
         }
     }
 

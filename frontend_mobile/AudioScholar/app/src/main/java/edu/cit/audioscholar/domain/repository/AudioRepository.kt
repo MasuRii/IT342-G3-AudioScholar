@@ -5,6 +5,7 @@ import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
+import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import edu.cit.audioscholar.util.Resource
@@ -18,6 +19,7 @@ sealed class UploadResult {
 }
 
 typealias AuthResult = Resource<AuthResponse>
+
 
 interface AudioRepository {
     fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>>
@@ -43,4 +45,6 @@ interface AudioRepository {
     suspend fun verifyFirebaseToken(request: FirebaseTokenRequest): Resource<AuthResponse>
 
     suspend fun verifyGoogleToken(request: FirebaseTokenRequest): Resource<AuthResponse>
+
+    suspend fun verifyGitHubCode(request: GitHubCodeRequest): Resource<AuthResponse>
 }

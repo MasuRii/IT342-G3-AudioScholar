@@ -57,8 +57,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -74,6 +76,7 @@ import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
 import edu.cit.audioscholar.ui.auth.LoginScreen
+import edu.cit.audioscholar.ui.auth.LoginViewModel
 import edu.cit.audioscholar.ui.auth.RegistrationScreen
 import edu.cit.audioscholar.ui.details.RecordingDetailsScreen
 import edu.cit.audioscholar.ui.library.LibraryScreen
@@ -85,7 +88,10 @@ import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
@@ -121,9 +127,8 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var prefs: SharedPreferences
-
     private val settingsViewModel: SettingsViewModel by viewModels()
-
+    private val loginViewModel: LoginViewModel by viewModels()
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
@@ -142,10 +147,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d("MainActivity", "onCreate called. Intent received: $intent")
         logIntentExtras("onCreate", intent)
+
+        handleGitHubRedirectIntent(intent, "onCreate")
 
         val startDestination = intent?.getStringExtra(SplashActivity.EXTRA_START_DESTINATION)
             ?: run {
@@ -158,7 +166,7 @@ class MainActivity : ComponentActivity() {
                     else -> Screen.Record.route
                 }
             }
-        Log.d("MainActivity", "Using start destination determined by SplashActivity (or fallback): $startDestination")
+        Log.d("MainActivity", "Using start destination: $startDestination")
 
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (!task.isSuccessful) {
@@ -167,6 +175,29 @@ class MainActivity : ComponentActivity() {
             }
             val token = task.result
             Log.d("MainActivity", "Manually fetched FCM token: $token")
+        }
+
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                loginViewModel.gitHubLoginCompleteSignal.collectLatest {
+                    Log.i("MainActivity", "[GitHubNavCollector] Collected gitHubLoginCompleteSignal.")
+                    if (::navController.isInitialized) {
+                        val currentRoute = navController.currentDestination?.route
+                        if (currentRoute == Screen.Login.route) {
+                            Log.d("MainActivity", "[GitHubNavCollector] Navigating from Login to Record.")
+                            navController.navigate(Screen.Record.route) {
+                                popUpTo(Screen.Login.route) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        } else {
+                            Log.w("MainActivity", "[GitHubNavCollector] Signal received, but not on Login screen (current: $currentRoute). Skipping navigation.")
+                        }
+                    } else {
+                        Log.e("MainActivity", "[GitHubNavCollector] Signal received, but NavController not initialized!")
+                    }
+                }
+            }
+            Log.d("MainActivity", "[GitHubNavCollector] Collection stopped.")
         }
 
         setContent {
@@ -182,15 +213,19 @@ class MainActivity : ComponentActivity() {
                 navController = rememberNavController()
 
                 LaunchedEffect(intent) {
-                    Log.d("MainActivity", "LaunchedEffect in onCreate triggered.")
-                    handleNavigationIntent(intent, navController)
+                    Log.d("MainActivity", "LaunchedEffect in setContent triggered for initial intent.")
+                    if (intent?.action != Intent.ACTION_VIEW || intent.data?.scheme != LoginViewModel.GITHUB_REDIRECT_URI_SCHEME) {
+                        handleNavigationIntent(intent, navController)
+                    }
                 }
+
 
                 MainAppScreen(
                     navController = navController,
                     startDestination = startDestination,
                     onOnboardingComplete = onOnboardingCompleteAction,
-                    prefs = prefs
+                    prefs = prefs,
+                    loginViewModel = loginViewModel
                 )
             }
         }
@@ -201,13 +236,43 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onNewIntent called. Intent received: $intent")
         logIntentExtras("onNewIntent", intent)
 
+        val currentIntentDataString = getIntent()?.dataString
+        val newIntentDataString = if (intent.action == Intent.ACTION_VIEW) intent.dataString else null
+        if (newIntentDataString != null && newIntentDataString == currentIntentDataString) {
+            Log.w("MainActivity", "onNewIntent: Ignoring duplicate delivery of the same intent data: $newIntentDataString")
+            setIntent(intent)
+            return
+        }
+
         setIntent(intent)
+
         if (::navController.isInitialized) {
-            handleNavigationIntent(intent, navController)
+            if (!handleGitHubRedirectIntent(intent, "onNewIntent")) {
+                handleNavigationIntent(intent, navController)
+            }
         } else {
             Log.e("MainActivity", "onNewIntent called but navController not initialized yet.")
         }
     }
+
+
+    private fun handleGitHubRedirectIntent(intent: Intent?, source: String): Boolean {
+        if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
+            val uri = intent.data
+            if (uri != null &&
+                uri.scheme == LoginViewModel.GITHUB_REDIRECT_URI_SCHEME &&
+                uri.host == LoginViewModel.GITHUB_REDIRECT_URI_HOST)
+            {
+                Log.i("MainActivity", "[$source] Received GitHub OAuth Redirect URI: $uri")
+                val code = uri.getQueryParameter("code")
+                val state = uri.getQueryParameter("state")
+                loginViewModel.handleGitHubRedirect(code, state)
+                return true
+            }
+        }
+        return false
+    }
+
 
     @Suppress("DEPRECATION")
     private fun logIntentExtras(source: String, intent: Intent?) {
@@ -215,43 +280,53 @@ class MainActivity : ComponentActivity() {
             Log.d("MainActivity", "[$source] Intent is null.")
             return
         }
+        Log.d("MainActivity", "[$source] Intent Action: ${intent.action}")
+        Log.d("MainActivity", "[$source] Intent Data: ${intent.dataString}")
         intent.extras?.let { bundle ->
             Log.d("MainActivity", "[$source] Intent extras:")
             for (key in bundle.keySet()) {
-                Log.d("MainActivity", "  Key=$key, Value=${bundle.get(key)}")
+                val valueString = bundle.get(key)?.toString() ?: "null"
+                Log.d("MainActivity", "  Key=$key, Value=${valueString.take(100)}${if (valueString.length > 100) "..." else ""}")
             }
         } ?: Log.d("MainActivity", "[$source] Intent has no extras.")
     }
 
     private fun handleNavigationIntent(intent: Intent?, navController: NavHostController) {
-        Log.d("MainActivity", "[handleNavigationIntent] Checking intent...")
+        Log.d("MainActivity", "[handleNavigationIntent] Checking intent for non-OAuth navigation...")
         logIntentExtras("handleNavigationIntent", intent)
+
+        if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == LoginViewModel.GITHUB_REDIRECT_URI_SCHEME) {
+            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping standard navigation handling.")
+            return
+        }
 
         val navigateTo = intent?.getStringExtra(NAVIGATE_TO_EXTRA)
         Log.d("MainActivity", "[handleNavigationIntent] Value from getExtra(NAVIGATE_TO_EXTRA): $navigateTo")
 
-        val currentRoute = navController.currentDestination?.route
-        val isAuthScreen = currentRoute == Screen.Login.route || currentRoute == Screen.Registration.route || currentRoute == Screen.Onboarding.route
+        val currentRoute = navController.currentBackStackEntry?.destination?.route
+        val isAuthScreen = currentRoute == Screen.Login.route ||
+                currentRoute == Screen.Registration.route ||
+                currentRoute == Screen.Onboarding.route
 
-        if (navigateTo == UPLOAD_SCREEN_VALUE && !isAuthScreen) {
-            if (currentRoute != Screen.Upload.route) {
-                Log.d("MainActivity", "Navigating to Upload screen via intent.")
-                navController.navigate(Screen.Upload.route) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        saveState = true
+        if (navigateTo == UPLOAD_SCREEN_VALUE) {
+            if (!isAuthScreen) {
+                if (currentRoute != Screen.Upload.route) {
+                    Log.d("MainActivity", "Navigating to Upload screen via intent.")
+                    navController.navigate(Screen.Upload.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
                     }
-                    launchSingleTop = true
-                    restoreState = true
+                } else {
+                    Log.d("MainActivity", "Already on Upload screen, no navigation needed from intent.")
                 }
             } else {
-                Log.d("MainActivity", "Already on Upload screen, no navigation needed from intent.")
+                Log.d("MainActivity", "Intent requests Upload screen, but currently on Auth/Onboarding. Ignoring.")
             }
             intent?.removeExtra(NAVIGATE_TO_EXTRA)
-        } else if (navigateTo == UPLOAD_SCREEN_VALUE && isAuthScreen) {
-            Log.d("MainActivity", "Intent requests Upload screen, but currently on Auth/Onboarding. Ignoring.")
-            intent?.removeExtra(NAVIGATE_TO_EXTRA)
-        }
-        else {
+        } else {
             Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to Upload screen or currently on Auth.")
         }
     }
@@ -264,7 +339,8 @@ fun MainAppScreen(
     navController: NavHostController,
     startDestination: String,
     onOnboardingComplete: () -> Unit,
-    prefs: SharedPreferences
+    prefs: SharedPreferences,
+    loginViewModel: LoginViewModel
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -286,23 +362,11 @@ fun MainAppScreen(
                         .padding(16.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_navigation_logo),
-                            contentDescription = stringResource(R.string.cd_app_logo),
-                            modifier = Modifier.size(84.dp)
-                        )
+                        Image(painterResource(id = R.drawable.ic_navigation_logo), null, Modifier.size(84.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(id = R.string.app_name),
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 24.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        Text(stringResource(id = R.string.app_name), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
-
                     Spacer(Modifier.height(16.dp))
-
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -311,52 +375,25 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != Screen.Profile.route) {
                                     navController.navigate(Screen.Profile.route) {
-                                        launchSingleTop = true
                                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        restoreState = true
+                                        launchSingleTop = true; restoreState = true
                                     }
                                 }
-                                Log.d("DrawerHeader", "Profile section clicked")
                             }
                             .padding(vertical = 8.dp)
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_navigation_profile_placeholder),
-                            contentDescription = stringResource(R.string.cd_user_avatar),
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.secondaryContainer),
-                            contentScale = ContentScale.Crop
-                        )
+                        Image(painterResource(id = R.drawable.ic_navigation_profile_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(
-                                text = stringResource(R.string.drawer_header_user_name),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = stringResource(R.string.drawer_header_user_email),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Text("User Name", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                            Text("user.email@example.com", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
-
                 HorizontalDivider()
 
-                val mainNavItems = listOf(
-                    Screen.Record,
-                    Screen.Library,
-                    Screen.Upload,
-                    Screen.Settings,
-                    Screen.About
-                )
-
+                val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Upload, Screen.Settings, Screen.About)
                 Spacer(Modifier.height(12.dp))
-
                 mainNavItems.forEach { screen ->
                     screen.icon?.let { icon ->
                         NavigationDrawerItem(
@@ -367,11 +404,8 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != screen.route) {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
+                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                        launchSingleTop = true; restoreState = true
                                     }
                                 }
                             },
@@ -390,27 +424,23 @@ fun MainAppScreen(
                     onClick = {
                         scope.launch { drawerState.close() }
                         Log.d("DrawerFooter", "Logout clicked - Clearing login state and Navigating to Login")
-
                         with(prefs.edit()) {
                             putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
+                            remove(LoginViewModel.KEY_AUTH_TOKEN)
                             apply()
                         }
 
                         navController.navigate(Screen.Login.route) {
-                            popUpTo(navController.graph.id) {
-                                inclusive = true
-                            }
+                            popUpTo(navController.graph.id) { inclusive = true }
                             launchSingleTop = true
                         }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
-
                 Spacer(Modifier.height(12.dp))
             }
         }
-    ) {
-        Scaffold { innerPadding ->
+    ) { Scaffold { innerPadding ->
             NavHost(
                 navController = navController,
                 startDestination = startDestination,
@@ -443,8 +473,7 @@ fun MainAppScreen(
                         onNavigateToRecording = {
                             navController.navigate(Screen.Record.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
+                                launchSingleTop = true; restoreState = true
                             }
                         },
                         drawerState = drawerState,

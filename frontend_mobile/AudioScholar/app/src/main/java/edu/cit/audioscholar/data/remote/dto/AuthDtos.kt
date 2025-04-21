@@ -22,3 +22,8 @@ data class AuthResponse(
 data class FirebaseTokenRequest(
     val idToken: String
 )
+
+data class GitHubCodeRequest(
+    val code: String,
+    val state: String?
+)

@@ -4,6 +4,7 @@ import android.app.Activity.RESULT_OK
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +12,7 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
@@ -47,7 +50,7 @@ fun LoginScreen(
     navController: NavController,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
-    val uiState = viewModel.uiState
+    val loginState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -61,7 +64,6 @@ fun LoginScreen(
             .build()
         GoogleSignIn.getClient(context, gso)
     }
-
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -81,40 +83,52 @@ fun LoginScreen(
         }
     }
 
+    LaunchedEffect(loginState.navigateToRecordScreen) {
+        if (loginState.navigateToRecordScreen) {
+            Log.d("LoginScreen", "navigateToRecordScreen state is true. Navigating to Record screen.")
+            navController.navigate(Screen.Record.route) {
+                popUpTo(Screen.Login.route) { inclusive = true }
+                launchSingleTop = true
+            }
+            viewModel.onNavigationHandled()
+        }
+    }
 
-    LaunchedEffect(key1 = true) {
-        viewModel.eventFlow.collectLatest { event ->
+
+    LaunchedEffect(key1 = viewModel) {
+        viewModel.loginScreenEventFlow.collectLatest { event ->
             when (event) {
-                is LoginEvent.LoginSuccess -> {
-                    navController.navigate(Screen.Record.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                        launchSingleTop = true
-                    }
+                is LoginScreenEvent.ShowInfoMessage -> {
+                    scope.launch { snackbarHostState.showSnackbar(event.message, duration = SnackbarDuration.Short) }
                 }
-                is LoginEvent.ShowInfoMessage -> {
-                    scope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = event.message,
-                            duration = SnackbarDuration.Short
-                        )
-                    }
-                }
-
-                is LoginEvent.LaunchGoogleSignIn -> {
+                is LoginScreenEvent.LaunchGoogleSignIn -> {
                     Log.d("LoginScreen", "Launching Google Sign-In Intent...")
                     googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                }
+                is LoginScreenEvent.LaunchGitHubSignIn -> {
+                    Log.d("LoginScreen", "Launching GitHub Sign-In via Custom Tab...")
+                    val customTabsIntent = CustomTabsIntent.Builder().build()
+                    try {
+                        customTabsIntent.launchUrl(context, event.url)
+                    } catch (e: Exception) {
+                        Log.e("LoginScreen", "Could not launch Custom Tab for GitHub: ${e.message}")
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                message = "Could not open browser for GitHub login.",
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let { message ->
+
+    LaunchedEffect(loginState.errorMessage) {
+        loginState.errorMessage?.let { message ->
             scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = message,
-                    duration = SnackbarDuration.Short
-                )
+                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
                 viewModel.consumeErrorMessage()
             }
         }
@@ -148,7 +162,7 @@ fun LoginScreen(
             )
 
             OutlinedTextField(
-                value = uiState.email,
+                value = loginState.email,
                 onValueChange = viewModel::onEmailChange,
                 label = { Text(stringResource(R.string.login_email_label)) },
                 modifier = Modifier.fillMaxWidth(),
@@ -163,12 +177,12 @@ fun LoginScreen(
                     )
                 },
                 singleLine = true,
-                isError = uiState.errorMessage != null && !uiState.isLoading
+                isError = loginState.errorMessage != null
             )
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = uiState.password,
+                value = loginState.password,
                 onValueChange = viewModel::onPasswordChange,
                 label = { Text(stringResource(R.string.login_password_label)) },
                 modifier = Modifier.fillMaxWidth(),
@@ -194,14 +208,14 @@ fun LoginScreen(
                     }
                 },
                 singleLine = true,
-                isError = uiState.errorMessage != null && !uiState.isLoading
+                isError = loginState.errorMessage != null
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             TextButton(
                 onClick = viewModel::onForgotPasswordClick,
                 modifier = Modifier.align(Alignment.End),
-                enabled = !uiState.isLoading
+                enabled = !loginState.isLoading
             ) {
                 Text(stringResource(R.string.login_forgot_password))
             }
@@ -210,9 +224,9 @@ fun LoginScreen(
             Button(
                 onClick = viewModel::onLoginClick,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !uiState.isLoading
+                enabled = !loginState.isLoading
             ) {
-                if (uiState.isLoading) {
+                if (loginState.isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -220,7 +234,7 @@ fun LoginScreen(
                     )
                 } else {
                     Icon(
-                        imageVector = Icons.Filled.Login,
+                        imageVector = Icons.AutoMirrored.Filled.Login,
                         contentDescription = null,
                         modifier = Modifier.size(ButtonDefaults.IconSize)
                     )
@@ -236,6 +250,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(16.dp))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -244,26 +259,22 @@ fun LoginScreen(
                 OutlinedButton(
                     onClick = viewModel::onGoogleSignInClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    enabled = !uiState.isLoading
+                    enabled = !loginState.isLoading
                 ) {
-                    if (uiState.isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_google_icon),
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = Color.Unspecified
-                        )
-                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                        Text("Google")
-                    }
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_google_icon),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.Unspecified
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Google")
                 }
 
                 OutlinedButton(
                     onClick = viewModel::onGitHubSignInClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    enabled = !uiState.isLoading
+                    enabled = !loginState.isLoading
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_github_icon),
@@ -295,7 +306,7 @@ fun LoginScreen(
             ClickableText(
                 text = annotatedString,
                 onClick = { offset ->
-                    if (!uiState.isLoading) {
+                    if (!loginState.isLoading) {
                         annotatedString.getStringAnnotations(tag = "REGISTER", start = offset, end = offset)
                             .firstOrNull()?.let { annotation ->
                                 navController.navigate(annotation.item) {

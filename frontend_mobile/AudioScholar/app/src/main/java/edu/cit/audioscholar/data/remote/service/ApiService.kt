@@ -3,6 +3,7 @@ package edu.cit.audioscholar.data.remote.service
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
+import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
 import okhttp3.MultipartBody
@@ -45,6 +46,11 @@ interface ApiService {
     @POST("/api/auth/verify-google-token")
     suspend fun verifyGoogleToken(
         @Body tokenRequest: FirebaseTokenRequest
+    ): Response<AuthResponse>
+
+    @POST("/api/auth/verify-github-code")
+    suspend fun verifyGitHubCode(
+        @Body codeRequest: GitHubCodeRequest
     ): Response<AuthResponse>
 
 }

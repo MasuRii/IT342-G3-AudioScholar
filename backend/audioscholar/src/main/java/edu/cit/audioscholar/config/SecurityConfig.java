@@ -3,6 +3,9 @@ package edu.cit.audioscholar.config;
 import java.util.Arrays;
 import java.util.List;
 import javax.crypto.SecretKey;
+
+import edu.cit.audioscholar.security.JwtDenylistFilter;
+import edu.cit.audioscholar.service.TokenRevocationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,6 +20,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
@@ -36,6 +40,9 @@ public class SecurityConfig {
     @Autowired
     private JwtTokenProvider tokenProvider;
 
+    @Autowired
+    private TokenRevocationService tokenRevocationService;
+
     @Bean
     JwtDecoder jwtDecoder() {
         SecretKey secretKey = tokenProvider.getJwtSecretKey();
@@ -54,10 +61,10 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(
-                "http://localhost:8100",
-                "http://localhost",
-                "capacitor://localhost",
-                "http://localhost:4200"
+                "http:",
+                "http:",
+                "capacitor:",
+                "http:"
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList(
@@ -71,7 +78,6 @@ public class SecurityConfig {
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setMaxAge(3600L);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
@@ -99,6 +105,8 @@ public class SecurityConfig {
     @Bean
     @Order(2)
     SecurityFilterChain statelessFilterChain(HttpSecurity http) throws Exception {
+        JwtDenylistFilter jwtDenylistFilter = new JwtDenylistFilter(tokenRevocationService);
+
         http
                 .securityMatcher("/api/**")
                 .authorizeHttpRequests(authz -> authz
@@ -108,6 +116,7 @@ public class SecurityConfig {
                                 "/api/auth/verify-google-token",
                                 "/api/auth/verify-github-code"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
                         .requestMatchers(AntPathRequestMatcher.antMatcher("/api/**")).authenticated()
                         .anyRequest().denyAll()
                 )
@@ -117,6 +126,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
+                .addFilterAfter(jwtDenylistFilter, BearerTokenAuthenticationFilter.class)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable);
 

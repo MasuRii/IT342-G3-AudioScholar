@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +33,7 @@ enum class PasswordStrength {
 
 @HiltViewModel
 class RegistrationViewModel @Inject constructor(
-    private val audioRepository: AudioRepository
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RegistrationUiState())
@@ -127,7 +127,6 @@ class RegistrationViewModel @Inject constructor(
             return
         }
 
-
         viewModelScope.launch {
             _uiState.update { it.copy(registrationInProgress = true, registrationError = null) }
 
@@ -139,7 +138,7 @@ class RegistrationViewModel @Inject constructor(
                 password = currentState.password
             )
 
-            when (val result = audioRepository.registerUser(request)) {
+            when (val result = authRepository.registerUser(request)) {
                 is Resource.Success -> {
                     _uiState.update {
                         it.copy(

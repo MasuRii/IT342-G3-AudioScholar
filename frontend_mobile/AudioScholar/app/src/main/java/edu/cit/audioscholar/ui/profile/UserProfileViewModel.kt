@@ -5,7 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.auth.LoginViewModel
 import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
@@ -27,7 +27,7 @@ data class UserProfileUiState(
 
 @HiltViewModel
 class UserProfileViewModel @Inject constructor(
-    private val audioRepository: AudioRepository,
+    private val authRepository: AuthRepository,
     private val prefs: SharedPreferences
 ) : ViewModel() {
 
@@ -44,7 +44,7 @@ class UserProfileViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             Log.d("UserProfileViewModel", "Calling repository.getUserProfile()")
-            when (val result = audioRepository.getUserProfile()) {
+            when (val result = authRepository.getUserProfile()) {
                 is Resource.Success -> {
                     val profileData = result.data
                     if (profileData != null) {
@@ -78,7 +78,7 @@ class UserProfileViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                errorMessage = result.message ?: "An unexpected error occurred."
+                                errorMessage = result.message ?: "An unexpected error occurred while loading the profile."
                             )
                         }
                     }
@@ -109,7 +109,6 @@ class UserProfileViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = false, navigateToLogin = true) }
         }
     }
-
 
     fun onLoginNavigationComplete() {
         _uiState.update { it.copy(navigateToLogin = false) }

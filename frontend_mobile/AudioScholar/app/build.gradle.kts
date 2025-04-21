@@ -52,10 +52,10 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
 
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
-    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation(libs.firebase.auth.ktx)
 
     implementation("com.google.android.gms:play-services-auth:21.3.0")
-    implementation("com.google.firebase:firebase-analytics")
+    implementation(libs.google.firebase.analytics)
 
     implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("com.google.accompanist:accompanist-permissions:0.31.5-beta")
@@ -80,7 +80,7 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("androidx.compose.ui:ui-text-google-fonts:1.7.8")
+    implementation(libs.androidx.ui.text.google.fonts)
 
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)

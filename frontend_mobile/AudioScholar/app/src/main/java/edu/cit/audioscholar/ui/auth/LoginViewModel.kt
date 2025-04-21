@@ -13,7 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.BuildConfig
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.channels.BufferOverflow
@@ -42,7 +42,6 @@ data class LoginUiState(
         get() = isEmailLoginLoading || isGoogleLoginLoading || isGitHubLoginLoading
 }
 
-
 sealed class LoginScreenEvent {
     data class ShowInfoMessage(val message: String) : LoginScreenEvent()
     object LaunchGoogleSignIn : LoginScreenEvent()
@@ -51,7 +50,7 @@ sealed class LoginScreenEvent {
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val audioRepository: AudioRepository,
+    private val authRepository: AuthRepository,
     private val prefs: SharedPreferences,
     private val firebaseAuth: FirebaseAuth
 ) : ViewModel() {
@@ -152,7 +151,7 @@ class LoginViewModel @Inject constructor(
 
                 val tokenRequest = FirebaseTokenRequest(idToken = firebaseIdToken)
                 Log.d(TAG, "Sending Firebase ID token to backend for verification...")
-                when (val backendResult = audioRepository.verifyFirebaseToken(tokenRequest)) {
+                when (val backendResult = authRepository.verifyFirebaseToken(tokenRequest)) {
                     is Resource.Success -> {
                         val apiJwt = backendResult.data?.token
                         if (apiJwt != null) {
@@ -222,7 +221,7 @@ class LoginViewModel @Inject constructor(
             viewModelScope.launch {
                 val tokenRequest = FirebaseTokenRequest(idToken = account.idToken!!)
                 Log.d(TAG, "[GoogleSignIn] Sending Google ID token to backend for verification...")
-                when (val backendResult = audioRepository.verifyGoogleToken(tokenRequest)) {
+                when (val backendResult = authRepository.verifyGoogleToken(tokenRequest)) {
                     is Resource.Success -> {
                         val apiJwt = backendResult.data?.token
                         if (apiJwt != null) {
@@ -251,7 +250,6 @@ class LoginViewModel @Inject constructor(
                         _uiState.update { it.copy(isGoogleLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Server validation error for Google Sign-In.") }
                     }
                     is Resource.Loading -> {}
-                    else -> { Log.w(TAG, "[GoogleSignIn] Unknown Resource state received from repository.") }
                 }
             }
         } else {
@@ -330,7 +328,7 @@ class LoginViewModel @Inject constructor(
             var finalState = _uiState.value.copy(isGitHubLoginLoading = true)
             var signalActivity = false
 
-            when (val backendResult = audioRepository.verifyGitHubCode(request)) {
+            when (val backendResult = authRepository.verifyGitHubCode(request)) {
                 is Resource.Success -> {
                     val apiJwt = backendResult.data?.token
                     if (apiJwt != null) {

@@ -12,7 +12,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.RemoteAudioRepository
 import edu.cit.audioscholar.domain.repository.UploadResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,7 +45,7 @@ data class UploadScreenState(
 @HiltViewModel
 class UploadViewModel @Inject constructor(
     private val application: Application,
-    private val audioRepository: AudioRepository,
+    private val remoteAudioRepository: RemoteAudioRepository,
     private val recordingFileHandler: RecordingFileHandler,
     private val gson: Gson
 ) : ViewModel() {
@@ -75,7 +75,7 @@ class UploadViewModel @Inject constructor(
 
     fun onSelectFileClicked() {
         Log.d(TAG, "Select File Clicked - Requesting UI to launch picker")
-        _uiState.update { it.copy(uploadMessage = null, progress = 0) }
+        _uiState.update { it.copy(uploadMessage = null, progress = 0, isUploadEnabled = false, selectedFileName = null, selectedFileUri = null, title = "", description = "") }
     }
 
     fun onFileSelected(uri: Uri?) {
@@ -168,8 +168,7 @@ class UploadViewModel @Inject constructor(
                 Log.e(TAG, "Validation Error: File size ($size bytes) exceeds limit ($MAX_FILE_SIZE_BYTES bytes). Uri: $uri")
                 val sizeInMB = size / (1024.0 * 1024.0)
                 val maxSizeInMB = MAX_FILE_SIZE_BYTES / (1024.0 * 1024.0)
-
-                return application.getString(R.string.upload_error_size_exceeded, sizeInMB, maxSizeInMB)
+                return application.getString(R.string.upload_error_size_exceeded, String.format("%.2f", sizeInMB), String.format("%.1f", maxSizeInMB))
             }
         }
 
@@ -195,6 +194,7 @@ class UploadViewModel @Inject constructor(
             Log.e(TAG, "Upload Error: No file URI present.")
             return
         }
+
         var fileSize: Long? = null
         var fileMimeType: String? = null
         try {
@@ -224,18 +224,18 @@ class UploadViewModel @Inject constructor(
             }
             return
         }
+
         if (currentState.isUploading) {
             Log.i(TAG, "Upload Info: Upload already in progress.")
             return
         }
-
 
         Log.i(TAG, "Upload Clicked: Starting upload for file: ${currentState.selectedFileName} (Uri: $currentUri)")
         Log.d(TAG, "With Title: '$currentTitle', Description: '$currentDescription'")
 
         val uriToUpload = currentUri
 
-        audioRepository.uploadAudioFile(
+        remoteAudioRepository.uploadAudioFile(
             fileUri = uriToUpload,
             title = currentTitle.takeIf { it.isNotEmpty() },
             description = currentDescription.takeIf { it.isNotEmpty() }
@@ -337,13 +337,19 @@ class UploadViewModel @Inject constructor(
             }
 
             var durationMillis = 0L
+            var retriever: MediaMetadataRetriever? = null
             try {
-                val retriever = MediaMetadataRetriever()
+                retriever = MediaMetadataRetriever()
                 retriever.setDataSource(filePath)
                 durationMillis = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                retriever.release()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get duration for metadata file: $fileName", e)
+            } finally {
+                try {
+                    retriever?.release()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error releasing MediaMetadataRetriever in saveMetadataForFile", e)
+                }
             }
 
             val metadata = RecordingMetadata(

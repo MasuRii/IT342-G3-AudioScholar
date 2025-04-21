@@ -36,6 +36,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,8 +55,6 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -63,44 +63,49 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import edu.cit.audioscholar.R
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun EditProfileScreen(
-    navController: NavController
+    navController: NavController,
+    viewModel: EditProfileViewModel = hiltViewModel()
 ) {
-    var firstName by remember { mutableStateOf("") }
-    var lastName by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    val email = "mathlee.biacolo@cit.edu"
-
-    var firstNameError by remember { mutableStateOf(false) }
-    var lastNameError by remember { mutableStateOf(false) }
-    var usernameError by remember { mutableStateOf(false) }
-
-    var isLoading by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    LocalContext.current
+    val context = LocalContext.current
     val avatarEditMessage = stringResource(R.string.snackbar_avatar_editing_soon)
 
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
 
-    val lastNameFocusRequester = remember { FocusRequester() }
-    val usernameFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(uiState.saveSuccess) {
+        if (uiState.saveSuccess) {
+            navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.set("profileUpdateSuccess", true)
+            navController.navigateUp()
+            viewModel.resetSaveSuccessFlag()
+        }
+    }
 
-    fun validateFields(): Boolean {
-        firstNameError = firstName.isBlank()
-        lastNameError = lastName.isBlank()
-        usernameError = username.isBlank()
-        return !firstNameError && !lastNameError && !usernameError
+    LaunchedEffect(uiState.generalMessage) {
+        uiState.generalMessage?.let { message ->
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    duration = SnackbarDuration.Short
+                )
+                viewModel.consumeGeneralMessage()
+            }
+        }
     }
 
     Scaffold(
@@ -110,7 +115,7 @@ fun EditProfileScreen(
                 title = { Text(stringResource(id = R.string.nav_edit_profile)) },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (!isLoading) {
+                        if (!uiState.isLoading) {
                             focusManager.clearFocus()
                             keyboardController?.hide()
                             navController.navigateUp()
@@ -128,26 +133,16 @@ fun EditProfileScreen(
             Surface(shadowElevation = 4.dp) {
                 Button(
                     onClick = {
-                        if (validateFields()) {
-                            isLoading = true
-                            focusManager.clearFocus()
-                            keyboardController?.hide()
-                            scope.launch {
-                                delay(1000)
-                                navController.previousBackStackEntry
-                                    ?.savedStateHandle
-                                    ?.set("profileUpdateSuccess", true)
-                                isLoading = false
-                                navController.navigateUp()
-                            }
-                        }
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        viewModel.saveProfile()
                     },
-                    enabled = firstName.isNotBlank() && lastName.isNotBlank() && username.isNotBlank() && !isLoading,
+                    enabled = !uiState.isLoading,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    if (isLoading) {
+                    if (uiState.isLoading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(ButtonDefaults.IconSize),
                             color = MaterialTheme.colorScheme.onPrimary,
@@ -180,7 +175,7 @@ fun EditProfileScreen(
             Box(
                 modifier = Modifier
                     .size(120.dp)
-                    .clickable { showBottomSheet = true },
+                    .clickable(enabled = !uiState.isLoading) { showBottomSheet = true },
                 contentAlignment = Alignment.BottomEnd
             ) {
                 Image(
@@ -207,65 +202,55 @@ fun EditProfileScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedTextField(
-                value = firstName,
-                onValueChange = {
-                    firstName = it
-                    if (firstNameError && it.isNotBlank()) firstNameError = false
-                },
+                value = uiState.firstName,
+                onValueChange = viewModel::onFirstNameChange,
                 label = { Text(stringResource(R.string.edit_profile_firstname_label)) },
                 placeholder = { Text(stringResource(R.string.edit_profile_firstname_placeholder)) },
                 singleLine = true,
-                isError = firstNameError,
-                supportingText = { if (firstNameError) Text(stringResource(R.string.edit_profile_error_required)) },
+                isError = uiState.firstNameError != null,
+                supportingText = { uiState.firstNameError?.let { Text(it) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                 leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isLoading
             )
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = lastName,
-                onValueChange = {
-                    lastName = it
-                    if (lastNameError && it.isNotBlank()) lastNameError = false
-                },
+                value = uiState.lastName,
+                onValueChange = viewModel::onLastNameChange,
                 label = { Text(stringResource(R.string.edit_profile_lastname_label)) },
                 placeholder = { Text(stringResource(R.string.edit_profile_lastname_placeholder)) },
                 singleLine = true,
-                isError = lastNameError,
-                supportingText = { if (lastNameError) Text(stringResource(R.string.edit_profile_error_required)) },
+                isError = uiState.lastNameError != null,
+                supportingText = { uiState.lastNameError?.let { Text(it) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                 leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(lastNameFocusRequester)
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isLoading
             )
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = username,
-                onValueChange = {
-                    username = it
-                    if (usernameError && it.isNotBlank()) usernameError = false
-                },
+                value = uiState.username,
+                onValueChange = viewModel::onUsernameChange,
                 label = { Text(stringResource(R.string.edit_profile_username_label)) },
                 placeholder = { Text(stringResource(R.string.edit_profile_username_placeholder)) },
                 singleLine = true,
-                isError = usernameError,
-                supportingText = { if (usernameError) Text(stringResource(R.string.edit_profile_error_required)) },
+                isError = uiState.usernameError != null,
+                supportingText = { uiState.usernameError?.let { Text(it) } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                 leadingIcon = { Icon(Icons.Outlined.Person, contentDescription = null) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(usernameFocusRequester)
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isLoading
             )
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(
-                value = email,
+                value = uiState.email,
                 onValueChange = { },
                 label = { Text(stringResource(R.string.edit_profile_email_label)) },
                 readOnly = true,

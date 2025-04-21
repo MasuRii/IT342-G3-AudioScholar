@@ -94,7 +94,6 @@ fun LoginScreen(
         }
     }
 
-
     LaunchedEffect(key1 = viewModel) {
         viewModel.loginScreenEventFlow.collectLatest { event ->
             when (event) {
@@ -118,12 +117,12 @@ fun LoginScreen(
                                 duration = SnackbarDuration.Short
                             )
                         }
+                        viewModel.handleGitHubRedirect(null, null)
                     }
                 }
             }
         }
     }
-
 
     LaunchedEffect(loginState.errorMessage) {
         loginState.errorMessage?.let { message ->
@@ -155,8 +154,13 @@ fun LoginScreen(
                     .padding(bottom = 32.dp)
             )
 
+            val welcomeText = if (loginState.email.isNotEmpty()) {
+                stringResource(R.string.login_title)
+            } else {
+                "Log in to your account"
+            }
             Text(
-                text = stringResource(R.string.login_title),
+                text = welcomeText,
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
@@ -177,7 +181,8 @@ fun LoginScreen(
                     )
                 },
                 singleLine = true,
-                isError = loginState.errorMessage != null
+                isError = loginState.errorMessage != null,
+                enabled = !loginState.isAnyLoading
             )
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -203,19 +208,23 @@ fun LoginScreen(
                     else Icons.Filled.VisibilityOff
                     val description = if (passwordVisible) stringResource(R.string.cd_hide_password) else stringResource(R.string.cd_show_password)
 
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    IconButton(
+                        onClick = { passwordVisible = !passwordVisible },
+                        enabled = !loginState.isAnyLoading
+                    ) {
                         Icon(imageVector = image, description)
                     }
                 },
                 singleLine = true,
-                isError = loginState.errorMessage != null
+                isError = loginState.errorMessage != null,
+                enabled = !loginState.isAnyLoading
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             TextButton(
                 onClick = viewModel::onForgotPasswordClick,
                 modifier = Modifier.align(Alignment.End),
-                enabled = !loginState.isLoading
+                enabled = !loginState.isAnyLoading
             ) {
                 Text(stringResource(R.string.login_forgot_password))
             }
@@ -224,9 +233,9 @@ fun LoginScreen(
             Button(
                 onClick = viewModel::onLoginClick,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !loginState.isLoading
+                enabled = !loginState.isAnyLoading
             ) {
-                if (loginState.isLoading) {
+                if (loginState.isEmailLoginLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -259,31 +268,47 @@ fun LoginScreen(
                 OutlinedButton(
                     onClick = viewModel::onGoogleSignInClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    enabled = !loginState.isLoading
+                    enabled = !loginState.isAnyLoading
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_google_icon),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color.Unspecified
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Google")
+                    if (loginState.isGoogleLoginLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_google_icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = Color.Unspecified
+                        )
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Google")
+                    }
                 }
 
                 OutlinedButton(
                     onClick = viewModel::onGitHubSignInClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    enabled = !loginState.isLoading
+                    enabled = !loginState.isAnyLoading
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_github_icon),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = LocalContentColor.current
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("GitHub")
+                    if (loginState.isGitHubLoginLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_github_icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = LocalContentColor.current
+                        )
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("GitHub")
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
@@ -306,7 +331,7 @@ fun LoginScreen(
             ClickableText(
                 text = annotatedString,
                 onClick = { offset ->
-                    if (!loginState.isLoading) {
+                    if (!loginState.isAnyLoading) {
                         annotatedString.getStringAnnotations(tag = "REGISTER", start = offset, end = offset)
                             .firstOrNull()?.let { annotation ->
                                 navController.navigate(annotation.item) {

@@ -62,6 +62,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.CoroutineScope
@@ -114,7 +116,9 @@ fun UserProfileScreen(
                 snackbarHostState.showSnackbar(profileUpdateSuccessMessage)
             }
         }
+        viewModel.loadUserProfile()
     }
+
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -149,8 +153,13 @@ fun UserProfileScreen(
                     .clickable(enabled = !uiState.isLoading) { showBottomSheet = true },
                 contentAlignment = Alignment.BottomEnd
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_navigation_profile_placeholder),
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(uiState.profileImageUrl)
+                        .crossfade(true)
+                        .placeholder(R.drawable.ic_navigation_profile_placeholder)
+                        .error(R.drawable.ic_navigation_profile_placeholder)
+                        .build(),
                     contentDescription = stringResource(R.string.cd_user_avatar),
                     modifier = Modifier
                         .matchParentSize()
@@ -158,6 +167,7 @@ fun UserProfileScreen(
                         .background(MaterialTheme.colorScheme.secondaryContainer),
                     contentScale = ContentScale.Crop
                 )
+
                 Icon(
                     imageVector = Icons.Filled.PhotoCamera,
                     contentDescription = stringResource(R.string.cd_edit_avatar),
@@ -172,21 +182,22 @@ fun UserProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            if (uiState.isLoading) {
+            if (uiState.isLoading && uiState.name.isEmpty()) {
                 CircularProgressIndicator(modifier = Modifier.padding(vertical = 16.dp))
             } else {
                 Text(
-                    text = uiState.name,
+                    text = uiState.name.ifEmpty { stringResource(R.string.drawer_header_user_name) },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = uiState.email,
+                    text = uiState.email.ifEmpty { stringResource(R.string.drawer_header_user_email) },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
 
             Spacer(modifier = Modifier.height(32.dp))
 

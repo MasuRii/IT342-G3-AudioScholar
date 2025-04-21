@@ -8,6 +8,7 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.Flow
 
@@ -47,4 +48,6 @@ interface AudioRepository {
     suspend fun verifyGoogleToken(request: FirebaseTokenRequest): Resource<AuthResponse>
 
     suspend fun verifyGitHubCode(request: GitHubCodeRequest): Resource<AuthResponse>
+
+    suspend fun getUserProfile(): Resource<UserProfileDto>
 }

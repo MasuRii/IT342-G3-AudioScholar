@@ -6,23 +6,25 @@ import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
+
 
 @Service
 public class UserService {
     private static final String COLLECTION_NAME = "users";
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
+    
     private final FirebaseService firebaseService;
 
-    @Autowired
     public UserService(FirebaseService firebaseService) {
         this.firebaseService = firebaseService;
     }
@@ -96,16 +98,37 @@ public class UserService {
         }
     }
 
-    public User findOrCreateUserByFirebaseDetails(@NonNull String uid, String email, String name, String provider, String providerId) throws FirestoreInteractionException {
+    public User findOrCreateUserByFirebaseDetails(
+            @NonNull String uid,
+            String email,
+            String name,
+            String provider,
+            String providerId,
+            @Nullable String photoUrl
+    ) throws FirestoreInteractionException {
         if (uid.isBlank()) {
             log.error("Cannot find or create user with blank UID.");
             throw new IllegalArgumentException("Firebase UID cannot be blank.");
         }
         log.info("Finding or creating user profile for UID: {}", uid);
         User existingUser = getUserById(uid);
+
         if (existingUser != null) {
             log.info("Found existing user profile for UID: {}", uid);
-            return existingUser;
+
+            boolean needsUpdate = false;
+            if (StringUtils.hasText(photoUrl) && !Objects.equals(photoUrl, existingUser.getProfileImageUrl())) {
+                log.info("Updating Firestore profile image URL for existing user: {}", uid);
+                existingUser.setProfileImageUrl(photoUrl);
+                needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+                return updateUser(existingUser);
+            } else {
+                return existingUser;
+            }
+
         } else {
             log.info("No existing user profile found for UID: {}. Creating new profile.", uid);
             User newUser = new User();
@@ -114,6 +137,7 @@ public class UserService {
             newUser.setDisplayName((StringUtils.hasText(name)) ? name : (email != null ? email.split("@")[0] : "User"));
             newUser.setProvider(provider);
             newUser.setProviderId(providerId);
+            newUser.setProfileImageUrl(photoUrl);
             newUser.setRoles(List.of("ROLE_USER"));
             return createUser(newUser);
         }
@@ -126,13 +150,8 @@ public class UserService {
         }
         log.info("Updating user profile (full object) for userId: {}", user.getUserId());
         try {
-            if (user.getRoles() == null || user.getRoles().isEmpty()) {
-                User existingUser = getUserById(user.getUserId());
-                if (existingUser != null && existingUser.getRoles() != null && !existingUser.getRoles().isEmpty()) {
-                    user.setRoles(existingUser.getRoles());
-                } else {
-                    user.setRoles(List.of("ROLE_USER"));
-                }
+            if (user.getRoles() == null) {
+                user.setRoles(List.of("ROLE_USER"));
             }
             if (user.getRecordingIds() == null) {
                 user.setRecordingIds(List.of());
@@ -140,8 +159,7 @@ public class UserService {
             if (user.getFavoriteRecordingIds() == null) {
                 user.setFavoriteRecordingIds(List.of());
             }
-
-            firebaseService.updateData(COLLECTION_NAME, user.getUserId(), user.toMap());
+            firebaseService.saveData(COLLECTION_NAME, user.getUserId(), user.toMap());
             log.info("Successfully updated user profile in Firestore for UID: {}", user.getUserId());
             return user;
         } catch (Exception e) {

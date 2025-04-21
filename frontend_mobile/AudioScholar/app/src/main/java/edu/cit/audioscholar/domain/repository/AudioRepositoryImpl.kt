@@ -14,6 +14,7 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,51 @@ class AudioRepositoryImpl @Inject constructor(
     private val application: Application,
     private val gson: Gson
 ) : AudioRepository {
+
+    override suspend fun getUserProfile(): Resource<UserProfileDto> {
+        return try {
+            Log.d(TAG_REPO, "Attempting to fetch user profile.")
+            val response = apiService.getUserProfile()
+
+            if (response.isSuccessful) {
+                val userProfile = response.body()
+                if (userProfile != null) {
+                    Log.i(TAG_REPO, "User profile fetched successfully. Email: ${userProfile.email}")
+                    Resource.Success(userProfile)
+                } else {
+                    Log.w(TAG_REPO, "Get profile successful (Code: ${response.code()}) but response body was null.")
+                    Resource.Error("Profile data missing in response.")
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_REPO, "Get profile failed: ${response.code()} - $errorMessage")
+                if (response.code() == 401 || response.code() == 403) {
+                    Resource.Error(application.getString(R.string.error_unauthorized))
+                } else {
+                    Resource.Error(errorMessage)
+                }
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REPO, "Network/IO exception during get profile: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_REPO, "HTTP exception during get profile: ${e.code()} - ${e.message()}", e)
+            if (e.code() == 401 || e.code() == 403) {
+                Resource.Error(application.getString(R.string.error_unauthorized))
+            } else {
+                Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_REPO, "Unexpected exception during get profile: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected_profile_fetch, e.message ?: "Unknown error"))
+        }
+    }
+
 
     override fun uploadAudioFile(
         fileUri: Uri,

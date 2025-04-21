@@ -1,6 +1,8 @@
 package edu.cit.audioscholar.domain.repository
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.util.Log
 import com.google.gson.Gson
 import edu.cit.audioscholar.R
@@ -9,9 +11,15 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UpdateUserProfileRequest
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.util.Resource
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okio.BufferedSink
+import okio.source
 import retrofit2.HttpException
 import java.io.IOException
 import javax.inject.Inject
@@ -214,7 +222,7 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getUserProfile(): Resource<UserProfileDto> {
+    override suspend fun getUserProfile(): UserProfileResult {
         return try {
             Log.d(TAG_AUTH_REPO, "Attempting to fetch user profile.")
             val response = apiService.getUserProfile()
@@ -255,6 +263,144 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG_AUTH_REPO, "Unexpected exception during get profile: ${e.message}", e)
             Resource.Error(application.getString(R.string.error_unexpected_profile_fetch, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun updateUserProfile(request: UpdateUserProfileRequest): UserProfileResult {
+        return try {
+            Log.d(TAG_AUTH_REPO, "Attempting to update user profile with display name: ${request.displayName ?: "Not Provided"}")
+            val response = apiService.updateUserProfile(request)
+
+            if (response.isSuccessful) {
+                val updatedProfile = response.body()
+                if (updatedProfile != null) {
+                    Log.i(TAG_AUTH_REPO, "User profile updated successfully. Email: ${updatedProfile.email}")
+                    Resource.Success(updatedProfile)
+                } else {
+                    Log.w(TAG_AUTH_REPO, "Update profile successful (Code: ${response.code()}) but response body was null.")
+                    Resource.Success(UserProfileDto(null, null, null, null, null, null))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_AUTH_REPO, "Update profile failed: ${response.code()} - $errorMessage")
+                if (response.code() == 401 || response.code() == 403) {
+                    Resource.Error(application.getString(R.string.error_unauthorized))
+                } else if (response.code() == 400) {
+                    Resource.Error("Update failed: Invalid data. ${errorMessage ?: ""}".trim())
+                }
+                else {
+                    Resource.Error(errorMessage)
+                }
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_AUTH_REPO, "Network/IO exception during update profile: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_AUTH_REPO, "HTTP exception during update profile: ${e.code()} - ${e.message()}", e)
+            if (e.code() == 401 || e.code() == 403) {
+                Resource.Error(application.getString(R.string.error_unauthorized))
+            } else {
+                Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during update profile: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected_profile_update, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun uploadAvatar(imageUri: Uri): UserProfileResult {
+        val contentResolver = application.contentResolver
+        var fileName = "avatar_upload"
+        var fileSize: Long? = null
+
+        contentResolver.query(imageUri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+            cursor.moveToFirst()
+            if (nameIndex != -1) {
+                fileName = cursor.getString(nameIndex) ?: fileName
+            }
+            if (sizeIndex != -1) {
+                fileSize = cursor.getLong(sizeIndex)
+            }
+        }
+
+        val mimeType = contentResolver.getType(imageUri)
+        if (mimeType == null) {
+            Log.e(TAG_AUTH_REPO, "Could not determine MIME type for avatar URI: $imageUri")
+            return Resource.Error("Could not determine file type for selected image.")
+        }
+
+        Log.d(TAG_AUTH_REPO, "Preparing avatar upload. URI: $imageUri, Name: $fileName, Type: $mimeType, Size: $fileSize")
+
+        return try {
+            val requestBody = object : RequestBody() {
+                override fun contentType() = mimeType.toMediaTypeOrNull()
+
+                override fun contentLength(): Long = fileSize ?: -1
+
+                override fun writeTo(sink: BufferedSink) {
+                    contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                        sink.writeAll(inputStream.source())
+                    } ?: throw IOException("Could not open input stream for URI: $imageUri")
+                }
+            }
+
+            val bodyPart = MultipartBody.Part.createFormData(
+                "avatar",
+                fileName,
+                requestBody
+            )
+
+            Log.d(TAG_AUTH_REPO, "Attempting to upload avatar via API service.")
+            val response = apiService.uploadAvatar(bodyPart)
+
+            if (response.isSuccessful) {
+                val updatedProfile = response.body()
+                if (updatedProfile != null) {
+                    Log.i(TAG_AUTH_REPO, "Avatar uploaded successfully. New profile URL: ${updatedProfile.profileImageUrl}")
+                    Resource.Success(updatedProfile)
+                } else {
+                    Log.w(TAG_AUTH_REPO, "Avatar upload successful (Code: ${response.code()}) but response body was null.")
+                    Resource.Error("Avatar upload succeeded but failed to get updated profile data.")
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: gson.fromJson(errorBody, UserProfileDto::class.java)?.displayName ?: errorBody ?: "Unknown server error during avatar upload"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_AUTH_REPO, "Avatar upload failed: ${response.code()} - $errorMessage")
+                if (response.code() == 401 || response.code() == 403) {
+                    Resource.Error(application.getString(R.string.error_unauthorized))
+                } else if (response.code() == 413) {
+                    Resource.Error(application.getString(R.string.upload_error_size_exceeded_avatar))
+                } else if (response.code() == 415) {
+                    Resource.Error(application.getString(R.string.upload_error_unsupported_format_avatar))
+                }
+                else {
+                    Resource.Error("Avatar upload failed: $errorMessage")
+                }
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e)
+            Resource.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Could not read image file"))
+        } catch (e: HttpException) {
+            Log.e(TAG_AUTH_REPO, "HTTP exception during avatar upload: ${e.code()} - ${e.message()}", e)
+            if (e.code() == 401 || e.code() == 403) {
+                Resource.Error(application.getString(R.string.error_unauthorized))
+            } else {
+                Resource.Error("HTTP Error during avatar upload: ${e.code()} ${e.message()}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during avatar upload: ${e.message}", e)
+            Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
         }
     }
 }

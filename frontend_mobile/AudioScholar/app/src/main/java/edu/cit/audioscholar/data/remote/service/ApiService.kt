@@ -6,11 +6,13 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -53,4 +55,6 @@ interface ApiService {
         @Body codeRequest: GitHubCodeRequest
     ): Response<AuthResponse>
 
+    @GET("/api/users/me")
+    suspend fun getUserProfile(): Response<UserProfileDto>
 }

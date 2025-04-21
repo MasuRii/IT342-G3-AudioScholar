@@ -150,10 +150,22 @@ public class AuthController {
             String uid = decodedToken.getUid();
             String email = decodedToken.getEmail();
             String name = decodedToken.getName();
+            String photoUrl = decodedToken.getPicture();
             String provider = (String) decodedToken.getClaims().getOrDefault("firebase.sign_in_provider", "firebase");
-            String providerId = uid;
+            String providerId = provider.equals("firebase") ? uid : (String) decodedToken.getClaims().get("firebase.sign_in_provider_id");
+
             log.info("Firebase token verified for UID: {}. Finding or creating user profile.", uid);
-            User user = userService.findOrCreateUserByFirebaseDetails(uid, email, name, provider, providerId);
+            log.debug("Extracted Photo URL from Firebase Token: {}", photoUrl);
+
+            User user = userService.findOrCreateUserByFirebaseDetails(
+                    uid,
+                    email,
+                    name,
+                    provider,
+                    providerId,
+                    photoUrl
+            );
+
             List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
                     .map(SimpleGrantedAuthority::new)
                     .collect(Collectors.toList());
@@ -185,20 +197,34 @@ public class AuthController {
                 log.warn("Google ID token verification failed (invalid/expired token).");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "Invalid or expired Google token."));
             }
+
             GoogleIdToken.Payload payload = idToken.getPayload();
             String googleUserId = payload.getSubject();
             String email = payload.getEmail();
             boolean emailVerified = payload.getEmailVerified();
             String name = (String) payload.get("name");
+            String pictureUrl = (String) payload.get("picture");
+
             if (email == null || email.isEmpty()) {
                 log.warn("Google token verified, but email is missing for Google User ID: {}", googleUserId);
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new AuthResponse(false, "Email is required from Google profile."));
             }
+
             log.info("Google ID token verified for Google User ID (sub): {}, Email: {}", googleUserId, email);
+            log.debug("Extracted Picture URL from Google Token: {}", pictureUrl);
+
             UserRecord firebaseUserRecord;
             try {
                 firebaseUserRecord = FirebaseAuth.getInstance(firebaseService.getFirebaseApp()).getUserByEmail(email);
                 log.info("Found existing Firebase user by email {} with UID: {}", email, firebaseUserRecord.getUid());
+
+                if (StringUtils.hasText(pictureUrl) && !pictureUrl.equals(firebaseUserRecord.getPhotoUrl())) {
+                    log.info("Updating Firebase Auth photo URL for existing user UID: {}", firebaseUserRecord.getUid());
+                    UserRecord.UpdateRequest updateRequest = new UserRecord.UpdateRequest(firebaseUserRecord.getUid())
+                            .setPhotoUrl(pictureUrl);
+                    FirebaseAuth.getInstance(firebaseService.getFirebaseApp()).updateUser(updateRequest);
+                }
+
             } catch (FirebaseAuthException e) {
                 if (AuthErrorCode.USER_NOT_FOUND.equals(e.getAuthErrorCode())) {
                     log.info("No existing Firebase user found for email {}. Creating new Firebase user.", email);
@@ -206,6 +232,7 @@ public class AuthController {
                             .setEmail(email)
                             .setEmailVerified(emailVerified)
                             .setDisplayName(name)
+                            .setPhotoUrl(pictureUrl)
                             .setDisabled(false);
                     firebaseUserRecord = FirebaseAuth.getInstance(firebaseService.getFirebaseApp()).createUser(createRequest);
                     log.info("Created new Firebase user for email {} with UID: {}", email, firebaseUserRecord.getUid());
@@ -214,21 +241,33 @@ public class AuthController {
                     throw e;
                 }
             }
+
             String firebaseUid = firebaseUserRecord.getUid();
             String provider = "google.com";
             String providerId = googleUserId;
+
             log.info("Finding or creating Firestore user profile for Firebase UID: {}", firebaseUid);
-            User user = userService.findOrCreateUserByFirebaseDetails(firebaseUid, email, name, provider, providerId);
+            User user = userService.findOrCreateUserByFirebaseDetails(
+                    firebaseUid,
+                    email,
+                    name,
+                    provider,
+                    providerId,
+                    pictureUrl
+            );
+
             List<SimpleGrantedAuthority> authorities = user.getRoles().stream()
                     .map(SimpleGrantedAuthority::new)
                     .collect(Collectors.toList());
             Authentication authentication = new UsernamePasswordAuthenticationToken(firebaseUid, null, authorities);
             String jwt = jwtTokenProvider.generateToken(authentication);
+
             log.info("Generated API JWT for user UID {} (Google): {}", firebaseUid, jwt);
             AuthResponse response = new AuthResponse(true, "Google token verified successfully.");
             response.setToken(jwt);
             response.setUserId(firebaseUid);
             return ResponseEntity.ok(response);
+
         } catch (GeneralSecurityException | IOException e) {
             log.error("Google ID token verification failed due to security/IO error: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(false, "Google token verification failed."));
@@ -281,9 +320,17 @@ public class AuthController {
                                             String firebaseUid = firebaseUserRecord.getUid();
                                             String provider = "github.com";
                                             String providerId = String.valueOf(githubUser.id());
+                                            String photoUrl = githubUser.avatarUrl();
                                             try {
                                                 log.info("Finding or creating Firestore user profile for Firebase UID: {}", firebaseUid);
-                                                User appUser = userService.findOrCreateUserByFirebaseDetails(firebaseUid, primaryEmail, githubUser.nameOrLogin(), provider, providerId);
+                                                User appUser = userService.findOrCreateUserByFirebaseDetails(
+                                                        firebaseUid,
+                                                        primaryEmail,
+                                                        githubUser.nameOrLogin(),
+                                                        provider,
+                                                        providerId,
+                                                        photoUrl
+                                                );
                                                 List<SimpleGrantedAuthority> authorities = appUser.getRoles().stream()
                                                         .map(SimpleGrantedAuthority::new)
                                                         .collect(Collectors.toList());

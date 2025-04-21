@@ -112,13 +112,15 @@
     <string name="cd_email_icon">Email Icon</string>
     <string name="cd_password_icon">Password Icon</string>
 
+    <string name="error_unauthorized">Unauthorized. Please log in again.</string>
+    <string name="error_unexpected_profile_fetch">An unexpected error occurred while fetching your profile: %1$s</string>
+
     <string name="error_network_connection">Network error. Please check your connection.</string>
     <string name="error_unexpected_registration">An unexpected error occurred during registration: %1$s</string>
+    <string name="error_unexpected_login">An unexpected error occurred during login: %1$s</string>
 
     <string name="notification_title_starting">Starting Recording…</string>
     <string name="notification_title_processing">Processing command…</string>
-
-    <string name="error_unexpected_login">An unexpected error occurred during login: %1$s</string>
 
     <string name="cd_close_multi_select">Close selection mode</string>
     <string name="cd_select_all">Select all</string>
@@ -299,7 +301,7 @@
     <string name="dialog_logout_title">Log Out?</string>
     <string name="dialog_logout_message">Are you sure you want to log out?</string>
     <string name="dialog_logout_confirm">Log Out</string>
-    <string name="nav_edit_profile">Edit Profile</string> // Added for Edit Profile screen title
+    <string name="nav_edit_profile">Edit Profile</string>
     <string name="cd_navigate_back">Navigate back</string>
 
     <string name="settings_section_app_info">App Info</string>

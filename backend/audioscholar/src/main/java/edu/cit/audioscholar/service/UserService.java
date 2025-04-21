@@ -10,7 +10,6 @@ import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
-
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -18,6 +17,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class UserService {
+
     private static final String COLLECTION_NAME = "users";
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
@@ -30,9 +30,8 @@ public class UserService {
 
     public User registerNewUser(RegistrationRequest request) throws FirebaseAuthException, ExecutionException, InterruptedException {
         log.info("Attempting registration process for email: {}", request.getEmail());
-
-
         String displayName = request.getFirstName() + " " + request.getLastName();
+
         UserRecord firebaseUserRecord = firebaseService.createFirebaseUser(
                 request.getEmail(),
                 request.getPassword(),
@@ -50,19 +49,21 @@ public class UserService {
         return createUser(newUser);
     }
 
-
     public User createUser(User user) throws FirestoreInteractionException {
         if (user.getUserId() == null || user.getUserId().isBlank()) {
-             log.error("User ID cannot be null or blank when creating user profile.");
-             throw new IllegalArgumentException("User ID from Firebase Auth is required to create profile.");
+            log.error("User ID cannot be null or blank when creating user profile.");
+            throw new IllegalArgumentException("User ID from Firebase Auth is required to create profile.");
         }
         log.info("Saving user profile data for userId: {}", user.getUserId());
         try {
+            if (user.getRoles() == null || user.getRoles().isEmpty()) {
+                user.setRoles(List.of("ROLE_USER"));
+            }
             firebaseService.saveData(COLLECTION_NAME, user.getUserId(), user.toMap());
             return user;
         } catch (Exception e) {
-             log.error("Failed to save user {} to Firestore: {}", user.getUserId(), e.getMessage(), e);
-             throw new FirestoreInteractionException("Failed to create user profile in Firestore for UID: " + user.getUserId(), e);
+            log.error("Failed to save user {} to Firestore: {}", user.getUserId(), e.getMessage(), e);
+            throw new FirestoreInteractionException("Failed to create user profile in Firestore for UID: " + user.getUserId(), e);
         }
     }
 
@@ -98,21 +99,27 @@ public class UserService {
             User newUser = new User();
             newUser.setUserId(uid);
             newUser.setEmail(email);
-            newUser.setDisplayName(name);
+            newUser.setDisplayName((name != null && !name.isBlank()) ? name : email.split("@")[0]);
             newUser.setRoles(List.of("ROLE_USER"));
-
             return createUser(newUser);
         }
     }
 
-
     public User updateUser(User user) throws FirestoreInteractionException {
         if (user.getUserId() == null || user.getUserId().isBlank()) {
-             log.error("User ID cannot be null or blank when updating user profile.");
-             throw new IllegalArgumentException("User ID is required to update profile.");
+            log.error("User ID cannot be null or blank when updating user profile.");
+            throw new IllegalArgumentException("User ID is required to update profile.");
         }
         log.info("Updating user profile for userId: {}", user.getUserId());
-         try {
+        try {
+             if (user.getRoles() == null || user.getRoles().isEmpty()) {
+                User existingUser = getUserById(user.getUserId());
+                if (existingUser != null && existingUser.getRoles() != null && !existingUser.getRoles().isEmpty()) {
+                    user.setRoles(existingUser.getRoles());
+                } else {
+                    user.setRoles(List.of("ROLE_USER"));
+                }
+            }
             firebaseService.updateData(COLLECTION_NAME, user.getUserId(), user.toMap());
             return user;
         } catch (Exception e) {
@@ -122,12 +129,12 @@ public class UserService {
     }
 
     public void deleteUser(String userId) throws FirestoreInteractionException {
-         if (userId == null || userId.isBlank()) {
-             log.error("User ID cannot be null or blank when deleting user profile.");
-             throw new IllegalArgumentException("User ID is required to delete profile.");
+        if (userId == null || userId.isBlank()) {
+            log.error("User ID cannot be null or blank when deleting user profile.");
+            throw new IllegalArgumentException("User ID is required to delete profile.");
         }
         log.warn("Deleting user profile from Firestore for userId: {}", userId);
-         try {
+        try {
             firebaseService.deleteData(COLLECTION_NAME, userId);
         } catch (Exception e) {
             log.error("Failed to delete user {} from Firestore: {}", userId, e.getMessage(), e);
@@ -151,9 +158,8 @@ public class UserService {
             }
             return User.fromMap(results.get(0));
         } catch (Exception e) {
-             log.error("Failed to find user by email {} from Firestore: {}", email, e.getMessage(), e);
-             throw new FirestoreInteractionException("Failed to find user by email from Firestore: " + email, e);
+            log.error("Failed to find user by email {} from Firestore: {}", email, e.getMessage(), e);
+            throw new FirestoreInteractionException("Failed to find user by email from Firestore: " + email, e);
         }
     }
-
 }

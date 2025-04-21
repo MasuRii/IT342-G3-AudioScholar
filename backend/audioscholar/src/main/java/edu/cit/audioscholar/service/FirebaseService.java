@@ -7,13 +7,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
@@ -35,8 +35,8 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
+import com.google.firebase.auth.UserRecord.UpdateRequest;
 import com.google.firebase.cloud.FirestoreClient;
-
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.LearningRecommendation;
@@ -45,18 +45,15 @@ import edu.cit.audioscholar.model.Summary;
 
 @Service
 public class FirebaseService {
-
     private static final Logger log = LoggerFactory.getLogger(FirebaseService.class);
     private final String audioMetadataCollectionName;
     private final String summariesCollectionName;
     private final String recommendationsCollectionName;
     private static final int DEFAULT_PAGE_SIZE = 20;
-
     private final FirebaseApp firebaseApp;
 
     @Value("${google.oauth.web.client.id}")
     private String webClientIdFromTokenAud;
-
     @Value("${google.oauth.android.client.id}")
     private String androidClientId;
 
@@ -112,26 +109,24 @@ public class FirebaseService {
         }
 
         List<String> audiences = new ArrayList<>();
-        if (webClientIdFromTokenAud != null && !webClientIdFromTokenAud.isBlank()) {
+        if (StringUtils.hasText(webClientIdFromTokenAud)) {
             audiences.add(webClientIdFromTokenAud);
         }
-        if (androidClientId != null && !androidClientId.isBlank()) {
+        if (StringUtils.hasText(androidClientId)) {
             audiences.add(androidClientId);
         }
 
         if (audiences.isEmpty()) {
-             log.error("No Google OAuth Client IDs configured for audience verification. Check application.properties");
-             throw new IllegalStateException("Missing Google OAuth Client ID configuration for token verification.");
+            log.error("No Google OAuth Client IDs configured for audience verification. Check application.properties");
+            throw new IllegalStateException("Missing Google OAuth Client ID configuration for token verification.");
         }
 
         log.debug("Attempting to verify Google ID token using GoogleIdTokenVerifier. Expected audience(s): {}", audiences);
-
         GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), GsonFactory.getDefaultInstance())
                 .setAudience(audiences)
                 .build();
 
         GoogleIdToken idToken = verifier.verify(googleIdTokenString);
-
         if (idToken != null) {
             GoogleIdToken.Payload payload = idToken.getPayload();
             String userId = payload.getSubject();
@@ -142,7 +137,6 @@ public class FirebaseService {
             return null;
         }
     }
-
 
     public UserRecord createFirebaseUser(String email, String password, String displayName) throws FirebaseAuthException {
         UserRecord.CreateRequest request = new UserRecord.CreateRequest()
@@ -163,12 +157,36 @@ public class FirebaseService {
         }
     }
 
+    public void updateUserPassword(String uid, String newPassword) throws FirebaseAuthException {
+        if (!StringUtils.hasText(uid)) {
+            log.error("Cannot update password for blank UID.");
+            throw new IllegalArgumentException("User ID (UID) cannot be blank.");
+        }
+        if (!StringUtils.hasText(newPassword)) {
+            log.error("Cannot update password to a blank value for UID: {}", uid);
+            throw new IllegalArgumentException("New password cannot be blank.");
+        }
+
+        log.info("Attempting to update password for Firebase user UID: {}", uid);
+        try {
+            UpdateRequest request = new UpdateRequest(uid).setPassword(newPassword);
+            getFirebaseAuth().updateUser(request);
+            log.info("Successfully updated password for Firebase user UID: {}", uid);
+        } catch (FirebaseAuthException e) {
+            log.error("Failed to update password for Firebase user UID {}: {}", uid, e.getMessage());
+            throw e;
+        }
+    }
+
+
+
     public String saveData(String collection, String document, Map<String, Object> data) {
         try {
             Firestore firestore = getFirestore();
             ApiFuture<WriteResult> future = firestore.collection(collection).document(document).set(data);
-            log.info("Data saved to {}/{}", collection, document);
-            return future.get().getUpdateTime().toString();
+            String updateTime = future.get().getUpdateTime().toString();
+            log.info("Data saved to {}/{} at {}", collection, document, updateTime);
+            return updateTime;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Error saving data to {}/{}", collection, document, e);
@@ -177,7 +195,11 @@ public class FirebaseService {
     }
 
     public Map<String, Object> getData(String collection, String document) {
-         try {
+         if (!StringUtils.hasText(collection) || !StringUtils.hasText(document)) {
+             log.warn("Attempted Firestore getData with blank collection or document name.");
+             return null;
+         }
+        try {
             Firestore firestore = getFirestore();
             DocumentSnapshot snapshot = firestore.collection(collection).document(document).get().get();
             if (snapshot.exists()) {
@@ -195,11 +217,12 @@ public class FirebaseService {
     }
 
     public String updateData(String collection, String document, Map<String, Object> data) {
-         try {
+        try {
             Firestore firestore = getFirestore();
             ApiFuture<WriteResult> future = firestore.collection(collection).document(document).update(data);
-            log.info("Data updated for {}/{}", collection, document);
-            return future.get().getUpdateTime().toString();
+            String updateTime = future.get().getUpdateTime().toString();
+            log.info("Data updated for {}/{} at {}", collection, document, updateTime);
+            return updateTime;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Error updating data for {}/{}", collection, document, e);
@@ -211,8 +234,9 @@ public class FirebaseService {
         try {
             Firestore firestore = getFirestore();
             ApiFuture<WriteResult> future = firestore.collection(collection).document(document).delete();
-            log.info("Data deleted from {}/{}", collection, document);
-            return future.get().getUpdateTime().toString();
+            String updateTime = future.get().getUpdateTime().toString();
+            log.info("Data deleted from {}/{} at {}", collection, document, updateTime);
+            return updateTime;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Error deleting data from {}/{}", collection, document, e);
@@ -220,7 +244,7 @@ public class FirebaseService {
         }
     }
 
-     public List<Map<String, Object>> queryCollection(String collection, String field, Object value) {
+    public List<Map<String, Object>> queryCollection(String collection, String field, Object value) {
         try {
             Firestore firestore = getFirestore();
             ApiFuture<QuerySnapshot> future = firestore.collection(collection).whereEqualTo(field, value).get();
@@ -240,6 +264,9 @@ public class FirebaseService {
 
 
     public AudioMetadata saveAudioMetadata(AudioMetadata metadata) {
+        if (metadata == null) {
+            throw new IllegalArgumentException("AudioMetadata cannot be null.");
+        }
         try {
             Firestore firestore = getFirestore();
             CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
@@ -249,23 +276,21 @@ public class FirebaseService {
             String generatedId = futureRef.get().getId();
             metadata.setId(generatedId);
 
-
             log.info("Saved AudioMetadata to Firestore collection {} with generated ID: {}",
-                       audioMetadataCollectionName, generatedId);
-
+                    audioMetadataCollectionName, generatedId);
             return metadata;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
-            String userId = (metadata != null) ? metadata.getUserId() : "unknown";
+            String userId = (metadata.getUserId() != null) ? metadata.getUserId() : "unknown";
             log.error("Error saving AudioMetadata for user {}", userId, e);
             throw new FirestoreInteractionException("Failed to save AudioMetadata", e);
         }
     }
 
-    public void updateAudioMetadataStatus(String metadataId, ProcessingStatus status) throws FirestoreInteractionException {
-        if (metadataId == null || status == null) {
-            log.error("Cannot update status with null metadataId or status. ID: {}, Status: {}", metadataId, status);
-            throw new IllegalArgumentException("Metadata ID and Status cannot be null for update.");
+     public void updateAudioMetadataStatus(String metadataId, ProcessingStatus status) throws FirestoreInteractionException {
+        if (!StringUtils.hasText(metadataId) || status == null) {
+            log.error("Cannot update status with blank metadataId or null status. ID: {}, Status: {}", metadataId, status);
+            throw new IllegalArgumentException("Metadata ID and Status cannot be null/blank for update.");
         }
         log.info("Attempting to update status to {} for metadata ID: {}", status, metadataId);
         try {
@@ -279,8 +304,8 @@ public class FirebaseService {
             log.error("Error updating status for metadata ID {}: {}", metadataId, e.getMessage(), e);
             throw new FirestoreInteractionException("Failed to update status for metadata " + metadataId, e);
         } catch (Exception e) {
-             log.error("Unexpected error updating status for metadata ID {}: {}", metadataId, e.getMessage(), e);
-             throw new FirestoreInteractionException("Unexpected error updating status for metadata " + metadataId, e);
+            log.error("Unexpected error updating status for metadata ID {}: {}", metadataId, e.getMessage(), e);
+            throw new FirestoreInteractionException("Unexpected error updating status for metadata " + metadataId, e);
         }
     }
 
@@ -307,16 +332,20 @@ public class FirebaseService {
     }
 
     public List<AudioMetadata> getAudioMetadataByUserId(String userId, int pageSize, @Nullable String lastDocumentId) {
+        if (!StringUtils.hasText(userId)) {
+             log.warn("Attempted to get AudioMetadata with blank userId.");
+             return List.of();
+        }
         log.info("Retrieving AudioMetadata for user ID: {}, page size: {}, starting after document ID: {}",
-                 userId, pageSize, lastDocumentId == null ? "N/A" : lastDocumentId);
+                userId, pageSize, lastDocumentId == null ? "N/A" : lastDocumentId);
         try {
             Firestore firestore = getFirestore();
             CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
             Query query = colRef.whereEqualTo("userId", userId)
-                                .orderBy("uploadTimestamp", Query.Direction.DESCENDING)
-                                .limit(pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE);
+                    .orderBy("uploadTimestamp", Query.Direction.DESCENDING)
+                    .limit(pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE);
 
-            if (lastDocumentId != null && !lastDocumentId.isEmpty()) {
+            if (StringUtils.hasText(lastDocumentId)) {
                 DocumentSnapshot lastSnapshot = colRef.document(lastDocumentId).get().get();
                 if (lastSnapshot.exists()) {
                     query = query.startAfter(lastSnapshot);
@@ -329,15 +358,14 @@ public class FirebaseService {
             ApiFuture<QuerySnapshot> future = query.get();
             List<AudioMetadata> userMetadataList = new ArrayList<>();
             List<QueryDocumentSnapshot> documents = future.get().getDocuments();
-
             for (QueryDocumentSnapshot document : documents) {
                 AudioMetadata metadata = fromDocumentSnapshot(document);
-                 if (metadata != null) {
+                if (metadata != null) {
                     userMetadataList.add(metadata);
                 }
             }
             log.info("Retrieved {} AudioMetadata documents for user ID: {} (page)",
-                       userMetadataList.size(), userId);
+                    userMetadataList.size(), userId);
             return userMetadataList;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -347,19 +375,21 @@ public class FirebaseService {
     }
 
     public AudioMetadata getAudioMetadataById(String metadataId) {
+         if (!StringUtils.hasText(metadataId)) {
+             log.warn("Attempted to get AudioMetadata with blank ID.");
+             return null;
+         }
         log.debug("Retrieving AudioMetadata document by ID: {}", metadataId);
         try {
             Firestore firestore = getFirestore();
             DocumentReference docRef = firestore.collection(audioMetadataCollectionName).document(metadataId);
             ApiFuture<DocumentSnapshot> future = docRef.get();
             DocumentSnapshot document = future.get();
-
             if (document.exists()) {
                 AudioMetadata metadata = fromDocumentSnapshot(document);
                 if (metadata != null) {
                     log.info("Retrieved AudioMetadata document with ID: {}", metadataId);
                 } else {
-                     log.error("Failed to map document data to AudioMetadata object for ID: {}", metadataId);
                 }
                 return metadata;
             } else {
@@ -373,11 +403,10 @@ public class FirebaseService {
         }
     }
 
-
     public void saveSummary(Summary summary) throws FirestoreInteractionException {
-        if (summary == null || summary.getSummaryId() == null || summary.getSummaryId().isEmpty()) {
-            log.error("Cannot save summary with null object or empty summaryId.");
-            throw new IllegalArgumentException("Summary object and summaryId cannot be null or empty.");
+        if (summary == null || !StringUtils.hasText(summary.getSummaryId())) {
+            log.error("Cannot save summary with null object or blank summaryId.");
+            throw new IllegalArgumentException("Summary object and summaryId cannot be null or blank.");
         }
         String summaryId = summary.getSummaryId();
         String recordingId = summary.getRecordingId();
@@ -394,22 +423,19 @@ public class FirebaseService {
             log.error("[{}] Error saving summary with ID: {} to Firestore.", recordingId, summaryId, e);
             throw new FirestoreInteractionException("Failed to save summary " + summaryId, e);
         } catch (Exception e) {
-             log.error("[{}] Unexpected error saving summary with ID: {}", recordingId, summaryId, e);
-             throw new FirestoreInteractionException("Unexpected error saving summary " + summaryId, e);
+            log.error("[{}] Unexpected error saving summary with ID: {}", recordingId, summaryId, e);
+            throw new FirestoreInteractionException("Unexpected error saving summary " + summaryId, e);
         }
     }
-
 
     public void saveLearningRecommendations(List<LearningRecommendation> recommendations) throws FirestoreInteractionException {
         if (recommendations == null || recommendations.isEmpty()) {
             log.warn("Attempted to save an empty or null list of recommendations.");
             return;
         }
-
         String recordingId = recommendations.get(0).getRecordingId();
         log.info("[{}] Attempting to save {} recommendations to collection: {}",
-                 recordingId != null ? recordingId : "UNKNOWN", recommendations.size(), recommendationsCollectionName);
-
+                recordingId != null ? recordingId : "UNKNOWN", recommendations.size(), recommendationsCollectionName);
         try {
             Firestore firestore = getFirestore();
             WriteBatch batch = firestore.batch();
@@ -422,65 +448,57 @@ public class FirebaseService {
 
             ApiFuture<List<WriteResult>> future = batch.commit();
             future.get();
-
             log.info("[{}] Successfully saved {} recommendations to Firestore.",
-                     recordingId != null ? recordingId : "UNKNOWN", recommendations.size());
-
+                    recordingId != null ? recordingId : "UNKNOWN", recommendations.size());
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("[{}] Error saving batch of recommendations to Firestore.",
-                      recordingId != null ? recordingId : "UNKNOWN", e);
+                    recordingId != null ? recordingId : "UNKNOWN", e);
             throw new FirestoreInteractionException("Failed to save batch of recommendations for recording " + (recordingId != null ? recordingId : "UNKNOWN"), e);
         } catch (Exception e) {
-             log.error("[{}] Unexpected error saving batch of recommendations.",
-                       recordingId != null ? recordingId : "UNKNOWN", e);
-             throw new FirestoreInteractionException("Unexpected error saving recommendations for recording " + (recordingId != null ? recordingId : "UNKNOWN"), e);
+            log.error("[{}] Unexpected error saving batch of recommendations.",
+                    recordingId != null ? recordingId : "UNKNOWN", e);
+            throw new FirestoreInteractionException("Unexpected error saving recommendations for recording " + (recordingId != null ? recordingId : "UNKNOWN"), e);
         }
     }
 
     public List<LearningRecommendation> getLearningRecommendationsByRecordingId(String recordingId) throws FirestoreInteractionException {
-        if (recordingId == null || recordingId.isEmpty()) {
-            log.error("Cannot retrieve recommendations with a null or empty recordingId.");
-            throw new IllegalArgumentException("Recording ID cannot be null or empty.");
+        if (!StringUtils.hasText(recordingId)) {
+            log.error("Cannot retrieve recommendations with a blank recordingId.");
+            throw new IllegalArgumentException("Recording ID cannot be blank.");
         }
-
         log.info("Retrieving recommendations for recording ID: {} from collection: {}", recordingId, recommendationsCollectionName);
         List<LearningRecommendation> recommendationList = new ArrayList<>();
-
         try {
             Firestore firestore = getFirestore();
             CollectionReference colRef = firestore.collection(recommendationsCollectionName);
-
             Query query = colRef.whereEqualTo("recordingId", recordingId)
                                 .orderBy("createdAt", Query.Direction.ASCENDING);
 
             ApiFuture<QuerySnapshot> future = query.get();
             QuerySnapshot querySnapshot = future.get();
-
             List<QueryDocumentSnapshot> documents = querySnapshot.getDocuments();
+
             for (QueryDocumentSnapshot document : documents) {
                 try {
                     LearningRecommendation recommendation = document.toObject(LearningRecommendation.class);
                     recommendationList.add(recommendation);
                 } catch (Exception e) {
                     log.error("Error mapping Firestore document {} to LearningRecommendation object for recordingId {}: {}",
-                              document.getId(), recordingId, e.getMessage(), e);
+                            document.getId(), recordingId, e.getMessage(), e);
                 }
             }
-
             log.info("Retrieved {} recommendations for recording ID: {}", recommendationList.size(), recordingId);
             return recommendationList;
-
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Error retrieving recommendations for recording ID: {}", recordingId, e);
             throw new FirestoreInteractionException("Failed to retrieve recommendations for recording " + recordingId, e);
         } catch (Exception e) {
-             log.error("Unexpected error retrieving recommendations for recording ID: {}", recordingId, e);
-             throw new FirestoreInteractionException("Unexpected error retrieving recommendations for recording " + recordingId, e);
+            log.error("Unexpected error retrieving recommendations for recording ID: {}", recordingId, e);
+            throw new FirestoreInteractionException("Unexpected error retrieving recommendations for recording " + recordingId, e);
         }
     }
-
 
 
 
@@ -494,8 +512,8 @@ public class FirebaseService {
         map.put("description", metadata.getDescription());
         map.put("nhostFileId", metadata.getNhostFileId());
         map.put("storageUrl", metadata.getStorageUrl());
-        map.put("uploadTimestamp", metadata.getUploadTimestamp());
-        map.put("status", metadata.getStatus() != null ? metadata.getStatus().name() : null);
+        map.put("uploadTimestamp", metadata.getUploadTimestamp() != null ? metadata.getUploadTimestamp() : Timestamp.now());
+        map.put("status", metadata.getStatus() != null ? metadata.getStatus().name() : ProcessingStatus.UPLOADED.name());
         return map;
     }
 
@@ -514,10 +532,14 @@ public class FirebaseService {
             metadata.setId(document.getId());
             metadata.setUserId((String) data.get("userId"));
             metadata.setFileName((String) data.get("fileName"));
+
             Object fileSizeObj = data.get("fileSize");
             if (fileSizeObj instanceof Number) {
                 metadata.setFileSize(((Number) fileSizeObj).longValue());
+            } else if (fileSizeObj != null) {
+                 log.warn("fileSize field was not a Number for document ID: {}. Type: {}", document.getId(), fileSizeObj.getClass().getName());
             }
+
             metadata.setContentType((String) data.get("contentType"));
             metadata.setTitle((String) data.get("title"));
             metadata.setDescription((String) data.get("description"));
@@ -526,14 +548,13 @@ public class FirebaseService {
 
             Object timestampObj = data.get("uploadTimestamp");
             if (timestampObj instanceof Timestamp) {
-                 metadata.setUploadTimestamp((Timestamp) timestampObj);
+                metadata.setUploadTimestamp((Timestamp) timestampObj);
             } else if (timestampObj != null) {
                 log.warn("uploadTimestamp field was not of expected type com.google.cloud.Timestamp for document ID: {}. Type found: {}", document.getId(), timestampObj.getClass().getName());
             }
 
-
             String statusStr = (String) data.get("status");
-            if (statusStr != null) {
+            if (StringUtils.hasText(statusStr)) {
                 try {
                     metadata.setStatus(ProcessingStatus.valueOf(statusStr));
                 } catch (IllegalArgumentException e) {
@@ -541,8 +562,8 @@ public class FirebaseService {
                     metadata.setStatus(null);
                 }
             } else {
-                 metadata.setStatus(ProcessingStatus.UPLOADED);
-                 log.debug("Status field missing for document ID: {}. Defaulting to UPLOADED.", document.getId());
+                metadata.setStatus(ProcessingStatus.UPLOADED);
+                log.debug("Status field missing or blank for document ID: {}. Defaulting to UPLOADED.", document.getId());
             }
 
             return metadata;

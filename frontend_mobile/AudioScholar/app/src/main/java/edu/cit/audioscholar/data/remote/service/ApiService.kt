@@ -6,6 +6,7 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UpdateUserProfileRequest
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -14,6 +15,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 
 interface ApiService {
@@ -56,4 +58,15 @@ interface ApiService {
 
     @GET("/api/users/me")
     suspend fun getUserProfile(): Response<UserProfileDto>
+
+    @PUT("/api/users/me")
+    suspend fun updateUserProfile(
+        @Body updateUserProfileRequest: UpdateUserProfileRequest
+    ): Response<UserProfileDto>
+
+    @Multipart
+    @POST("/api/users/me/avatar")
+    suspend fun uploadAvatar(
+        @Part avatar: MultipartBody.Part
+    ): Response<UserProfileDto>
 }

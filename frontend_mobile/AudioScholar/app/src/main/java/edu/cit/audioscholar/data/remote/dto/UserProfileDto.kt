@@ -13,5 +13,11 @@ data class UserProfileDto(
     val displayName: String?,
 
     @SerializedName("profileImageUrl")
-    val profileImageUrl: String?
+    val profileImageUrl: String?,
+
+    @SerializedName("firstName")
+    val firstName: String?,
+
+    @SerializedName("lastName")
+    val lastName: String?
 )

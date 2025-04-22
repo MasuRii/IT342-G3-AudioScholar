@@ -6,17 +6,18 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.LocalAudioRepository
+import edu.cit.audioscholar.domain.repository.RemoteAudioRepository
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 data class LibraryUiState(
@@ -34,7 +35,8 @@ data class LibraryUiState(
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-    private val audioRepository: AudioRepository
+    private val localAudioRepository: LocalAudioRepository,
+    private val remoteAudioRepository: RemoteAudioRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -55,19 +57,19 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun loadLocalRecordingsOnResume() {
-        Log.d("LocalRecordingsVM", "loadLocalRecordingsOnResume called")
+        Log.d("LibraryViewModel", "loadLocalRecordingsOnResume called")
         loadLocalRecordings()
     }
 
     private fun loadLocalRecordings() {
         viewModelScope.launch {
-            audioRepository.getLocalRecordings()
+            localAudioRepository.getLocalRecordings()
                 .onStart {
-                    Log.d("LocalRecordingsVM", "Starting local recordings load")
+                    Log.d("LibraryViewModel", "Starting local recordings load")
                     _uiState.update { it.copy(isLoadingLocal = true, error = null) }
                 }
                 .catch { throwable ->
-                    Log.e("LocalRecordingsVM", "Error loading local recordings", throwable)
+                    Log.e("LibraryViewModel", "Error loading local recordings", throwable)
                     _uiState.update {
                         it.copy(
                             isLoadingLocal = false,
@@ -76,7 +78,7 @@ class LibraryViewModel @Inject constructor(
                     }
                 }
                 .collect { recordingsList ->
-                    Log.d("LocalRecordingsVM", "Collected ${recordingsList.size} local recordings")
+                    Log.d("LibraryViewModel", "Collected ${recordingsList.size} local recordings")
                     _uiState.update {
                         it.copy(
                             isLoadingLocal = false,
@@ -90,28 +92,28 @@ class LibraryViewModel @Inject constructor(
     fun triggerCloudLoadIfNeeded() {
         val currentState = _uiState.value
         if (!currentState.isLoadingCloud && !currentState.hasAttemptedCloudLoad) {
-            Log.d("LocalRecordingsVM", "triggerCloudLoadIfNeeded: Condition met, loading cloud recordings.")
+            Log.d("LibraryViewModel", "triggerCloudLoadIfNeeded: Condition met, loading cloud recordings.")
             loadCloudRecordings()
         } else {
-            Log.d("LocalRecordingsVM", "triggerCloudLoadIfNeeded: Condition not met (isLoadingCloud=${currentState.isLoadingCloud}, hasAttemptedCloudLoad=${currentState.hasAttemptedCloudLoad}). Skipping load.")
+            Log.d("LibraryViewModel", "triggerCloudLoadIfNeeded: Condition not met (isLoadingCloud=${currentState.isLoadingCloud}, hasAttemptedCloudLoad=${currentState.hasAttemptedCloudLoad}). Skipping load.")
         }
     }
 
     fun forceRefreshCloudRecordings() {
-        Log.d("LocalRecordingsVM", "forceRefreshCloudRecordings called.")
+        Log.d("LibraryViewModel", "forceRefreshCloudRecordings called.")
         _uiState.update { it.copy(isLoadingCloud = true, hasAttemptedCloudLoad = false, error = null) }
         loadCloudRecordings()
     }
 
     private fun loadCloudRecordings() {
         viewModelScope.launch {
-            audioRepository.getCloudRecordings()
+            remoteAudioRepository.getCloudRecordings()
                 .onStart {
-                    Log.d("LocalRecordingsVM", "Starting cloud recordings load (actual fetch)")
+                    Log.d("LibraryViewModel", "Starting cloud recordings load (actual fetch)")
                     _uiState.update { it.copy(isLoadingCloud = true, hasAttemptedCloudLoad = true) }
                 }
                 .catch { throwable ->
-                    Log.e("LocalRecordingsVM", "Error loading cloud recordings (catch)", throwable)
+                    Log.e("LibraryViewModel", "Error loading cloud recordings (catch)", throwable)
                     _uiState.update {
                         it.copy(
                             isLoadingCloud = false,
@@ -121,15 +123,15 @@ class LibraryViewModel @Inject constructor(
                 }
                 .collect { result ->
                     result.onSuccess { metadataList ->
-                        Log.d("LocalRecordingsVM", "Collected ${metadataList.size} cloud recordings")
+                        Log.d("LibraryViewModel", "Collected ${metadataList.size} cloud recordings")
                         _uiState.update {
                             it.copy(
                                 isLoadingCloud = false,
-                                cloudRecordings = metadataList.sortedByDescending { dto -> dto.uploadTimestamp?.seconds }
+                                cloudRecordings = metadataList.sortedByDescending { dto -> dto.uploadTimestamp?.seconds ?: 0L }
                             )
                         }
                     }.onFailure { throwable ->
-                        Log.e("LocalRecordingsVM", "Error loading cloud recordings (onFailure)", throwable)
+                        Log.e("LibraryViewModel", "Error loading cloud recordings (onFailure)", throwable)
                         _uiState.update {
                             it.copy(
                                 isLoadingCloud = false,
@@ -149,7 +151,7 @@ class LibraryViewModel @Inject constructor(
                 selectedRecordingIds = setOf(initialFilePath)
             )
         }
-        Log.d("LocalRecordingsVM", "Entered multi-select mode, selected: $initialFilePath")
+        Log.d("LibraryViewModel", "Entered multi-select mode, selected: $initialFilePath")
     }
 
     fun exitMultiSelectMode() {
@@ -159,7 +161,7 @@ class LibraryViewModel @Inject constructor(
                 selectedRecordingIds = emptySet()
             )
         }
-        Log.d("LocalRecordingsVM", "Exited multi-select mode")
+        Log.d("LibraryViewModel", "Exited multi-select mode")
     }
 
     fun toggleSelection(filePath: String) {
@@ -176,7 +178,7 @@ class LibraryViewModel @Inject constructor(
                 isMultiSelectActive = !exitMode
             )
         }
-        Log.d("LocalRecordingsVM", "Toggled selection for: $filePath. New selection size: ${_uiState.value.selectedRecordingIds.size}")
+        Log.d("LibraryViewModel", "Toggled selection for: $filePath. New selection size: ${_uiState.value.selectedRecordingIds.size}")
     }
 
     fun selectAllLocal() {
@@ -184,26 +186,26 @@ class LibraryViewModel @Inject constructor(
             val allIds = currentState.localRecordings.map { it.filePath }.toSet()
             currentState.copy(selectedRecordingIds = allIds)
         }
-        Log.d("LocalRecordingsVM", "Selected all ${_uiState.value.selectedRecordingIds.size} local recordings.")
+        Log.d("LibraryViewModel", "Selected all ${_uiState.value.selectedRecordingIds.size} local recordings.")
     }
 
     fun deselectAllLocal() {
         _uiState.update { it.copy(selectedRecordingIds = emptySet()) }
-        Log.d("LocalRecordingsVM", "Deselected all local recordings.")
+        Log.d("LibraryViewModel", "Deselected all local recordings.")
     }
 
     fun requestMultiDeleteConfirmation() {
         if (_uiState.value.selectedRecordingIds.isNotEmpty()) {
             _uiState.update { it.copy(showMultiDeleteConfirmation = true) }
-            Log.d("LocalRecordingsVM", "Requested multi-delete confirmation for ${_uiState.value.selectedRecordingIds.size} items.")
+            Log.d("LibraryViewModel", "Requested multi-delete confirmation for ${_uiState.value.selectedRecordingIds.size} items.")
         } else {
-            Log.w("LocalRecordingsVM", "Multi-delete requested but no items selected.")
+            Log.w("LibraryViewModel", "Multi-delete requested but no items selected.")
         }
     }
 
     fun cancelMultiDelete() {
         _uiState.update { it.copy(showMultiDeleteConfirmation = false) }
-        Log.d("LocalRecordingsVM", "Cancelled multi-delete confirmation.")
+        Log.d("LibraryViewModel", "Cancelled multi-delete confirmation.")
     }
 
     fun confirmMultiDelete() {
@@ -214,20 +216,22 @@ class LibraryViewModel @Inject constructor(
         }
 
         _uiState.update { it.copy(showMultiDeleteConfirmation = false, isLoadingLocal = true) }
-        Log.d("LocalRecordingsVM", "Confirming multi-delete for ${idsToDelete.size} items.")
+        Log.d("LibraryViewModel", "Confirming multi-delete for ${idsToDelete.size} items.")
 
         viewModelScope.launch {
-            val success = audioRepository.deleteLocalRecordings(idsToDelete)
+            val success = localAudioRepository.deleteLocalRecordings(idsToDelete)
             if (success) {
-                Log.i("LocalRecordingsVM", "Multi-delete successful via repository.")
+                Log.i("LibraryViewModel", "Multi-delete successful via repository.")
                 _uiState.update { it.copy(isMultiSelectActive = false, selectedRecordingIds = emptySet()) }
                 loadLocalRecordings()
             } else {
-                Log.e("LocalRecordingsVM", "Multi-delete failed via repository.")
+                Log.e("LibraryViewModel", "Multi-delete failed via repository.")
                 _uiState.update {
                     it.copy(
                         isLoadingLocal = false,
-                        error = "Failed to delete some or all selected recordings."
+                        error = "Failed to delete some or all selected recordings.",
+                        isMultiSelectActive = false,
+                        selectedRecordingIds = emptySet()
                     )
                 }
             }

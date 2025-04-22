@@ -12,9 +12,12 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import edu.cit.audioscholar.data.remote.service.ApiService
-import edu.cit.audioscholar.domain.repository.AudioRepositoryImpl
-import edu.cit.audioscholar.domain.repository.AudioRepository
-import edu.cit.audioscholar.ui.auth.LoginViewModel
+import edu.cit.audioscholar.domain.repository.AuthRepository
+import edu.cit.audioscholar.domain.repository.AuthRepositoryImpl
+import edu.cit.audioscholar.domain.repository.LocalAudioRepository
+import edu.cit.audioscholar.domain.repository.LocalAudioRepositoryImpl
+import edu.cit.audioscholar.domain.repository.RemoteAudioRepository
+import edu.cit.audioscholar.domain.repository.RemoteAudioRepositoryImpl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -24,9 +27,6 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
-import java.net.ConnectException
-import java.net.SocketTimeoutException
-import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,7 +37,6 @@ object NetworkModule {
 
     private const val PRIMARY_BASE_URL = "https://mastodon-balanced-randomly.ngrok-free.app/"
     private const val FALLBACK_BASE_URL = "http://192.168.254.104:8080/"
-
     private const val PREFS_NAME = "AudioScholarPrefs"
     private const val TAG = "NetworkModule"
 
@@ -46,7 +45,7 @@ object NetworkModule {
         private val prefs: SharedPreferences
     ) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
-            val token = prefs.getString(LoginViewModel.KEY_AUTH_TOKEN, null)
+            val token = prefs.getString("auth_token", null)
             val originalRequest = chain.request()
 
             val requestBuilder = originalRequest.newBuilder()
@@ -61,7 +60,6 @@ object NetworkModule {
             return chain.proceed(request)
         }
     }
-
 
     @Provides
     @Singleton
@@ -88,6 +86,7 @@ object NetworkModule {
             val originalRequest: Request = chain.request()
             var primaryException: IOException? = null
             var primaryResponse: Response? = null
+            var attemptFallback = false
 
             if (primaryHttpUrl != null && originalRequest.url.host == primaryHttpUrl.host) {
                 try {
@@ -97,8 +96,12 @@ object NetworkModule {
                     if (primaryResponse.isSuccessful) {
                         Log.d(TAG, "Primary URL request successful (code: ${primaryResponse.code}). Not falling back.")
                         return@Interceptor primaryResponse
+                    } else if (primaryResponse.code >= 400 && primaryResponse.code < 500) {
+                        Log.w(TAG, "Primary URL request returned client error (code: ${primaryResponse.code}). NOT falling back.")
+                        return@Interceptor primaryResponse
                     } else {
-                        Log.w(TAG, "Primary URL request returned unsuccessful code: ${primaryResponse.code}. Will attempt fallback.")
+                        Log.w(TAG, "Primary URL request returned server error or other non-success code: ${primaryResponse.code}. Will attempt fallback.")
+                        attemptFallback = true
                         primaryResponse.close()
                         primaryResponse = null
                     }
@@ -106,16 +109,16 @@ object NetworkModule {
                 } catch (e: IOException) {
                     Log.w(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Will attempt fallback.")
                     primaryException = e
+                    attemptFallback = true
                     primaryResponse?.close()
                     primaryResponse = null
                 }
             } else {
-                Log.d(TAG, "Request URL host (${originalRequest.url.host}) does not match primary host (${primaryHttpUrl?.host}). Proceeding without fallback interceptor logic.")
+                Log.d(TAG, "Request URL host (${originalRequest.url.host}) does not match primary host (${primaryHttpUrl?.host}) or primary URL invalid. Proceeding without fallback interceptor logic.")
                 return@Interceptor chain.proceed(originalRequest)
             }
 
-
-            if (fallbackHttpUrl != null) {
+            if (attemptFallback && fallbackHttpUrl != null) {
                 val fallbackUrl = originalRequest.url.newBuilder()
                     .scheme(fallbackHttpUrl.scheme)
                     .host(fallbackHttpUrl.host)
@@ -135,13 +138,15 @@ object NetworkModule {
                     primaryException?.addSuppressed(fallbackException)
                     throw primaryException ?: fallbackException
                 }
-            } else {
+            } else if (attemptFallback) {
                 Log.e(TAG, "Primary URL failed, but fallback URL is not configured or invalid. Cannot fallback.")
-                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (unsuccessful response) and no valid fallback URL configured.")
+                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (unsuccessful response code ${primaryResponse?.code ?: "N/A"}) and no valid fallback URL configured.")
+            } else {
+                Log.e(TAG, "Fallback logic reached unexpectedly. Primary response was: ${primaryResponse?.code ?: "N/A"}, Exception: ${primaryException?.message}")
+                throw primaryException ?: IOException("Request failed and fallback logic error occurred.")
             }
         }
     }
-
 
     @Provides
     @Singleton
@@ -184,12 +189,31 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideAudioRepository(
+    fun provideAuthRepository(
         apiService: ApiService,
         application: Application,
         gson: Gson
-    ): AudioRepository {
-        return AudioRepositoryImpl(apiService, application, gson)
+    ): AuthRepository {
+        return AuthRepositoryImpl(apiService, application, gson)
+    }
+
+    @Provides
+    @Singleton
+    fun provideLocalAudioRepository(
+        application: Application,
+        gson: Gson
+    ): LocalAudioRepository {
+        return LocalAudioRepositoryImpl(application, gson)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRemoteAudioRepository(
+        apiService: ApiService,
+        application: Application,
+        gson: Gson
+    ): RemoteAudioRepository {
+        return RemoteAudioRepositoryImpl(apiService, application, gson)
     }
 
     @Provides
@@ -203,5 +227,4 @@ object NetworkModule {
     fun provideFirebaseAuth(): FirebaseAuth {
         return FirebaseAuth.getInstance()
     }
-
 }

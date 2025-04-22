@@ -52,14 +52,14 @@ class PlaybackManager @Inject constructor(
                 startProgressUpdates()
             } else {
                 stopProgressUpdates()
-                _playbackState.update { it.copy(currentPositionMs = player?.currentPosition ?: 0L) }
+                _playbackState.update { it.copy(currentPositionMs = player?.currentPosition ?: it.currentPositionMs) }
             }
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             Log.d(TAG, "onPlaybackStateChanged: ${playbackStateToString(playbackState)}")
             val isReady = playbackState == Player.STATE_READY
-            val currentDuration = if (isReady) player?.duration ?: 0L else 0L
+            val currentDuration = if (isReady) player?.duration?.takeIf { it > 0 } ?: 0L else 0L
             _playbackState.update {
                 it.copy(
                     isReady = isReady,
@@ -67,15 +67,45 @@ class PlaybackManager @Inject constructor(
                 )
             }
             if (playbackState == Player.STATE_ENDED) {
+                Log.d(TAG, "Playback ended.")
                 _playbackState.update { it.copy(isPlaying = false, currentPositionMs = it.totalDurationMs) }
                 stopProgressUpdates()
             }
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            Log.e(TAG, "Player Error: ${error.message}", error)
+            Log.e(TAG, "Player Error: ${error.errorCodeName} - ${error.message}", error)
             _playbackState.update { it.copy(error = "Playback Error: ${error.message}", isPlaying = false) }
             stopProgressUpdates()
+        }
+    }
+
+    fun preparePlayer(filePath: String) {
+        Log.d(TAG, "preparePlayer called for: $filePath")
+        if (player != null && player?.currentMediaItem?.mediaId == filePath && playbackState.value.isReady) {
+            Log.d(TAG, "Player already prepared for this file.")
+            return
+        }
+
+        releasePlayer()
+
+        try {
+            player = ExoPlayer.Builder(context).build().apply {
+                val mediaItem = MediaItem.Builder()
+                    .setUri(filePath.toUri())
+                    .setMediaId(filePath)
+                    .build()
+                setMediaItem(mediaItem)
+                addListener(playerListener)
+                playWhenReady = false
+                prepare()
+            }
+            _playbackState.value = PlaybackState()
+            Log.d(TAG, "Player prepared for $filePath")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error preparing player for $filePath", e)
+            _playbackState.update { it.copy(error = "Failed to prepare player: ${e.message}") }
+            releasePlayer()
         }
     }
 
@@ -85,11 +115,14 @@ class PlaybackManager @Inject constructor(
 
         try {
             player = ExoPlayer.Builder(context).build().apply {
-                val mediaItem = MediaItem.fromUri(filePath.toUri())
+                val mediaItem = MediaItem.Builder()
+                    .setUri(filePath.toUri())
+                    .setMediaId(filePath)
+                    .build()
                 setMediaItem(mediaItem)
                 addListener(playerListener)
-                prepare()
                 playWhenReady = true
+                prepare()
             }
             _playbackState.value = PlaybackState()
         } catch (e: Exception) {
@@ -100,8 +133,13 @@ class PlaybackManager @Inject constructor(
     }
 
     fun play() {
-        Log.d(TAG, "play called. Player exists: ${player != null}")
-        player?.play()
+        Log.d(TAG, "play called. Player exists: ${player != null}, Is ready: ${playbackState.value.isReady}")
+        if (player?.playbackState == Player.STATE_ENDED) {
+            player?.seekTo(0)
+            player?.playWhenReady = true
+        } else {
+            player?.play()
+        }
     }
 
     fun pause() {
@@ -112,7 +150,8 @@ class PlaybackManager @Inject constructor(
     fun seekTo(positionMs: Long) {
         Log.d(TAG, "seekTo called: $positionMs ms. Player exists: ${player != null}")
         player?.let {
-            val clampedPosition = positionMs.coerceIn(0, it.duration)
+            val duration = it.duration.takeIf { d -> d > 0 } ?: 0L
+            val clampedPosition = positionMs.coerceIn(0, duration)
             it.seekTo(clampedPosition)
             _playbackState.update { state -> state.copy(currentPositionMs = clampedPosition) }
         }
@@ -128,30 +167,48 @@ class PlaybackManager @Inject constructor(
     }
 
     fun consumeError() {
-        _playbackState.update { it.copy(error = null) }
+        if (_playbackState.value.error != null) {
+            Log.d(TAG, "Consuming error state.")
+            _playbackState.update { it.copy(error = null) }
+        }
     }
 
     private fun startProgressUpdates() {
+        if (progressJob?.isActive == true) return
         stopProgressUpdates()
+
         progressJob = coroutineScope.launch {
+            Log.d(TAG, "Progress updates coroutine started.")
             while (isActive) {
-                player?.let {
-                    if (it.isPlaying) {
-                        _playbackState.update { state ->
-                            state.copy(currentPositionMs = it.currentPosition)
+                player?.let { currentPlayer ->
+                    if (currentPlayer.isPlaying) {
+                        val currentPosition = currentPlayer.currentPosition
+                        if (currentPosition != _playbackState.value.currentPositionMs) {
+                            _playbackState.update { state ->
+                                state.copy(currentPositionMs = currentPosition)
+                            }
                         }
+                    } else {
+                        Log.d(TAG, "Player not playing, stopping progress updates from within loop.")
+                        stopProgressUpdates()
                     }
+                } ?: run {
+                    Log.d(TAG, "Player is null, stopping progress updates from within loop.")
+                    stopProgressUpdates()
                 }
                 delay(PROGRESS_UPDATE_INTERVAL_MS)
             }
+            Log.d(TAG, "Progress updates coroutine finished.")
         }
-        Log.d(TAG, "Progress updates started.")
+        Log.d(TAG, "Progress updates job launched.")
     }
 
     private fun stopProgressUpdates() {
-        progressJob?.cancel()
+        if (progressJob?.isActive == true) {
+            progressJob?.cancel()
+            Log.d(TAG, "Progress updates job cancelled.")
+        }
         progressJob = null
-        Log.d(TAG, "Progress updates stopped.")
     }
 
     private fun playbackStateToString(state: Int): String {
@@ -160,7 +217,7 @@ class PlaybackManager @Inject constructor(
             Player.STATE_BUFFERING -> "BUFFERING"
             Player.STATE_READY -> "READY"
             Player.STATE_ENDED -> "ENDED"
-            else -> "UNKNOWN"
+            else -> "UNKNOWN ($state)"
         }
     }
 }

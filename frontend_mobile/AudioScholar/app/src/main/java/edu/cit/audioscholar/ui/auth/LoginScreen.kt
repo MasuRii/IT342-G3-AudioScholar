@@ -6,17 +6,48 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,7 +68,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import edu.cit.audioscholar.R
@@ -94,7 +124,6 @@ fun LoginScreen(
         }
     }
 
-
     LaunchedEffect(key1 = viewModel) {
         viewModel.loginScreenEventFlow.collectLatest { event ->
             when (event) {
@@ -118,12 +147,12 @@ fun LoginScreen(
                                 duration = SnackbarDuration.Short
                             )
                         }
+                        viewModel.handleGitHubRedirect(null, null)
                     }
                 }
             }
         }
     }
-
 
     LaunchedEffect(loginState.errorMessage) {
         loginState.errorMessage?.let { message ->
@@ -155,8 +184,13 @@ fun LoginScreen(
                     .padding(bottom = 32.dp)
             )
 
+            val welcomeText = if (loginState.email.isNotEmpty()) {
+                stringResource(R.string.login_title)
+            } else {
+                "Log in to your account"
+            }
             Text(
-                text = stringResource(R.string.login_title),
+                text = welcomeText,
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(bottom = 24.dp)
             )
@@ -177,7 +211,8 @@ fun LoginScreen(
                     )
                 },
                 singleLine = true,
-                isError = loginState.errorMessage != null
+                isError = loginState.errorMessage != null,
+                enabled = !loginState.isAnyLoading
             )
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -203,19 +238,23 @@ fun LoginScreen(
                     else Icons.Filled.VisibilityOff
                     val description = if (passwordVisible) stringResource(R.string.cd_hide_password) else stringResource(R.string.cd_show_password)
 
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    IconButton(
+                        onClick = { passwordVisible = !passwordVisible },
+                        enabled = !loginState.isAnyLoading
+                    ) {
                         Icon(imageVector = image, description)
                     }
                 },
                 singleLine = true,
-                isError = loginState.errorMessage != null
+                isError = loginState.errorMessage != null,
+                enabled = !loginState.isAnyLoading
             )
             Spacer(modifier = Modifier.height(8.dp))
 
             TextButton(
                 onClick = viewModel::onForgotPasswordClick,
                 modifier = Modifier.align(Alignment.End),
-                enabled = !loginState.isLoading
+                enabled = !loginState.isAnyLoading
             ) {
                 Text(stringResource(R.string.login_forgot_password))
             }
@@ -224,9 +263,9 @@ fun LoginScreen(
             Button(
                 onClick = viewModel::onLoginClick,
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !loginState.isLoading
+                enabled = !loginState.isAnyLoading
             ) {
-                if (loginState.isLoading) {
+                if (loginState.isEmailLoginLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         color = MaterialTheme.colorScheme.onPrimary,
@@ -259,31 +298,47 @@ fun LoginScreen(
                 OutlinedButton(
                     onClick = viewModel::onGoogleSignInClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    enabled = !loginState.isLoading
+                    enabled = !loginState.isAnyLoading
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_google_icon),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color.Unspecified
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("Google")
+                    if (loginState.isGoogleLoginLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_google_icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = Color.Unspecified
+                        )
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("Google")
+                    }
                 }
 
                 OutlinedButton(
                     onClick = viewModel::onGitHubSignInClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    enabled = !loginState.isLoading
+                    enabled = !loginState.isAnyLoading
                 ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_github_icon),
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = LocalContentColor.current
-                    )
-                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                    Text("GitHub")
+                    if (loginState.isGitHubLoginLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_github_icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = LocalContentColor.current
+                        )
+                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                        Text("GitHub")
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
@@ -306,7 +361,7 @@ fun LoginScreen(
             ClickableText(
                 text = annotatedString,
                 onClick = { offset ->
-                    if (!loginState.isLoading) {
+                    if (!loginState.isAnyLoading) {
                         annotatedString.getStringAnnotations(tag = "REGISTER", start = offset, end = offset)
                             .firstOrNull()?.let { annotation ->
                                 navController.navigate(annotation.item) {

@@ -8,7 +8,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.LocalAudioRepository
 import edu.cit.audioscholar.service.PlaybackManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -28,8 +28,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
-import androidx.compose.ui.text.input.ImeAction
-import kotlinx.coroutines.flow.update
 
 
 private fun formatDurationMillis(durationMillis: Long): String {
@@ -46,11 +44,10 @@ private fun formatTimestampMillis(timestampMillis: Long): String {
     return format.format(date)
 }
 
-
 @HiltViewModel
 class RecordingDetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val audioRepository: AudioRepository,
+    private val localAudioRepository: LocalAudioRepository,
     private val playbackManager: PlaybackManager
 ) : ViewModel() {
 
@@ -80,7 +77,7 @@ class RecordingDetailsViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
-            audioRepository.getRecordingMetadata(decodedFilePath)
+            localAudioRepository.getRecordingMetadata(decodedFilePath)
                 .catch { e ->
                     Log.e("DetailsViewModel", "Error loading details for $decodedFilePath", e)
                     _uiState.update {
@@ -105,6 +102,7 @@ class RecordingDetailsViewModel @Inject constructor(
                                 error = null
                             )
                         }
+                        playbackManager.preparePlayer(metadata.filePath)
                     }.onFailure { e ->
                         Log.e("DetailsViewModel", "Failed result loading details for $decodedFilePath", e)
                         _uiState.update {
@@ -261,7 +259,6 @@ class RecordingDetailsViewModel @Inject constructor(
         _uiState.update { it.copy(attachedPowerPoint = null, infoMessage = "PowerPoint detached.") }
     }
 
-
     fun onWatchYouTubeVideo(video: MockYouTubeVideo) {
         Log.d("DetailsViewModel", "Watch YouTube clicked: ${video.title}")
         _uiState.update { it.copy(infoMessage = "Mock: Opening video ${video.title}") }
@@ -294,7 +291,7 @@ class RecordingDetailsViewModel @Inject constructor(
                 durationMillis = _uiState.value.durationMillis
             )
 
-            val success = audioRepository.deleteLocalRecording(metadataToDelete)
+            val success = localAudioRepository.deleteLocalRecording(metadataToDelete)
 
             if (success) {
                 Log.d("DetailsViewModel", "Deletion successful for: $decodedFilePath")
@@ -328,6 +325,11 @@ class RecordingDetailsViewModel @Inject constructor(
         _uiState.update { it.copy(editableTitle = newTitle) }
     }
 
+    fun onTitleEditCancelled() {
+        _uiState.update { it.copy(isEditingTitle = false, editableTitle = it.title) }
+        Log.d("DetailsViewModel", "Title edit cancelled.")
+    }
+
     fun onTitleSaveRequested() {
         val state = _uiState.value
         val newTitle = state.editableTitle.trim()
@@ -339,12 +341,12 @@ class RecordingDetailsViewModel @Inject constructor(
         }
 
         if (newTitle != state.title) {
-            Log.d("DetailsViewModel", "Saving new title: $newTitle")
+            Log.d("DetailsViewModel", "Saving new title: $newTitle for path: ${state.filePath}")
             _uiState.update { it.copy(isEditingTitle = false, title = newTitle) }
 
             viewModelScope.launch {
                 try {
-                    val success = audioRepository.updateRecordingTitle(state.filePath, newTitle)
+                    val success = localAudioRepository.updateRecordingTitle(state.filePath, newTitle)
 
                     if (!success) {
                         Log.e("DetailsViewModel", "Failed to update title in repository for ${state.filePath}")
@@ -362,11 +364,6 @@ class RecordingDetailsViewModel @Inject constructor(
             Log.d("DetailsViewModel", "Title unchanged. Exiting edit mode.")
             _uiState.update { it.copy(isEditingTitle = false) }
         }
-    }
-
-    fun onTitleEditCancelled() {
-        _uiState.update { it.copy(isEditingTitle = false, editableTitle = it.title) }
-        Log.d("DetailsViewModel", "Title edit cancelled.")
     }
 
     override fun onCleared() {

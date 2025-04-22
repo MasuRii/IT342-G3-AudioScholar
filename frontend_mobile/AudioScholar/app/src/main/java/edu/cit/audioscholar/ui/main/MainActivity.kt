@@ -88,10 +88,8 @@ import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
@@ -183,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     Log.i("MainActivity", "[GitHubNavCollector] Collected gitHubLoginCompleteSignal.")
                     if (::navController.isInitialized) {
                         val currentRoute = navController.currentDestination?.route
-                        if (currentRoute == Screen.Login.route) {
+                        if (currentRoute == Screen.Login.route || currentRoute == Screen.Registration.route) {
                             Log.d("MainActivity", "[GitHubNavCollector] Navigating from Login to Record.")
                             navController.navigate(Screen.Record.route) {
                                 popUpTo(Screen.Login.route) { inclusive = true }
@@ -382,7 +380,7 @@ fun MainAppScreen(
                             }
                             .padding(vertical = 8.dp)
                     ) {
-                        Image(painterResource(id = R.drawable.ic_navigation_profile_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
+                        Image(painterResource(id = R.drawable.avatar_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text("User Name", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)

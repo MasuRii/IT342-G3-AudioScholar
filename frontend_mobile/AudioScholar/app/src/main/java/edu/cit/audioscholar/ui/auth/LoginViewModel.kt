@@ -13,7 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.BuildConfig
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
-import edu.cit.audioscholar.domain.repository.AudioRepository
+import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.channels.BufferOverflow
@@ -31,11 +31,16 @@ import javax.inject.Inject
 data class LoginUiState(
     val email: String = "",
     val password: String = "",
-    val isLoading: Boolean = false,
+    val isEmailLoginLoading: Boolean = false,
+    val isGoogleLoginLoading: Boolean = false,
+    val isGitHubLoginLoading: Boolean = false,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
     val navigateToRecordScreen: Boolean = false
-)
+) {
+    val isAnyLoading: Boolean
+        get() = isEmailLoginLoading || isGoogleLoginLoading || isGitHubLoginLoading
+}
 
 sealed class LoginScreenEvent {
     data class ShowInfoMessage(val message: String) : LoginScreenEvent()
@@ -45,7 +50,7 @@ sealed class LoginScreenEvent {
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val audioRepository: AudioRepository,
+    private val authRepository: AuthRepository,
     private val prefs: SharedPreferences,
     private val firebaseAuth: FirebaseAuth
 ) : ViewModel() {
@@ -89,7 +94,7 @@ class LoginViewModel @Inject constructor(
     }
 
     fun onLoginClick() {
-        if (_uiState.value.isLoading) return
+        if (_uiState.value.isAnyLoading) return
         val email = _uiState.value.email.trim()
         val password = _uiState.value.password
 
@@ -101,13 +106,13 @@ class LoginViewModel @Inject constructor(
         if (BuildConfig.DEBUG && email == DEV_EMAIL && password == DEV_PASSWORD) {
             Log.w(TAG, "!!! USING OFFLINE DEV LOGIN BYPASS !!!")
             viewModelScope.launch {
-                _uiState.update { it.copy(isLoading = true) }
+                _uiState.update { it.copy(isEmailLoginLoading = true) }
                 with(prefs.edit()) {
                     putString(KEY_AUTH_TOKEN, DEV_OFFLINE_TOKEN)
                     putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                     apply()
                 }
-                _uiState.update { it.copy(isLoading = false, navigateToRecordScreen = true) }
+                _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
                 Log.w(TAG, "!!! OFFLINE DEV LOGIN SUCCESSFUL !!!")
             }
             return
@@ -119,7 +124,7 @@ class LoginViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isEmailLoginLoading = true, errorMessage = null) }
             try {
                 Log.d(TAG, "Attempting Firebase sign-in for: $email")
                 val authResult = firebaseAuth.signInWithEmailAndPassword(email, password).await()
@@ -127,7 +132,7 @@ class LoginViewModel @Inject constructor(
 
                 if (firebaseUser == null) {
                     Log.w(TAG, "Firebase sign-in successful but user object is null.")
-                    _uiState.update { it.copy(isLoading = false, errorMessage = "Login failed: Could not retrieve user details.") }
+                    _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = "Login failed: Could not retrieve user details.") }
                     return@launch
                 }
                 Log.d(TAG, "Firebase sign-in successful. UID: ${firebaseUser.uid}")
@@ -138,7 +143,7 @@ class LoginViewModel @Inject constructor(
 
                 if (firebaseIdToken == null) {
                     Log.w(TAG, "Firebase ID token retrieval failed (token is null).")
-                    _uiState.update { it.copy(isLoading = false, errorMessage = "Login failed: Could not retrieve authentication token.") }
+                    _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = "Login failed: Could not retrieve authentication token.") }
                     firebaseAuth.signOut()
                     return@launch
                 }
@@ -146,7 +151,7 @@ class LoginViewModel @Inject constructor(
 
                 val tokenRequest = FirebaseTokenRequest(idToken = firebaseIdToken)
                 Log.d(TAG, "Sending Firebase ID token to backend for verification...")
-                when (val backendResult = audioRepository.verifyFirebaseToken(tokenRequest)) {
+                when (val backendResult = authRepository.verifyFirebaseToken(tokenRequest)) {
                     is Resource.Success -> {
                         val apiJwt = backendResult.data?.token
                         if (apiJwt != null) {
@@ -156,16 +161,16 @@ class LoginViewModel @Inject constructor(
                                 putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                                 apply()
                             }
-                            _uiState.update { it.copy(isLoading = false, navigateToRecordScreen = true) }
+                            _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
                         } else {
                             Log.w(TAG, "Backend verification successful but API JWT was null in response.")
-                            _uiState.update { it.copy(isLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server.") }
+                            _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server.") }
                             firebaseAuth.signOut()
                         }
                     }
                     is Resource.Error -> {
                         Log.w(TAG, "Backend verification failed: ${backendResult.message}")
-                        _uiState.update { it.copy(isLoading = false, errorMessage = backendResult.message ?: "Login failed: Server validation error.") }
+                        _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Server validation error.") }
                         firebaseAuth.signOut()
                     }
                     is Resource.Loading -> {}
@@ -179,44 +184,44 @@ class LoginViewModel @Inject constructor(
                     "ERROR_INVALID_EMAIL" -> "Please enter a valid email address."
                     else -> "Login failed: ${e.localizedMessage ?: "An unknown authentication error occurred."}"
                 }
-                _uiState.update { it.copy(isLoading = false, errorMessage = message) }
+                _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = message) }
             } catch (e: Exception) {
                 Log.e(TAG, "An unexpected error occurred during login: ${e.message}", e)
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Login failed: ${e.localizedMessage ?: "An unexpected error occurred."}") }
+                _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = "Login failed: ${e.localizedMessage ?: "An unexpected error occurred."}") }
             } finally {
-                if (_uiState.value.isLoading && !_uiState.value.navigateToRecordScreen) {
-                    _uiState.update { it.copy(isLoading = false) }
+                if (_uiState.value.isEmailLoginLoading && !_uiState.value.navigateToRecordScreen) {
+                    _uiState.update { it.copy(isEmailLoginLoading = false) }
                 }
             }
         }
     }
 
     fun onForgotPasswordClick() {
+        if (_uiState.value.isAnyLoading) return
         viewModelScope.launch {
             _loginScreenEventFlow.emit(LoginScreenEvent.ShowInfoMessage("Forgot Password feature not implemented yet."))
         }
     }
 
     fun onGoogleSignInClick() {
+        if (_uiState.value.isAnyLoading) return
         viewModelScope.launch {
-            if (!_uiState.value.isLoading) {
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-                _loginScreenEventFlow.emit(LoginScreenEvent.LaunchGoogleSignIn)
-            }
+            _uiState.update { it.copy(isGoogleLoginLoading = true, errorMessage = null) }
+            _loginScreenEventFlow.emit(LoginScreenEvent.LaunchGoogleSignIn)
         }
     }
 
     fun handleGoogleSignInResult(account: GoogleSignInAccount?) {
         if (account?.idToken != null) {
             Log.i(TAG, "[GoogleSignIn] Google Sign-In successful. Verifying...")
-            if (!_uiState.value.isLoading) {
-                Log.w(TAG, "[GoogleSignIn] handleGoogleSignInResult called while not loading. Setting isLoading=true.")
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            if (!_uiState.value.isGoogleLoginLoading) {
+                Log.w(TAG, "[GoogleSignIn] handleGoogleSignInResult called while not loading. Setting isGoogleLoginLoading=true.")
+                _uiState.update { it.copy(isGoogleLoginLoading = true, errorMessage = null) }
             }
             viewModelScope.launch {
                 val tokenRequest = FirebaseTokenRequest(idToken = account.idToken!!)
                 Log.d(TAG, "[GoogleSignIn] Sending Google ID token to backend for verification...")
-                when (val backendResult = audioRepository.verifyGoogleToken(tokenRequest)) {
+                when (val backendResult = authRepository.verifyGoogleToken(tokenRequest)) {
                     is Resource.Success -> {
                         val apiJwt = backendResult.data?.token
                         if (apiJwt != null) {
@@ -229,70 +234,66 @@ class LoginViewModel @Inject constructor(
                                     apply()
                                 }
                                 Log.d(TAG, "[GoogleSignIn] Prefs saved.")
-                                _uiState.update { it.copy(isLoading = false, navigateToRecordScreen = true) }
+                                _uiState.update { it.copy(isGoogleLoginLoading = false, navigateToRecordScreen = true) }
                                 Log.d(TAG, "[GoogleSignIn] State updated for navigation.")
                             } catch (e: Exception) {
                                 Log.e(TAG, "[GoogleSignIn] CRITICAL Exception during pref saving!", e)
-                                _uiState.update { it.copy(isLoading = false, errorMessage = "Error processing login after Google verification.") }
+                                _uiState.update { it.copy(isGoogleLoginLoading = false, errorMessage = "Error processing login after Google verification.") }
                             }
                         } else {
                             Log.w(TAG, "[GoogleSignIn] Backend Success but JWT null.")
-                            _uiState.update { it.copy(isLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server after Google Sign-In.") }
+                            _uiState.update { it.copy(isGoogleLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server after Google Sign-In.") }
                         }
                     }
                     is Resource.Error -> {
                         Log.w(TAG, "[GoogleSignIn] Backend Error: ${backendResult.message}")
-                        _uiState.update { it.copy(isLoading = false, errorMessage = backendResult.message ?: "Login failed: Server validation error for Google Sign-In.") }
+                        _uiState.update { it.copy(isGoogleLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Server validation error for Google Sign-In.") }
                     }
                     is Resource.Loading -> {}
-                    else -> { Log.w(TAG, "[GoogleSignIn] Unknown Resource state received from repository.") }
                 }
             }
         } else {
             Log.w(TAG, "[GoogleSignIn] Google Sign-In failed or token missing.")
-            if (_uiState.value.isLoading && _uiState.value.errorMessage == null) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = "Google Sign-In failed or cancelled.") }
-            } else {
-                _uiState.update { it.copy(isLoading = false) }
+            if (_uiState.value.isGoogleLoginLoading) {
+                _uiState.update { it.copy(isGoogleLoginLoading = false, errorMessage = "Google Sign-In failed or cancelled.") }
             }
         }
     }
 
     fun onGitHubSignInClick() {
+        if (_uiState.value.isAnyLoading) return
         viewModelScope.launch {
-            if (!_uiState.value.isLoading) {
-                val state = UUID.randomUUID().toString()
-                with(prefs.edit()) {
-                    putString(KEY_GITHUB_AUTH_STATE, state)
-                    apply()
-                }
-                Log.d(TAG, "Generated and saved GitHub state to SharedPreferences: $state")
-
-                val authUri = Uri.parse(GITHUB_AUTH_URL).buildUpon()
-                    .appendQueryParameter("client_id", GITHUB_CLIENT_ID)
-                    .appendQueryParameter("redirect_uri", GITHUB_REDIRECT_URI)
-                    .appendQueryParameter("scope", GITHUB_SCOPE)
-                    .appendQueryParameter("state", state)
-                    .build()
-
-                Log.d(TAG, "Constructed GitHub Auth URL: $authUri")
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-                _loginScreenEventFlow.emit(LoginScreenEvent.LaunchGitHubSignIn(authUri))
+            val state = UUID.randomUUID().toString()
+            with(prefs.edit()) {
+                putString(KEY_GITHUB_AUTH_STATE, state)
+                apply()
             }
+            Log.d(TAG, "Generated and saved GitHub state to SharedPreferences: $state")
+
+            val authUri = Uri.parse(GITHUB_AUTH_URL).buildUpon()
+                .appendQueryParameter("client_id", GITHUB_CLIENT_ID)
+                .appendQueryParameter("redirect_uri", GITHUB_REDIRECT_URI)
+                .appendQueryParameter("scope", GITHUB_SCOPE)
+                .appendQueryParameter("state", state)
+                .build()
+
+            Log.d(TAG, "Constructed GitHub Auth URL: $authUri")
+            _uiState.update { it.copy(isGitHubLoginLoading = true, errorMessage = null) }
+            _loginScreenEventFlow.emit(LoginScreenEvent.LaunchGitHubSignIn(authUri))
         }
     }
 
     fun handleGitHubRedirect(code: String?, state: String?) {
         Log.d(TAG, "[GitHubRedirect] Handling redirect. Code: ${code?.take(10)}..., State: $state")
 
-        if (!_uiState.value.isLoading) {
-            Log.w(TAG, "[GitHubRedirect] handleGitHubRedirect called while not loading. Setting isLoading=true.")
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        if (!_uiState.value.isGitHubLoginLoading) {
+            Log.w(TAG, "[GitHubRedirect] handleGitHubRedirect called while not loading. Setting isGitHubLoginLoading=true.")
+            _uiState.update { it.copy(isGitHubLoginLoading = true, errorMessage = null) }
         }
 
         if (code.isNullOrBlank()) {
             Log.w(TAG, "[GitHubRedirect] GitHub redirect failed: Code is null or blank.")
-            _uiState.update { it.copy(isLoading = false, errorMessage = "GitHub login failed: Authorization code missing.") }
+            _uiState.update { it.copy(isGitHubLoginLoading = false, errorMessage = "GitHub login failed: Authorization code missing.") }
             with(prefs.edit()) { remove(KEY_GITHUB_AUTH_STATE).apply() }
             return
         }
@@ -308,13 +309,13 @@ class LoginViewModel @Inject constructor(
 
         if (expectedState == null) {
             Log.e(TAG, "[GitHubRedirect] GitHub redirect failed: Could not retrieve expected state from SharedPreferences.")
-            _uiState.update { it.copy(isLoading = false, errorMessage = "GitHub login failed: Security check error (state missing).") }
+            _uiState.update { it.copy(isGitHubLoginLoading = false, errorMessage = "GitHub login failed: Security check error (state missing).") }
             return
         }
 
         if (state == null || state != expectedState) {
             Log.e(TAG, "[GitHubRedirect] GitHub redirect failed: State mismatch. Expected='$expectedState', Received='$state'")
-            _uiState.update { it.copy(isLoading = false, errorMessage = "GitHub login failed: Security check error (state mismatch).") }
+            _uiState.update { it.copy(isGitHubLoginLoading = false, errorMessage = "GitHub login failed: Security check error (state mismatch).") }
             return
         }
         Log.i(TAG, "[GitHubRedirect] GitHub state verified successfully.")
@@ -324,10 +325,10 @@ class LoginViewModel @Inject constructor(
             val request = GitHubCodeRequest(code = code, state = state)
             Log.d(TAG, "[GitHubRedirect] Sending GitHub code to backend repository...")
 
-            var finalState = _uiState.value.copy(isLoading = false)
+            var finalState = _uiState.value.copy(isGitHubLoginLoading = true)
             var signalActivity = false
 
-            when (val backendResult = audioRepository.verifyGitHubCode(request)) {
+            when (val backendResult = authRepository.verifyGitHubCode(request)) {
                 is Resource.Success -> {
                     val apiJwt = backendResult.data?.token
                     if (apiJwt != null) {
@@ -341,27 +342,26 @@ class LoginViewModel @Inject constructor(
                             }
                             Log.d(TAG, "[GitHubRedirect] Prefs saved.")
                             signalActivity = true
-                            finalState = finalState.copy(errorMessage = null)
+                            finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = null)
                         } catch (e: Exception) {
                             Log.e(TAG, "[GitHubRedirect] CRITICAL Exception during pref saving!", e)
-                            finalState = finalState.copy(errorMessage = "Critical error after login verification.")
+                            finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = "Critical error after login verification.")
                         }
                     } else {
                         Log.w(TAG, "[GitHubRedirect] Backend Success but JWT null.")
-                        finalState = finalState.copy(errorMessage = backendResult.message ?: "Login failed: Missing API token from server after GitHub Sign-In.")
+                        finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server after GitHub Sign-In.")
                     }
                 }
                 is Resource.Error -> {
                     Log.w(TAG, "[GitHubRedirect] Backend Error: ${backendResult.message}")
-                    finalState = finalState.copy(errorMessage = backendResult.message ?: "Login failed: Server validation error for GitHub Sign-In.")
+                    finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Server validation error for GitHub Sign-In.")
                 }
                 is Resource.Loading -> {
-                    finalState = _uiState.value.copy(isLoading = true)
                 }
             }
 
             _uiState.value = finalState
-            Log.d(TAG, "[GitHubRedirect] Final UI state updated. isLoading=${finalState.isLoading}")
+            Log.d(TAG, "[GitHubRedirect] Final UI state updated. isGitHubLoginLoading=${finalState.isGitHubLoginLoading}")
 
             if (signalActivity) {
                 Log.d(TAG, "[GitHubRedirect] Emitting gitHubLoginCompleteSignal to MainActivity...")
@@ -369,6 +369,7 @@ class LoginViewModel @Inject constructor(
             }
         }
     }
+
 
     fun onNavigationHandled() {
         Log.d(TAG, "onNavigationHandled called, resetting navigateToRecordScreen flag.")

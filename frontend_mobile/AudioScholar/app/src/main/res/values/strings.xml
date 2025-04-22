@@ -49,6 +49,10 @@
     <string name="upload_info_progress">Uploading: %1$d%%</string>
     <string name="button_back_to_recording">Back to Recording</string>
 
+    <string name="edit_profile_displayname_label">Display Name</string>
+    <string name="edit_profile_displayname_placeholder">How your name appears publicly</string>
+    <string name="button_save">Save Changes</string>
+
     <string name="nav_record">Record</string>
     <string name="nav_library">Library</string>
     <string name="nav_upload">Upload</string>
@@ -112,13 +116,15 @@
     <string name="cd_email_icon">Email Icon</string>
     <string name="cd_password_icon">Password Icon</string>
 
+    <string name="error_unauthorized">Unauthorized. Please log in again.</string>
+    <string name="error_unexpected_profile_fetch">An unexpected error occurred while fetching your profile: %1$s</string>
+
     <string name="error_network_connection">Network error. Please check your connection.</string>
     <string name="error_unexpected_registration">An unexpected error occurred during registration: %1$s</string>
+    <string name="error_unexpected_login">An unexpected error occurred during login: %1$s</string>
 
     <string name="notification_title_starting">Starting Recording…</string>
     <string name="notification_title_processing">Processing command…</string>
-
-    <string name="error_unexpected_login">An unexpected error occurred during login: %1$s</string>
 
     <string name="cd_close_multi_select">Close selection mode</string>
     <string name="cd_select_all">Select all</string>
@@ -251,6 +257,13 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Finish</string>
 
+    <string name="error_unexpected_change_password">An unexpected error occurred while changing your password: %1$s</string>
+    <string name="error_change_password_invalid_current">The current password you entered is incorrect. Please try again.</string>
+
+    <string name="error_unexpected_profile_update">An unexpected error occurred while updating your profile: %1$s</string>
+    <string name="upload_error_size_exceeded_avatar">Avatar file size exceeds the limit.</string>
+    <string name="upload_error_unsupported_format_avatar">Invalid image file type.</string>
+
     <string name="edit_profile_firstname_label">First Name</string>
     <string name="edit_profile_firstname_placeholder">e.g., John</string>
     <string name="edit_profile_lastname_label">Last Name</string>
@@ -260,7 +273,6 @@
     <string name="edit_profile_email_label">Email</string>
     <string name="edit_profile_error_required">This field is required</string>
 
-    <string name="button_save">Save</string>
     <string name="edit_profile_name_label">Name</string>
     <string name="edit_profile_name_error_empty">Name cannot be empty</string>
     <string name="snackbar_profile_updated">Profile updated successfully</string>
@@ -299,7 +311,7 @@
     <string name="dialog_logout_title">Log Out?</string>
     <string name="dialog_logout_message">Are you sure you want to log out?</string>
     <string name="dialog_logout_confirm">Log Out</string>
-    <string name="nav_edit_profile">Edit Profile</string> // Added for Edit Profile screen title
+    <string name="nav_edit_profile">Edit Profile</string>
     <string name="cd_navigate_back">Navigate back</string>
 
     <string name="settings_section_app_info">App Info</string>

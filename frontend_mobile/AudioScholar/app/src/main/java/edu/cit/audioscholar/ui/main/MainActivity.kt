@@ -181,7 +181,7 @@ class MainActivity : ComponentActivity() {
                     Log.i("MainActivity", "[GitHubNavCollector] Collected gitHubLoginCompleteSignal.")
                     if (::navController.isInitialized) {
                         val currentRoute = navController.currentDestination?.route
-                        if (currentRoute == Screen.Login.route) {
+                        if (currentRoute == Screen.Login.route || currentRoute == Screen.Registration.route) {
                             Log.d("MainActivity", "[GitHubNavCollector] Navigating from Login to Record.")
                             navController.navigate(Screen.Record.route) {
                                 popUpTo(Screen.Login.route) { inclusive = true }

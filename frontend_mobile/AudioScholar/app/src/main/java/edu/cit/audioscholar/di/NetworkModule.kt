@@ -86,6 +86,7 @@ object NetworkModule {
             val originalRequest: Request = chain.request()
             var primaryException: IOException? = null
             var primaryResponse: Response? = null
+            var attemptFallback = false
 
             if (primaryHttpUrl != null && originalRequest.url.host == primaryHttpUrl.host) {
                 try {
@@ -95,8 +96,12 @@ object NetworkModule {
                     if (primaryResponse.isSuccessful) {
                         Log.d(TAG, "Primary URL request successful (code: ${primaryResponse.code}). Not falling back.")
                         return@Interceptor primaryResponse
+                    } else if (primaryResponse.code >= 400 && primaryResponse.code < 500) {
+                        Log.w(TAG, "Primary URL request returned client error (code: ${primaryResponse.code}). NOT falling back.")
+                        return@Interceptor primaryResponse
                     } else {
-                        Log.w(TAG, "Primary URL request returned unsuccessful code: ${primaryResponse.code}. Will attempt fallback.")
+                        Log.w(TAG, "Primary URL request returned server error or other non-success code: ${primaryResponse.code}. Will attempt fallback.")
+                        attemptFallback = true
                         primaryResponse.close()
                         primaryResponse = null
                     }
@@ -104,6 +109,7 @@ object NetworkModule {
                 } catch (e: IOException) {
                     Log.w(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Will attempt fallback.")
                     primaryException = e
+                    attemptFallback = true
                     primaryResponse?.close()
                     primaryResponse = null
                 }
@@ -112,7 +118,7 @@ object NetworkModule {
                 return@Interceptor chain.proceed(originalRequest)
             }
 
-            if (fallbackHttpUrl != null) {
+            if (attemptFallback && fallbackHttpUrl != null) {
                 val fallbackUrl = originalRequest.url.newBuilder()
                     .scheme(fallbackHttpUrl.scheme)
                     .host(fallbackHttpUrl.host)
@@ -132,9 +138,12 @@ object NetworkModule {
                     primaryException?.addSuppressed(fallbackException)
                     throw primaryException ?: fallbackException
                 }
-            } else {
+            } else if (attemptFallback) {
                 Log.e(TAG, "Primary URL failed, but fallback URL is not configured or invalid. Cannot fallback.")
-                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (unsuccessful response code) and no valid fallback URL configured.")
+                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (unsuccessful response code ${primaryResponse?.code ?: "N/A"}) and no valid fallback URL configured.")
+            } else {
+                Log.e(TAG, "Fallback logic reached unexpectedly. Primary response was: ${primaryResponse?.code ?: "N/A"}, Exception: ${primaryException?.message}")
+                throw primaryException ?: IOException("Request failed and fallback logic error occurred.")
             }
         }
     }

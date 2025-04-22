@@ -1,3 +1,4 @@
+// app.jsx
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Header from './components/header';
 import HeroSection from './components/HeroSection';
@@ -8,6 +9,9 @@ import Footer from './components/footer';
 import SignUp from './components/SignUp';
 import SignIn from './components/SignIn';
 import Uploading from './components/Uploading';
+import Dashboard from './components/dashboard';
+import RecordingList from './components/RecordingList';
+import UserProfile from './components/UserProfile';
 
 function App() {
   return (
@@ -39,8 +43,17 @@ function App() {
             </>
           } />
 
-          {/* Upload route with its own header built-in */}
-          <Route path="/dashboard" element={<Uploading />} />
+          {/* Dashboard route */}
+          <Route path="/dashboard" element={<Dashboard />} />
+          
+          {/* Upload route */}
+          <Route path="/upload" element={<Uploading />} />
+          
+          {/* Recording List route */}
+          <Route path="/recordings" element={<RecordingList />} />
+
+          {/* User Profile route */}
+          <Route path="/profile" element={<UserProfile />} />
         </Routes>
       </div>
     </Router>

@@ -13,15 +13,19 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.BuildConfig
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
+import edu.cit.audioscholar.di.ApplicationScope
 import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -52,7 +56,8 @@ sealed class LoginScreenEvent {
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val prefs: SharedPreferences,
-    private val firebaseAuth: FirebaseAuth
+    private val firebaseAuth: FirebaseAuth,
+    @ApplicationScope private val applicationScope: CoroutineScope
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -86,6 +91,22 @@ class LoginViewModel @Inject constructor(
         private const val GITHUB_SCOPE = "read:user user:email"
     }
 
+    private fun triggerProfilePrefetch() {
+        applicationScope.launch {
+            Log.d(TAG, "[Prefetch] Triggering background profile prefetch in ApplicationScope...")
+            try {
+                authRepository.getUserProfile().collect { result ->
+                    Log.d(TAG, "[Prefetch] Profile fetch result: ${result::class.simpleName}")
+                }
+                Log.i(TAG, "[Prefetch] Profile prefetch flow collection completed.")
+            } catch (e: CancellationException) {
+                Log.w(TAG, "[Prefetch] Prefetch coroutine was cancelled (unexpected in AppScope).", e)
+            } catch (e: Exception) {
+                Log.w(TAG, "[Prefetch] Error during background profile prefetch: ${e.message}", e)
+            }
+        }
+    }
+
     fun onEmailChange(email: String) {
         _uiState.update { it.copy(email = email, errorMessage = null) }
     }
@@ -115,6 +136,7 @@ class LoginViewModel @Inject constructor(
                 _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
                 Log.w(TAG, "!!! OFFLINE DEV LOGIN SUCCESSFUL !!!")
             }
+            triggerProfilePrefetch()
             return
         }
 
@@ -162,6 +184,7 @@ class LoginViewModel @Inject constructor(
                                 apply()
                             }
                             _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
+                            triggerProfilePrefetch()
                         } else {
                             Log.w(TAG, "Backend verification successful but API JWT was null in response.")
                             _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server.") }
@@ -235,6 +258,7 @@ class LoginViewModel @Inject constructor(
                                 }
                                 Log.d(TAG, "[GoogleSignIn] Prefs saved.")
                                 _uiState.update { it.copy(isGoogleLoginLoading = false, navigateToRecordScreen = true) }
+                                triggerProfilePrefetch()
                                 Log.d(TAG, "[GoogleSignIn] State updated for navigation.")
                             } catch (e: Exception) {
                                 Log.e(TAG, "[GoogleSignIn] CRITICAL Exception during pref saving!", e)
@@ -327,6 +351,7 @@ class LoginViewModel @Inject constructor(
 
             var finalState = _uiState.value.copy(isGitHubLoginLoading = true)
             var signalActivity = false
+            var prefetchTriggered = false
 
             when (val backendResult = authRepository.verifyGitHubCode(request)) {
                 is Resource.Success -> {
@@ -343,6 +368,8 @@ class LoginViewModel @Inject constructor(
                             Log.d(TAG, "[GitHubRedirect] Prefs saved.")
                             signalActivity = true
                             finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = null)
+                            triggerProfilePrefetch()
+                            prefetchTriggered = true
                         } catch (e: Exception) {
                             Log.e(TAG, "[GitHubRedirect] CRITICAL Exception during pref saving!", e)
                             finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = "Critical error after login verification.")
@@ -361,7 +388,7 @@ class LoginViewModel @Inject constructor(
             }
 
             _uiState.value = finalState
-            Log.d(TAG, "[GitHubRedirect] Final UI state updated. isGitHubLoginLoading=${finalState.isGitHubLoginLoading}")
+            Log.d(TAG, "[GitHubRedirect] Final UI state updated. isGitHubLoginLoading=${finalState.isGitHubLoginLoading}, Prefetch triggered: $prefetchTriggered")
 
             if (signalActivity) {
                 Log.d(TAG, "[GitHubRedirect] Emitting gitHubLoginCompleteSignal to MainActivity...")

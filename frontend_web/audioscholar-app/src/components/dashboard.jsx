@@ -1,38 +1,36 @@
-// components/Dashboard.jsx
 import { Link } from 'react-router-dom';
 
 const Dashboard = () => {
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header with Logout Button */}
+      {/* Updated Header */}
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
-          <Link 
-            to="/"
-            className="text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10"
-          >
-            Logout
-          </Link>
+          <div className="flex items-center space-x-2">
+            <Link 
+              to="/profile"
+              className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              Profile
+            </Link>
+            <Link 
+              to="/"
+              className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Logout
+            </Link>
+          </div>
         </div>
       </header>
 
-      <Link 
-  to="/profile" 
-  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
->
-  <div className="flex items-center mb-4">
-    <div className="bg-purple-100 p-3 rounded-full mr-4">
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-      </svg>
-    </div>
-    <h2 className="text-xl font-semibold text-gray-800">My Profile</h2>
-  </div>
-  <p className="text-gray-600">View and edit your personal information.</p>
-</Link>
-
-      {/* Main Dashboard Content */}
+      {/* Rest of the dashboard content remains the same */}
       <main className="flex-grow bg-gray-50">
         <div className="container mx-auto px-4 py-12">
           <div className="max-w-6xl mx-auto">
@@ -71,26 +69,28 @@ const Dashboard = () => {
                 <p className="text-gray-600">View and manage all your audio recordings.</p>
               </Link>
 
-              {/* Statistics Card */}
-              <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
+              {/* Profile Card */}
+              <Link 
+                to="/profile" 
+                className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+              >
                 <div className="flex items-center mb-4">
-                  <div className="bg-green-100 p-3 rounded-full mr-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  <div className="bg-purple-100 p-3 rounded-full mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-800">Statistics</h2>
+                  <h2 className="text-xl font-semibold text-gray-800">My Profile</h2>
                 </div>
-                <p className="text-gray-600">View your usage statistics and activity.</p>
-              </div>
+                <p className="text-gray-600">View and edit your personal information.</p>
+              </Link>
             </div>
           </div>
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="bg-gray-100 py-12">
-        {/* Same footer as in Uploading.jsx */}
+        {/* Footer content */}
       </footer>
     </div>
   );

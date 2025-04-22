@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -69,9 +70,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
@@ -88,6 +92,7 @@ import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -120,13 +125,17 @@ val screensWithDrawer = listOf(
     Screen.ChangePassword.route
 )
 
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var prefs: SharedPreferences
+
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val loginViewModel: LoginViewModel by viewModels()
+    private val mainViewModel: MainViewModel by viewModels()
+
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
@@ -144,7 +153,6 @@ class MainActivity : ComponentActivity() {
             Log.e("MainActivity", "Onboarding complete called but NavController not ready.")
         }
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -223,7 +231,8 @@ class MainActivity : ComponentActivity() {
                     startDestination = startDestination,
                     onOnboardingComplete = onOnboardingCompleteAction,
                     prefs = prefs,
-                    loginViewModel = loginViewModel
+                    loginViewModel = loginViewModel,
+                    mainViewModel = mainViewModel
                 )
             }
         }
@@ -253,7 +262,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     private fun handleGitHubRedirectIntent(intent: Intent?, source: String): Boolean {
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
             val uri = intent.data
@@ -270,7 +278,6 @@ class MainActivity : ComponentActivity() {
         }
         return false
     }
-
 
     @Suppress("DEPRECATION")
     private fun logIntentExtras(source: String, intent: Intent?) {
@@ -338,7 +345,8 @@ fun MainAppScreen(
     startDestination: String,
     onOnboardingComplete: () -> Unit,
     prefs: SharedPreferences,
-    loginViewModel: LoginViewModel
+    loginViewModel: LoginViewModel,
+    mainViewModel: MainViewModel
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -347,6 +355,15 @@ fun MainAppScreen(
     val currentRoute = navBackStackEntry?.destination?.route
 
     val gesturesEnabled = currentRoute in screensWithDrawer
+
+    val userProfileState by mainViewModel.userProfileState.collectAsStateWithLifecycle()
+
+    val userProfile: UserProfileDto? = if (userProfileState is Resource.Success) {
+        userProfileState.data
+    } else {
+        (userProfileState as? Resource.Loading)?.data ?: (userProfileState as? Resource.Error)?.data
+    }
+
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -380,11 +397,32 @@ fun MainAppScreen(
                             }
                             .padding(vertical = 8.dp)
                     ) {
-                        Image(painterResource(id = R.drawable.avatar_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(userProfile?.profileImageUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.desc_user_avatar),
+                            placeholder = painterResource(id = R.drawable.avatar_placeholder),
+                            error = painterResource(id = R.drawable.avatar_placeholder),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
+                            contentScale = ContentScale.Crop
+                        )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("User Name", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                            Text("user.email@example.com", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = userProfile?.displayName ?: stringResource(R.string.placeholder_username),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = userProfile?.email ?: stringResource(R.string.placeholder_email),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -420,17 +458,19 @@ fun MainAppScreen(
                     label = { Text(stringResource(R.string.nav_logout)) },
                     selected = false,
                     onClick = {
-                        scope.launch { drawerState.close() }
-                        Log.d("DrawerFooter", "Logout clicked - Clearing login state and Navigating to Login")
-                        with(prefs.edit()) {
-                            putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
-                            remove(LoginViewModel.KEY_AUTH_TOKEN)
-                            apply()
-                        }
-
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(navController.graph.id) { inclusive = true }
-                            launchSingleTop = true
+                        scope.launch {
+                            drawerState.close()
+                            Log.d("DrawerFooter", "Logout clicked - Clearing login state and Navigating to Login")
+                            mainViewModel.clearUserCacheOnLogout()
+                            with(prefs.edit()) {
+                                putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
+                                remove(LoginViewModel.KEY_AUTH_TOKEN)
+                                apply()
+                            }
+                            navController.navigate(Screen.Login.route) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                                launchSingleTop = true
+                            }
                         }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)

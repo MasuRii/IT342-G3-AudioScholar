@@ -257,6 +257,10 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Finish</string>
 
+    <string name="placeholder_username">User Name</string>
+    <string name="placeholder_email">user.email@example.com</string>
+    <string name="desc_user_avatar">User avatar</string>
+
     <string name="error_unexpected_change_password">An unexpected error occurred while changing your password: %1$s</string>
     <string name="error_change_password_invalid_current">The current password you entered is incorrect. Please try again.</string>
 

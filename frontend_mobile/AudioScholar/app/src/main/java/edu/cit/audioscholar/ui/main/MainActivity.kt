@@ -380,7 +380,7 @@ fun MainAppScreen(
                             }
                             .padding(vertical = 8.dp)
                     ) {
-                        Image(painterResource(id = R.drawable.ic_navigation_profile_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
+                        Image(painterResource(id = R.drawable.avatar_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text("User Name", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)

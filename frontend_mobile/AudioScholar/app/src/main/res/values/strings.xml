@@ -257,6 +257,9 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Finish</string>
 
+    <string name="error_unexpected_change_password">An unexpected error occurred while changing your password: %1$s</string>
+    <string name="error_change_password_invalid_current">The current password you entered is incorrect. Please try again.</string>
+
     <string name="error_unexpected_profile_update">An unexpected error occurred while updating your profile: %1$s</string>
     <string name="upload_error_size_exceeded_avatar">Avatar file size exceeds the limit.</string>
     <string name="upload_error_unsupported_format_avatar">Invalid image file type.</string>

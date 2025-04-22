@@ -3,7 +3,6 @@ package edu.cit.audioscholar.config;
 import java.util.Arrays;
 import java.util.List;
 import javax.crypto.SecretKey;
-
 import edu.cit.audioscholar.security.JwtDenylistFilter;
 import edu.cit.audioscholar.service.TokenRevocationService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +28,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import edu.cit.audioscholar.security.JwtTokenProvider;
 import edu.cit.audioscholar.service.OAuth2LoginSuccessHandler;
-@CrossOrigin
+
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true, securedEnabled = true, jsr250Enabled = true)
@@ -62,10 +61,11 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(List.of(
-                "http:",
-                "http:",
-                "capacitor:",
-                "http:"
+                "http://localhost:8100",
+                "http://localhost",
+                "capacitor://localhost",
+                "http://192.168.1.10:8100",
+                "http://localhost:5173"
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList(
@@ -79,6 +79,7 @@ public class SecurityConfig {
         configuration.setAllowCredentials(true);
         configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setMaxAge(3600L);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

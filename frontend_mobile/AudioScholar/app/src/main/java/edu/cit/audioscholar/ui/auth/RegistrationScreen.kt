@@ -1,46 +1,27 @@
 package edu.cit.audioscholar.ui.auth
 
-import android.widget.Toast
+import android.app.Activity
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.Password
 import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,8 +42,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.main.Screen
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,25 +58,88 @@ fun RegistrationScreen(
     viewModel: RegistrationViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val passwordValidation by viewModel.passwordValidationResult.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val scrollState = rememberScrollState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val passwordsMatch = uiState.password == uiState.confirmPassword
-    val showPasswordMismatchError = !passwordsMatch && uiState.confirmPassword.isNotEmpty()
+    val showPasswordMismatchError = !passwordsMatch && uiState.confirmPassword.isNotEmpty() && uiState.password.isNotEmpty()
+
+    val googleSignInClient = remember {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(context.getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        GoogleSignIn.getClient(context, gso)
+    }
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                Log.d("RegistrationScreen", "Google Sign-In success in launcher, passing to ViewModel.")
+                viewModel.handleGoogleSignInResult(account)
+            } catch (e: ApiException) {
+                Log.w("RegistrationScreen", "Google Sign-In failed in launcher: ${e.statusCode}", e)
+                viewModel.handleGoogleSignInResult(null)
+            }
+        } else {
+            Log.w("RegistrationScreen", "Google Sign-In cancelled or failed. Result code: ${result.resultCode}")
+            viewModel.handleGoogleSignInResult(null)
+        }
+    }
 
     LaunchedEffect(uiState.registrationSuccess) {
         if (uiState.registrationSuccess) {
-            Toast.makeText(context, R.string.registration_success_message, Toast.LENGTH_SHORT).show()
-            navController.navigate(Screen.Login.route) {
-                popUpTo(Screen.Onboarding.route) { inclusive = true }
+            Log.d("RegistrationScreen", "registrationSuccess is true. Navigating to Record screen.")
+            navController.navigate(Screen.Record.route) {
+                popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
                 launchSingleTop = true
             }
             viewModel.registrationNavigated()
         }
     }
 
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { message ->
+            scope.launch {
+                snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Short)
+                viewModel.consumeErrorMessage()
+            }
+        }
+    }
+
+    LaunchedEffect(key1 = viewModel) {
+        viewModel.registrationScreenEventFlow.collectLatest { event ->
+            when (event) {
+                is RegistrationScreenEvent.ShowMessage -> {
+                    scope.launch { snackbarHostState.showSnackbar(event.message, duration = SnackbarDuration.Short) }
+                }
+                is RegistrationScreenEvent.LaunchGoogleSignIn -> {
+                    Log.d("RegistrationScreen", "Launching Google Sign-In Intent...")
+                    googleSignInLauncher.launch(googleSignInClient.signInIntent)
+                }
+                is RegistrationScreenEvent.LaunchGitHubSignIn -> {
+                    Log.d("RegistrationScreen", "Launching GitHub Sign-In via Custom Tab...")
+                    val customTabsIntent = CustomTabsIntent.Builder().build()
+                    try {
+                        customTabsIntent.launchUrl(context, event.url)
+                    } catch (e: Exception) {
+                        Log.e("RegistrationScreen", "Could not launch Custom Tab for GitHub: ${e.message}")
+                        viewModel.handleGitHubLaunchFailed()
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.nav_registration)) }
@@ -132,7 +182,8 @@ fun RegistrationScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                isError = uiState.firstName.isBlank() && uiState.registrationError != null
+                isError = uiState.firstName.isNotBlank() && uiState.errorMessage?.contains("Name fields") == true,
+                enabled = !uiState.isAnyLoading
             )
 
             OutlinedTextField(
@@ -143,7 +194,8 @@ fun RegistrationScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                isError = uiState.lastName.isBlank() && uiState.registrationError != null
+                isError = uiState.lastName.isNotBlank() && uiState.errorMessage?.contains("Name fields") == true,
+                enabled = !uiState.isAnyLoading
             )
 
             OutlinedTextField(
@@ -154,7 +206,8 @@ fun RegistrationScreen(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                isError = uiState.email.isBlank() && uiState.registrationError != null
+                isError = uiState.email.isNotBlank() && uiState.errorMessage?.contains("email address") == true,
+                enabled = !uiState.isAnyLoading
             )
 
             OutlinedTextField(
@@ -167,17 +220,21 @@ fun RegistrationScreen(
                 visualTransformation = if (uiState.isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
                 trailingIcon = {
-                    IconButton(onClick = viewModel::togglePasswordVisibility) {
+                    IconButton(
+                        onClick = viewModel::togglePasswordVisibility,
+                        enabled = !uiState.isAnyLoading
+                    ) {
                         Icon(
                             imageVector = if (uiState.isPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                             contentDescription = stringResource(if (uiState.isPasswordVisible) R.string.cd_hide_password else R.string.cd_show_password)
                         )
                     }
                 },
-                isError = uiState.password.isBlank() && uiState.registrationError != null
+                isError = uiState.password.isNotEmpty() && !passwordValidation.isValid,
+                enabled = !uiState.isAnyLoading
             )
 
-            PasswordStrengthIndicator(strength = viewModel.passwordStrength)
+            PasswordRequirementsIndicator(result = passwordValidation)
 
             OutlinedTextField(
                 value = uiState.confirmPassword,
@@ -186,18 +243,27 @@ fun RegistrationScreen(
                 leadingIcon = { Icon(Icons.Outlined.Password, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                visualTransformation = if (uiState.isConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                visualTransformation = if (uiState.isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                keyboardActions = KeyboardActions(onDone = {
+                    focusManager.clearFocus()
+                    if (viewModel.isFormValid) {
+                        viewModel.registerUser()
+                    }
+                }),
                 trailingIcon = {
-                    IconButton(onClick = viewModel::toggleConfirmPasswordVisibility) {
+                    IconButton(
+                        onClick = viewModel::togglePasswordVisibility,
+                        enabled = !uiState.isAnyLoading
+                    ) {
                         Icon(
-                            imageVector = if (uiState.isConfirmPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                            contentDescription = stringResource(if (uiState.isConfirmPasswordVisible) R.string.cd_hide_password else R.string.cd_show_password)
+                            imageVector = if (uiState.isPasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                            contentDescription = stringResource(if (uiState.isPasswordVisible) R.string.cd_hide_password else R.string.cd_show_password)
                         )
                     }
                 },
-                isError = showPasswordMismatchError || (uiState.confirmPassword.isBlank() && uiState.registrationError != null)
+                isError = showPasswordMismatchError || (uiState.confirmPassword.isBlank() && uiState.errorMessage != null),
+                enabled = !uiState.isAnyLoading
             )
 
             if (showPasswordMismatchError) {
@@ -205,7 +271,7 @@ fun RegistrationScreen(
                     text = stringResource(R.string.error_passwords_do_not_match),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 2.dp, bottom = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
                     textAlign = TextAlign.Start
                 )
             } else {
@@ -219,7 +285,8 @@ fun RegistrationScreen(
             ) {
                 Checkbox(
                     checked = uiState.termsAccepted,
-                    onCheckedChange = viewModel::onTermsAcceptedChange
+                    onCheckedChange = viewModel::onTermsAcceptedChange,
+                    enabled = !uiState.isAnyLoading
                 )
                 val annotatedTermsText = buildAnnotatedString {
                     append(stringResource(R.string.registration_terms_prefix).trimEnd())
@@ -233,24 +300,16 @@ fun RegistrationScreen(
                 ClickableText(
                     text = annotatedTermsText,
                     onClick = { offset ->
-                        annotatedTermsText.getStringAnnotations(tag = "T&C", start = offset, end = offset)
-                            .firstOrNull()?.let {
-                                Toast.makeText(context, "T&C Clicked (Placeholder)", Toast.LENGTH_SHORT).show()
-                            }
+                        if (!uiState.isAnyLoading) {
+                            annotatedTermsText.getStringAnnotations(tag = "T&C", start = offset, end = offset)
+                                .firstOrNull()?.let {
+                                    scope.launch { snackbarHostState.showSnackbar("Terms & Conditions clicked (Placeholder)") }
+                                }
+                        }
                     },
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                )
-            }
-
-            val error = uiState.registrationError
-            if (error != null) {
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
                 )
             }
 
@@ -259,7 +318,7 @@ fun RegistrationScreen(
                     focusManager.clearFocus()
                     viewModel.registerUser()
                 },
-                enabled = viewModel.isFormValid && !uiState.registrationInProgress,
+                enabled = viewModel.isFormValid && !uiState.isAnyLoading,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp, bottom = 16.dp)
@@ -288,32 +347,45 @@ fun RegistrationScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(
-                    onClick = { Toast.makeText(context, R.string.oauth_not_implemented, Toast.LENGTH_SHORT).show() },
+                    onClick = viewModel::onGoogleRegisterClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    enabled = !uiState.isAnyLoading
                 ) {
-                    Icon(painterResource(id = R.drawable.ic_google_icon), contentDescription = "Google", modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Google")
+                    if (uiState.isGoogleRegistrationLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                    } else {
+                        Icon(painterResource(id = R.drawable.ic_google_icon), contentDescription = "Google", modifier = Modifier.size(20.dp), tint = Color.Unspecified)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Google")
+                    }
                 }
                 OutlinedButton(
-                    onClick = { Toast.makeText(context, R.string.oauth_not_implemented, Toast.LENGTH_SHORT).show() },
+                    onClick = viewModel::onGitHubRegisterClick,
                     modifier = Modifier.padding(horizontal = 8.dp),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    enabled = !uiState.isAnyLoading
                 ) {
-                    Icon(painterResource(id = R.drawable.ic_github_icon), contentDescription = "GitHub", modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("GitHub")
+                    if (uiState.isGitHubRegistrationLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                    } else {
+                        Icon(painterResource(id = R.drawable.ic_github_icon), contentDescription = "GitHub", modifier = Modifier.size(20.dp), tint = LocalContentColor.current)
+                        Spacer(Modifier.width(8.dp))
+                        Text("GitHub")
+                    }
                 }
             }
 
             TextButton(
                 onClick = {
-                    navController.navigate(Screen.Login.route) {
-                        launchSingleTop = true
+                    if (!uiState.isAnyLoading) {
+                        navController.navigate(Screen.Login.route) {
+                            launchSingleTop = true
+                        }
                     }
                 },
-                modifier = Modifier.padding(top = 24.dp)
+                modifier = Modifier.padding(top = 24.dp),
+                enabled = !uiState.isAnyLoading
             ) {
                 Text(stringResource(R.string.registration_login_link))
             }
@@ -324,25 +396,78 @@ fun RegistrationScreen(
 }
 
 @Composable
-fun PasswordStrengthIndicator(strength: PasswordStrength) {
-    val (text, color) = when (strength) {
-        PasswordStrength.NONE -> "" to Color.Transparent
-        PasswordStrength.WEAK -> stringResource(R.string.password_strength_weak) to Color.Red
-        PasswordStrength.MEDIUM -> stringResource(R.string.password_strength_medium) to Color(0xFFFFA500)
-        PasswordStrength.STRONG -> stringResource(R.string.password_strength_strong) to Color(0xFF008000)
-    }
+fun PasswordRequirementsIndicator(
+    result: PasswordValidationResult,
+    modifier: Modifier = Modifier
+) {
+    val requirementColorMet = MaterialTheme.colorScheme.primary
+    val requirementColorUnmet = MaterialTheme.colorScheme.onSurfaceVariant
 
-    Box(modifier = Modifier.height(20.dp)) {
-        if (text.isNotEmpty()) {
-            Text(
-                text = "${stringResource(R.string.password_strength_label)}: $text",
-                color = color,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, top = 2.dp),
-                textAlign = TextAlign.Start
-            )
-        }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+    ) {
+        PasswordRequirement(
+            text = stringResource(R.string.settings_password_validation_length),
+            isMet = result.meetsLength,
+            metColor = requirementColorMet,
+            unmetColor = requirementColorUnmet
+        )
+        PasswordRequirement(
+            text = stringResource(R.string.settings_password_validation_lowercase),
+            isMet = result.hasLowercase,
+            metColor = requirementColorMet,
+            unmetColor = requirementColorUnmet
+        )
+        PasswordRequirement(
+            text = stringResource(R.string.settings_password_validation_uppercase),
+            isMet = result.hasUppercase,
+            metColor = requirementColorMet,
+            unmetColor = requirementColorUnmet
+        )
+        PasswordRequirement(
+            text = stringResource(R.string.settings_password_validation_number),
+            isMet = result.hasDigit,
+            metColor = requirementColorMet,
+            unmetColor = requirementColorUnmet
+        )
+        PasswordRequirement(
+            text = stringResource(R.string.settings_password_validation_special_1),
+            isMet = result.hasSpecial,
+            metColor = requirementColorMet,
+            unmetColor = requirementColorUnmet
+        )
+    }
+}
+
+@Composable
+fun PasswordRequirement(
+    text: String,
+    isMet: Boolean,
+    metColor: Color,
+    unmetColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val icon = if (isMet) Icons.Filled.CheckCircle else Icons.Filled.Cancel
+    val color = if (isMet) metColor else unmetColor
+    val iconDesc = if (isMet) "Requirement met" else "Requirement not met"
+
+    Row(
+        modifier = modifier.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = iconDesc,
+            tint = color,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = text,
+            color = color,
+            style = MaterialTheme.typography.bodySmall
+        )
     }
 }

@@ -14,6 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -48,42 +50,68 @@ class EditProfileViewModel @Inject constructor(
     val uiState: StateFlow<EditProfileUiState> = _uiState.asStateFlow()
 
     private var avatarUploadJob: Job? = null
+    private var loadDataJob: Job? = null
 
     init {
         loadInitialData()
     }
 
     private fun loadInitialData() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            when (val result = authRepository.getUserProfile()) {
-                is Resource.Success -> {
-                    val profile: UserProfileDto? = result.data
-                    _uiState.update {
-                        it.copy(
-                            firstName = profile?.firstName ?: "",
-                            lastName = profile?.lastName ?: "",
-                            displayName = profile?.displayName ?: "",
-                            email = profile?.email ?: "",
-                            profileImageUrl = profile?.profileImageUrl,
-                            selectedAvatarUri = null,
-                            isLoading = false
-                        )
+        loadDataJob?.cancel()
+        loadDataJob = viewModelScope.launch {
+            authRepository.getUserProfile()
+                .onStart {
+                    if (_uiState.value.email.isEmpty()) {
+                        _uiState.update { it.copy(isLoading = true, generalMessage = null) }
                     }
                 }
-                is Resource.Error -> {
-                    Log.e("EditProfileViewModel", "Failed to load profile data: ${result.message}")
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            generalMessage = result.message ?: "Failed to load profile data."
-                        )
+                .collect { result ->
+                    when (result) {
+                        is Resource.Success -> {
+                            val profile: UserProfileDto? = result.data
+                            _uiState.update {
+                                it.copy(
+                                    firstName = profile?.firstName ?: it.firstName,
+                                    lastName = profile?.lastName ?: it.lastName,
+                                    displayName = profile?.displayName ?: it.displayName,
+                                    email = profile?.email ?: it.email,
+                                    profileImageUrl = profile?.profileImageUrl ?: it.profileImageUrl,
+                                    selectedAvatarUri = null,
+                                    isLoading = false
+                                )
+                            }
+                        }
+                        is Resource.Error -> {
+                            Log.e("EditProfileViewModel", "Failed to load profile data: ${result.message}")
+                            _uiState.update {
+                                it.copy(
+                                    isLoading = false,
+                                    generalMessage = result.message ?: "Failed to load profile data."
+                                )
+                            }
+                        }
+                        is Resource.Loading -> {
+                            val cachedProfile = result.data
+                            if (cachedProfile != null && _uiState.value.email.isEmpty()) {
+                                _uiState.update {
+                                    it.copy(
+                                        firstName = cachedProfile.firstName ?: "",
+                                        lastName = cachedProfile.lastName ?: "",
+                                        displayName = cachedProfile.displayName ?: "",
+                                        email = cachedProfile.email ?: "",
+                                        profileImageUrl = cachedProfile.profileImageUrl,
+                                        isLoading = true
+                                    )
+                                }
+                            } else {
+                                _uiState.update { it.copy(isLoading = true) }
+                            }
+                        }
                     }
                 }
-                is Resource.Loading -> {}
-            }
         }
     }
+
 
     fun onFirstNameChange(newName: String) {
         _uiState.update {
@@ -117,7 +145,7 @@ class EditProfileViewModel @Inject constructor(
         }
     }
 
-    fun onProfileImageUrlChange(newUrl: String?) {
+    fun setProfileImageUrl(newUrl: String?) {
         _uiState.update { it.copy(profileImageUrl = newUrl, selectedAvatarUri = null) }
     }
 
@@ -169,11 +197,12 @@ class EditProfileViewModel @Inject constructor(
                             )
                         }
                     }
-                    is Resource.Loading -> {}
+                    is Resource.Loading -> {
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("EditProfileViewModel", "Unexpected error during avatar upload coroutine: ${e.message}", e)
-                _uiState.update { it.copy(generalMessage = "An unexpected error occurred during upload.") }
+                _uiState.update { it.copy(generalMessage = "An unexpected error occurred during upload.", selectedAvatarUri = null) }
             } finally {
                 _uiState.update { it.copy(isUploadingAvatar = false) }
             }
@@ -195,11 +224,13 @@ class EditProfileViewModel @Inject constructor(
             _uiState.update { it.copy(isSaving = true, generalMessage = null) }
 
             val currentState = _uiState.value
+            val imageUrlToSend = currentState.profileImageUrl?.trim()?.takeIf { it.isNotBlank() }
+
             val request = UpdateUserProfileRequest(
                 firstName = currentState.firstName.trim().takeIf { it.isNotBlank() },
                 lastName = currentState.lastName.trim().takeIf { it.isNotBlank() },
                 displayName = currentState.displayName.trim().takeIf { it.isNotBlank() },
-                profileImageUrl = currentState.profileImageUrl?.trim()?.takeIf { it.isNotBlank() }
+                profileImageUrl = imageUrlToSend
             )
 
             Log.d("EditProfileViewModel", "Sending text profile update request: $request")
@@ -228,7 +259,8 @@ class EditProfileViewModel @Inject constructor(
                         )
                     }
                 }
-                is Resource.Loading -> {}
+                is Resource.Loading -> {
+                }
             }
         }
     }
@@ -239,5 +271,11 @@ class EditProfileViewModel @Inject constructor(
 
     fun resetSaveSuccessFlag() {
         _uiState.update { it.copy(saveSuccess = false) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        loadDataJob?.cancel()
+        avatarUploadJob?.cancel()
     }
 }

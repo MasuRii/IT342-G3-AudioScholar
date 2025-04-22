@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.google.firebase.auth.FirebaseAuth
 import com.google.gson.Gson
 import dagger.Module
@@ -11,6 +13,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import edu.cit.audioscholar.data.local.UserDataStore
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.domain.repository.AuthRepositoryImpl
@@ -84,37 +87,34 @@ object NetworkModule {
 
         return Interceptor { chain ->
             val originalRequest: Request = chain.request()
-            var primaryException: IOException? = null
             var primaryResponse: Response? = null
             var attemptFallback = false
+            var primaryResponseCode = -1
 
             if (primaryHttpUrl != null && originalRequest.url.host == primaryHttpUrl.host) {
                 try {
                     Log.d(TAG, "Attempting request to primary URL: ${originalRequest.url}")
                     primaryResponse = chain.proceed(originalRequest)
+                    primaryResponseCode = primaryResponse.code
 
-                    if (primaryResponse.isSuccessful) {
-                        Log.d(TAG, "Primary URL request successful (code: ${primaryResponse.code}). Not falling back.")
-                        return@Interceptor primaryResponse
-                    } else if (primaryResponse.code >= 400 && primaryResponse.code < 500) {
-                        Log.w(TAG, "Primary URL request returned client error (code: ${primaryResponse.code}). NOT falling back.")
-                        return@Interceptor primaryResponse
-                    } else {
-                        Log.w(TAG, "Primary URL request returned server error or other non-success code: ${primaryResponse.code}. Will attempt fallback.")
+                    if (primaryResponseCode == 404) {
+                        Log.w(TAG, "Primary URL request returned 404 Not Found. Will attempt fallback.")
                         attemptFallback = true
                         primaryResponse.close()
                         primaryResponse = null
+                    } else {
+                        Log.d(TAG, "Primary URL request returned code: $primaryResponseCode. Not falling back.")
+                        return@Interceptor primaryResponse
                     }
 
                 } catch (e: IOException) {
-                    Log.w(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Will attempt fallback.")
-                    primaryException = e
-                    attemptFallback = true
+                    Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Not falling back.")
                     primaryResponse?.close()
-                    primaryResponse = null
+                    throw e
                 }
             } else {
-                Log.d(TAG, "Request URL host (${originalRequest.url.host}) does not match primary host (${primaryHttpUrl?.host}) or primary URL invalid. Proceeding without fallback interceptor logic.")
+                val reason = if (primaryHttpUrl == null) "primary URL invalid" else "host mismatch (${originalRequest.url.host} != ${primaryHttpUrl.host})"
+                Log.d(TAG, "Request URL does not match primary host or primary URL invalid ($reason). Proceeding without fallback interceptor logic.")
                 return@Interceptor chain.proceed(originalRequest)
             }
 
@@ -135,15 +135,14 @@ object NetworkModule {
                     return@Interceptor fallbackResponse
                 } catch (fallbackException: IOException) {
                     Log.e(TAG, "Fallback URL request also failed with IOException (${fallbackException::class.java.simpleName}): ${fallbackException.message}")
-                    primaryException?.addSuppressed(fallbackException)
-                    throw primaryException ?: fallbackException
+                    throw IOException("Primary URL returned 404, and fallback attempt failed with network error: ${fallbackException.message}", fallbackException)
                 }
             } else if (attemptFallback) {
-                Log.e(TAG, "Primary URL failed, but fallback URL is not configured or invalid. Cannot fallback.")
-                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (unsuccessful response code ${primaryResponse?.code ?: "N/A"}) and no valid fallback URL configured.")
+                Log.e(TAG, "Primary URL returned 404, but fallback URL is not configured or invalid. Cannot fallback.")
+                throw IOException("Primary request to ${originalRequest.url} returned 404, but no valid fallback URL configured.")
             } else {
-                Log.e(TAG, "Fallback logic reached unexpectedly. Primary response was: ${primaryResponse?.code ?: "N/A"}, Exception: ${primaryException?.message}")
-                throw primaryException ?: IOException("Request failed and fallback logic error occurred.")
+                Log.e(TAG, "Fallback logic reached unexpectedly. Should have returned or thrown earlier. Code: $primaryResponseCode")
+                throw IOException("Unexpected state in fallback interceptor.")
             }
         }
     }
@@ -192,9 +191,10 @@ object NetworkModule {
     fun provideAuthRepository(
         apiService: ApiService,
         application: Application,
-        gson: Gson
+        gson: Gson,
+        userDataStore: UserDataStore
     ): AuthRepository {
-        return AuthRepositoryImpl(apiService, application, gson)
+        return AuthRepositoryImpl(apiService, application, gson, userDataStore)
     }
 
     @Provides
@@ -226,5 +226,11 @@ object NetworkModule {
     @Singleton
     fun provideFirebaseAuth(): FirebaseAuth {
         return FirebaseAuth.getInstance()
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserDataStore(@ApplicationContext context: Context): UserDataStore {
+        return UserDataStore(context)
     }
 }

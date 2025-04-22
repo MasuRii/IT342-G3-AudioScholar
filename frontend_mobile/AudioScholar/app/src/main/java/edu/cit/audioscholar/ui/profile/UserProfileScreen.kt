@@ -105,7 +105,6 @@ fun UserProfileScreen(
                 snackbarHostState.showSnackbar(profileUpdateSuccessMessage)
             }
         }
-        viewModel.loadUserProfile()
     }
 
 
@@ -159,9 +158,9 @@ fun UserProfileScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            if (uiState.isLoading && uiState.name.isEmpty()) {
+            if (uiState.isLoading && !uiState.isDataAvailable) {
                 CircularProgressIndicator(modifier = Modifier.padding(vertical = 16.dp))
-            } else {
+            } else if (uiState.isDataAvailable) {
                 Text(
                     text = uiState.name.ifEmpty { stringResource(R.string.drawer_header_user_name) },
                     style = MaterialTheme.typography.headlineSmall,
@@ -173,15 +172,30 @@ fun UserProfileScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            } else {
+                Text(
+                    text = stringResource(R.string.drawer_header_user_name),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.drawer_header_user_email),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
 
             Spacer(modifier = Modifier.height(32.dp))
 
+            val buttonsEnabled = uiState.isDataAvailable
+
             Button(
                 onClick = { navController.navigate(Screen.EditProfile.route) },
                 modifier = Modifier.fillMaxWidth(0.8f),
-                enabled = !uiState.isLoading
+                enabled = buttonsEnabled
             ) {
                 Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -193,7 +207,7 @@ fun UserProfileScreen(
             Button(
                 onClick = { navController.navigate(Screen.ChangePassword.route) },
                 modifier = Modifier.fillMaxWidth(0.8f),
-                enabled = !uiState.isLoading
+                enabled = buttonsEnabled
             ) {
                 Icon(Icons.Filled.LockReset, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
@@ -206,7 +220,7 @@ fun UserProfileScreen(
                 onClick = { showLogoutDialog = true },
                 modifier = Modifier.fillMaxWidth(0.8f),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                enabled = !uiState.isLoading
+                enabled = buttonsEnabled
             ) {
                 Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))

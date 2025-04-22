@@ -259,8 +259,8 @@ fun EditProfileScreen(
                         model = ImageRequest.Builder(LocalContext.current)
                             .data(imageSource)
                             .crossfade(true)
-                            .placeholder(R.drawable.ic_navigation_profile_placeholder)
-                            .error(R.drawable.ic_navigation_profile_placeholder)
+                            .placeholder(R.drawable.avatar_placeholder)
+                            .error(R.drawable.avatar_placeholder)
                             .build(),
                         contentDescription = stringResource(R.string.cd_user_avatar),
                         modifier = Modifier

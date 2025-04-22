@@ -1,7 +1,6 @@
 package edu.cit.audioscholar.ui.profile
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,12 +15,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LockReset
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -30,9 +26,7 @@ import androidx.compose.material3.DrawerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -40,7 +34,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,8 +69,6 @@ fun UserProfileScreen(
     viewModel: UserProfileViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val sheetState = rememberModalBottomSheetState()
-    var showBottomSheet by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -147,16 +138,15 @@ fun UserProfileScreen(
 
             Box(
                 modifier = Modifier
-                    .size(120.dp)
-                    .clickable(enabled = !uiState.isLoading) { showBottomSheet = true },
-                contentAlignment = Alignment.BottomEnd
+                    .size(120.dp),
+                contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(uiState.profileImageUrl)
                         .crossfade(true)
-                        .placeholder(R.drawable.ic_navigation_profile_placeholder)
-                        .error(R.drawable.ic_navigation_profile_placeholder)
+                        .placeholder(R.drawable.avatar_placeholder)
+                        .error(R.drawable.avatar_placeholder)
                         .build(),
                     contentDescription = stringResource(R.string.cd_user_avatar),
                     modifier = Modifier
@@ -164,17 +154,6 @@ fun UserProfileScreen(
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.secondaryContainer),
                     contentScale = ContentScale.Crop
-                )
-
-                Icon(
-                    imageVector = Icons.Filled.PhotoCamera,
-                    contentDescription = stringResource(R.string.cd_edit_avatar),
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                        .padding(6.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary
                 )
             }
 
@@ -235,58 +214,6 @@ fun UserProfileScreen(
             }
 
             Spacer(modifier = Modifier.weight(1f))
-        }
-    }
-
-    if (showBottomSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showBottomSheet = false },
-            sheetState = sheetState
-        ) {
-            Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.avatar_option_gallery)) },
-                    leadingContent = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            if (!sheetState.isVisible) {
-                                showBottomSheet = false
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(context.getString(R.string.snackbar_avatar_editing_soon))
-                                }
-                            }
-                        }
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.avatar_option_take_photo)) },
-                    leadingContent = { Icon(Icons.Filled.PhotoCamera, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            if (!sheetState.isVisible) {
-                                showBottomSheet = false
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(context.getString(R.string.snackbar_avatar_editing_soon))
-                                }
-                            }
-                        }
-                    }
-                )
-                ListItem(
-                    headlineContent = { Text(stringResource(R.string.avatar_option_remove)) },
-                    leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                    modifier = Modifier.clickable {
-                        scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            if (!sheetState.isVisible) {
-                                showBottomSheet = false
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(context.getString(R.string.snackbar_avatar_editing_soon))
-                                }
-                            }
-                        }
-                    }
-                )
-            }
         }
     }
 

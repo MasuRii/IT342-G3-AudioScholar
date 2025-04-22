@@ -7,6 +7,7 @@ import android.util.Log
 import com.google.gson.Gson
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.ChangePasswordRequest
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
@@ -401,6 +402,44 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG_AUTH_REPO, "Unexpected exception during avatar upload: ${e.message}", e)
             Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun changePassword(request: ChangePasswordRequest): SimpleResult {
+        return try {
+            Log.d(TAG_AUTH_REPO, "Attempting to change password.")
+            val response = apiService.changePassword(request)
+
+            if (response.isSuccessful) {
+                Log.i(TAG_AUTH_REPO, "Password changed successfully via API.")
+                Resource.Success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_AUTH_REPO, "Change password failed: ${response.code()} - $errorMessage")
+                when (response.code()) {
+                    400 -> Resource.Error(errorMessage ?: application.getString(R.string.error_change_password_invalid_current))
+                    401, 403 -> Resource.Error(application.getString(R.string.error_unauthorized))
+                    else -> Resource.Error(errorMessage ?: "Failed to change password.")
+                }
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_AUTH_REPO, "Network/IO exception during change password: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_AUTH_REPO, "HTTP exception during change password: ${e.code()} - ${e.message()}", e)
+            if (e.code() == 401 || e.code() == 403) {
+                Resource.Error(application.getString(R.string.error_unauthorized))
+            } else {
+                Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during change password: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected_change_password, e.message ?: "Unknown error"))
         }
     }
 }

@@ -2,6 +2,7 @@ package edu.cit.audioscholar.data.remote.service
 
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
+import edu.cit.audioscholar.data.remote.dto.ChangePasswordRequest
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
@@ -69,4 +70,9 @@ interface ApiService {
     suspend fun uploadAvatar(
         @Part avatar: MultipartBody.Part
     ): Response<UserProfileDto>
+
+    @POST("/api/auth/change-password")
+    suspend fun changePassword(
+        @Body changePasswordRequest: ChangePasswordRequest
+    ): Response<AuthResponse>
 }

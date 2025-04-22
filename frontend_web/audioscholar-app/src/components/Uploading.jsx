@@ -16,7 +16,7 @@ const Uploading = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     setError(''); // Reset error
-    
+
     if (!file) return;
 
     // Validate file type
@@ -33,7 +33,7 @@ const Uploading = () => {
     const validExtensions = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'webm'];
 
     if (
-      !validAudioTypes.includes(file.type) || 
+      !validAudioTypes.includes(file.type) ||
       !validExtensions.includes(fileExt)
     ) {
       setError('Please upload only audio files (MP3, WAV, OGG, AAC, M4A, WEBM)');
@@ -67,22 +67,38 @@ const Uploading = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header with Back to Dashboard and Logout Buttons */}
+      {/* Header with Back to Dashboard, Profile, and Logout Buttons */}
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
-          <div className="flex space-x-4">
+          {/* Adjusted div to include Profile Link */}
+          <div className="flex items-center space-x-2"> {/* Use items-center for vertical alignment if icons are added */}
             <Link
               to="/dashboard"
               className="text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10"
             >
               Back to Dashboard
             </Link>
-            <button 
-              onClick={handleLogout}
-              className="text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10"
+            {/* Added Profile Link */}
+            <Link
+              to="/profile"
+              className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10" // Using similar style as dashboard example
             >
-              Logout
+              <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"> {/* Added icon */}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span className="hidden sm:inline">Profile</span> {/* Optionally hide text on very small screens */}
+               <span className="sm:hidden"></span> {/* Display only icon on small screens */}
+            </Link>
+            <button
+              onClick={handleLogout}
+               className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10" // Using similar style
+            >
+               <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"> {/* Added icon */}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+               <span className="hidden sm:inline">Logout</span> {/* Optionally hide text on very small screens */}
+               <span className="sm:hidden"></span> {/* Display only icon on small screens */}
             </button>
           </div>
         </div>
@@ -93,29 +109,29 @@ const Uploading = () => {
         <div className="container mx-auto px-4 max-w-4xl">
           <div className="bg-white rounded-lg shadow-xl p-8 md:p-10">
             <h1 className="text-3xl font-bold text-gray-800 mb-6">Upload Audio</h1>
-            
+
             {/* Hidden file input */}
-            <input 
-              type="file" 
-              id="fileInput" 
+            <input
+              type="file"
+              id="fileInput"
               onChange={handleFileChange}
-              className="hidden" 
-              accept="audio/*,.mp3,.wav,.ogg,.aac,.m4a,.webm" 
+              className="hidden"
+              accept="audio/*,.mp3,.wav,.ogg,.aac,.m4a,.webm"
             />
-            
+
             {/* File Upload Section */}
             <div className="mb-4">
-              <div 
+              <div
                 onClick={handleClick}
                 className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:bg-gray-50 transition"
               >
                 {fileName ? (
                   <div className="flex items-center justify-center gap-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                     </svg>
                     <p className="text-gray-800 font-medium truncate max-w-xs">{fileName}</p>
-                    <button 
+                    <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -123,14 +139,14 @@ const Uploading = () => {
                       }}
                       className="text-red-500 hover:text-red-700"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
                       </svg>
                     </button>
                   </div>
                 ) : (
                   <div>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     <p className="text-gray-600 mb-2">Click to select audio file or drag and drop</p>
@@ -164,7 +180,7 @@ const Uploading = () => {
               />
             </div>
 
-            <button 
+            <button
               onClick={handleFileUpload}
               disabled={!selectedFile}
               className={`w-full bg-[#2D8A8A] text-white py-3 px-4 rounded-lg font-medium hover:bg-[#236b6b] transition ${

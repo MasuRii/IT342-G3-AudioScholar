@@ -1,6 +1,8 @@
 package edu.cit.audioscholar.ui.profile
 
 import android.Manifest
+import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -13,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -60,13 +63,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -76,30 +82,36 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import edu.cit.audioscholar.R
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.net.URLEncoder
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-fun getInitials(firstName: String, lastName: String, displayName: String): String {
-    val first = firstName.firstOrNull()?.uppercaseChar()
-    val last = lastName.firstOrNull()?.uppercaseChar()
+private suspend fun saveBitmapToTempFile(context: Context, bitmap: Bitmap): Uri? = withContext(Dispatchers.IO) {
+    return@withContext try {
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val tempFile = File.createTempFile(
+            "JPEG_${timeStamp}_",
+            ".jpg",
+            context.cacheDir
+        )
 
-    return when {
-        first != null && last != null -> "$first$last"
-        first != null -> "$first"
-        displayName.isNotBlank() -> displayName.trim().first().uppercaseChar().toString()
-        else -> "?"
-    }
-}
+        FileOutputStream(tempFile).use { out ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
 
-fun generatePlaceholderUrl(initials: String): String {
-    val size = "240x240"
-    val bgColor = "E0E0E0"
-    val textColor = "616161"
-    return try {
-        val encodedInitials = URLEncoder.encode(initials, "UTF-8")
-        "https://fakeimg.pl/$size/$bgColor/$textColor/?text=$encodedInitials&font=noto"
+        FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.provider",
+            tempFile
+        )
     } catch (e: Exception) {
-        "https://fakeimg.pl/$size/$bgColor/$textColor/?text=?"
+        e.printStackTrace()
+        null
     }
 }
 
@@ -127,14 +139,24 @@ fun EditProfileScreen(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? ->
             viewModel.onAvatarUriSelected(uri)
+            showBottomSheet = false
         }
     )
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview(),
         onResult = { bitmap ->
+            showBottomSheet = false
             if (bitmap != null) {
-                scope.launch { snackbarHostState.showSnackbar("Camera capture needs URI handling (TODO)") }
+                scope.launch {
+                    val uri = saveBitmapToTempFile(context, bitmap)
+                    if (uri != null) {
+                        viewModel.onAvatarUriSelected(uri)
+                    } else {
+                        snackbarHostState.showSnackbar("Failed to save camera image.")
+                    }
+                }
+            } else {
             }
         }
     )
@@ -169,7 +191,7 @@ fun EditProfileScreen(
     }
 
 
-    if (uiState.isLoading) {
+    if (uiState.isLoading && uiState.email.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -239,56 +261,62 @@ fun EditProfileScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Box(
-                    modifier = Modifier
-                        .size(120.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.secondaryContainer)
-                        .clickable(enabled = !uiState.isSaving && !uiState.isUploadingAvatar) {
-                            showBottomSheet = true
-                        },
+                    modifier = Modifier.size(120.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    val initials = getInitials(uiState.firstName, uiState.lastName, uiState.displayName)
-                    val placeholderUrl = generatePlaceholderUrl(initials)
-
-                    val imageSource: Any? = uiState.selectedAvatarUri
-                        ?: uiState.profileImageUrl
-                        ?: placeholderUrl
-
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(imageSource)
-                            .crossfade(true)
-                            .placeholder(R.drawable.avatar_placeholder)
-                            .error(R.drawable.avatar_placeholder)
-                            .build(),
-                        contentDescription = stringResource(R.string.cd_user_avatar),
+                    Box(
                         modifier = Modifier
-                            .matchParentSize()
-                            .alpha(if (uiState.isUploadingAvatar) 0.5f else 1f),
-                        contentScale = ContentScale.Crop
-                    )
+                            .size(120.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .clickable(enabled = !uiState.isSaving && !uiState.isUploadingAvatar) {
+                                showBottomSheet = true
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val imageSource: Any? = uiState.selectedAvatarUri
+                            ?: uiState.profileImageUrl?.takeIf { it.isNotBlank() }
+                            ?: R.drawable.avatar_placeholder
 
-                    if (uiState.isUploadingAvatar) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(48.dp),
-                            color = MaterialTheme.colorScheme.primary
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(imageSource)
+                                .crossfade(true)
+                                .placeholder(R.drawable.avatar_placeholder)
+                                .error(R.drawable.avatar_placeholder)
+                                .build(),
+                            placeholder = painterResource(id = R.drawable.avatar_placeholder),
+                            error = painterResource(id = R.drawable.avatar_placeholder),
+                            contentDescription = stringResource(R.string.cd_user_avatar),
+                            modifier = Modifier
+                                .matchParentSize()
+                                .alpha(if (uiState.isUploadingAvatar) 0.5f else 1f),
+                            contentScale = ContentScale.Crop
                         )
+
+                        if (uiState.isUploadingAvatar) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
 
                     if (!uiState.isUploadingAvatar) {
-                        Box(
-                            modifier = Modifier.matchParentSize(),
-                            contentAlignment = Alignment.BottomEnd
+                        IconButton(
+                            onClick = { showBottomSheet = true },
+                            enabled = !uiState.isSaving,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .offset(x = 8.dp, y = 8.dp)
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.PhotoCamera,
                                 contentDescription = stringResource(R.string.cd_edit_avatar),
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primary)
-                                    .padding(6.dp),
+                                modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
@@ -381,27 +409,20 @@ fun EditProfileScreen(
                     headlineContent = { Text(stringResource(R.string.avatar_option_gallery)) },
                     leadingContent = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
                     modifier = Modifier.clickable {
-                        scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            if (!sheetState.isVisible) {
-                                showBottomSheet = false
-                                galleryLauncher.launch("image/*")
-                            }
-                        }
+                        galleryLauncher.launch("image/*")
                     }
                 )
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.avatar_option_take_photo)) },
                     leadingContent = { Icon(Icons.Filled.PhotoCamera, contentDescription = null) },
                     modifier = Modifier.clickable {
-                        scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            if (!sheetState.isVisible) {
-                                showBottomSheet = false
-                                if (cameraPermissionState.status.isGranted) {
-                                    cameraLauncher.launch(null)
-                                } else {
-                                    cameraPermissionState.launchPermissionRequest()
-                                    scope.launch { snackbarHostState.showSnackbar("Camera permission required") }
-                                }
+                        if (cameraPermissionState.status.isGranted) {
+                            cameraLauncher.launch(null)
+                        } else {
+                            cameraPermissionState.launchPermissionRequest()
+                            scope.launch {
+                                sheetState.hide()
+                                snackbarHostState.showSnackbar("Camera permission required. Please try again after granting.")
                             }
                         }
                     }
@@ -410,12 +431,10 @@ fun EditProfileScreen(
                     headlineContent = { Text(stringResource(R.string.avatar_option_remove)) },
                     leadingContent = { Icon(Icons.Filled.Delete, contentDescription = null) },
                     modifier = Modifier.clickable {
+                        viewModel.onAvatarUriSelected(null)
+                        viewModel.setProfileImageUrl(null)
                         scope.launch { sheetState.hide() }.invokeOnCompletion {
-                            if (!sheetState.isVisible) {
-                                showBottomSheet = false
-                                viewModel.onAvatarUriSelected(null)
-                                viewModel.setProfileImageUrl(null)
-                            }
+                            if (!sheetState.isVisible) showBottomSheet = false
                         }
                     }
                 )

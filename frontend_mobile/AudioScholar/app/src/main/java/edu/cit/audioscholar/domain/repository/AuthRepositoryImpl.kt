@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import com.google.gson.Gson
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.data.local.UserDataStore
 import edu.cit.audioscholar.data.remote.dto.AuthResponse
 import edu.cit.audioscholar.data.remote.dto.ChangePasswordRequest
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
@@ -16,6 +17,13 @@ import edu.cit.audioscholar.data.remote.dto.UpdateUserProfileRequest
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.util.Resource
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -32,7 +40,8 @@ private const val TAG_AUTH_REPO = "AuthRepositoryImpl"
 class AuthRepositoryImpl @Inject constructor(
     private val apiService: ApiService,
     private val application: Application,
-    private val gson: Gson
+    private val gson: Gson,
+    private val userDataStore: UserDataStore
 ) : AuthRepository {
 
     override suspend fun registerUser(request: RegistrationRequest): AuthResult {
@@ -223,52 +232,105 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun getUserProfile(): UserProfileResult {
-        return try {
-            Log.d(TAG_AUTH_REPO, "Attempting to fetch user profile.")
+    override fun getUserProfile(): Flow<UserProfileResult> = channelFlow {
+        Log.d(TAG_AUTH_REPO, "[getUserProfile] Channel flow started.")
+        var networkFetchAttempted = false
+        var lastSentCacheHash: Int? = null
+
+        val dataStoreJob = launch {
+            Log.d(TAG_AUTH_REPO, "[getUserProfile] Starting DataStore collection.")
+            userDataStore.userProfileFlow.collect { cachedProfile ->
+                val cacheHash = cachedProfile?.hashCode()
+                Log.d(TAG_AUTH_REPO, "[getUserProfile] DataStore emitted: ${if(cachedProfile != null) "Profile(hash=$cacheHash)" else "null"}")
+
+                if (cachedProfile != null) {
+                    if (cacheHash != lastSentCacheHash) {
+                        Log.d(TAG_AUTH_REPO, "[getUserProfile] Sending SUCCESS from DataStore (hash=$cacheHash).")
+                        send(Resource.Success(cachedProfile))
+                        lastSentCacheHash = cacheHash
+                    } else {
+                        Log.d(TAG_AUTH_REPO, "[getUserProfile] DataStore emitted same cache hash ($cacheHash) as last sent. Skipping send.")
+                    }
+                } else if (!networkFetchAttempted) {
+                    Log.d(TAG_AUTH_REPO, "[getUserProfile] Sending LOADING (null cache before network fetch).")
+                    send(Resource.Loading(null))
+                    lastSentCacheHash = null
+                } else {
+                    Log.d(TAG_AUTH_REPO, "[getUserProfile] DataStore emitted null after network fetch. Sending ERROR.")
+                    send(Resource.Error("User profile cleared or unavailable", null))
+                    lastSentCacheHash = null
+                }
+            }
+            Log.d(TAG_AUTH_REPO, "[getUserProfile] DataStore collection finished.")
+        }
+
+        try {
+            Log.d(TAG_AUTH_REPO, "[getUserProfile] Starting network fetch.")
             val response = apiService.getUserProfile()
+            networkFetchAttempted = true
+            Log.d(TAG_AUTH_REPO, "[getUserProfile] Network fetch finished (Code: ${response.code()}).")
 
             if (response.isSuccessful) {
-                val userProfile = response.body()
-                if (userProfile != null) {
-                    Log.i(TAG_AUTH_REPO, "User profile fetched successfully. Email: ${userProfile.email}")
-                    Resource.Success(userProfile)
+                val networkProfile = response.body()
+                if (networkProfile != null) {
+                    val currentCache = userDataStore.userProfileFlow.first()
+                    if (networkProfile != currentCache) {
+                        Log.i(TAG_AUTH_REPO, "[getUserProfile] Network data differs from cache. Saving to DataStore (Network hash=${networkProfile.hashCode()}, Cache hash=${currentCache?.hashCode()}).")
+                        userDataStore.saveUserProfile(networkProfile)
+                        Log.i(TAG_AUTH_REPO, "[getUserProfile] Saved network profile to DataStore. DataStore flow should emit now.")
+                    } else {
+                        Log.i(TAG_AUTH_REPO, "[getUserProfile] Network data is same as cache. No DataStore update needed.")
+                        if (currentCache == null) {
+                            Log.d(TAG_AUTH_REPO, "[getUserProfile] Cache was null, explicitly sending network success (hash=${networkProfile.hashCode()}).")
+                            if(networkProfile.hashCode() != lastSentCacheHash) {
+                                send(Resource.Success(networkProfile))
+                                lastSentCacheHash = networkProfile.hashCode()
+                            }
+                        }
+                    }
                 } else {
-                    Log.w(TAG_AUTH_REPO, "Get profile successful (Code: ${response.code()}) but response body was null.")
-                    Resource.Error("Profile data missing in response.")
+                    Log.w(TAG_AUTH_REPO, "[getUserProfile] Network success but body was null.")
+                    val latestCache = userDataStore.userProfileFlow.first()
+                    Log.d(TAG_AUTH_REPO, "[getUserProfile] Sending ERROR (Network null body).")
+                    send(Resource.Error("Profile data missing in response.", latestCache))
+                    lastSentCacheHash = latestCache?.hashCode()
                 }
             } else {
                 val errorBody = response.errorBody()?.string()
-                val errorMessage = try {
-                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
-                } catch (e: Exception) {
-                    errorBody ?: "Unknown server error (Code: ${response.code()})"
-                }
-                Log.e(TAG_AUTH_REPO, "Get profile failed: ${response.code()} - $errorMessage")
-                if (response.code() == 401 || response.code() == 403) {
-                    Resource.Error(application.getString(R.string.error_unauthorized))
-                } else {
-                    Resource.Error(errorMessage)
-                }
+                val errorMessage = try { gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error" } catch (e: Exception) { errorBody ?: "Unknown server error (Code: ${response.code()})" }
+                Log.e(TAG_AUTH_REPO, "[getUserProfile] Network fetch failed: ${response.code()} - $errorMessage")
+                val finalMessage = if (response.code() == 401 || response.code() == 403) { application.getString(R.string.error_unauthorized) } else { errorMessage }
+                val latestCache = userDataStore.userProfileFlow.first()
+                Log.d(TAG_AUTH_REPO, "[getUserProfile] Sending ERROR (Network ${response.code()}).")
+                send(Resource.Error(finalMessage, latestCache))
+                lastSentCacheHash = latestCache?.hashCode()
             }
-        } catch (e: IOException) {
-            Log.e(TAG_AUTH_REPO, "Network/IO exception during get profile: ${e.message}", e)
-            Resource.Error(application.getString(R.string.error_network_connection))
-        } catch (e: HttpException) {
-            Log.e(TAG_AUTH_REPO, "HTTP exception during get profile: ${e.code()} - ${e.message()}", e)
-            if (e.code() == 401 || e.code() == 403) {
-                Resource.Error(application.getString(R.string.error_unauthorized))
-            } else {
-                Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
-            }
+        } catch (e: CancellationException) {
+            Log.w(TAG_AUTH_REPO, "[getUserProfile] Network fetch cancelled.")
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG_AUTH_REPO, "Unexpected exception during get profile: ${e.message}", e)
-            Resource.Error(application.getString(R.string.error_unexpected_profile_fetch, e.message ?: "Unknown error"))
+            networkFetchAttempted = true
+            Log.e(TAG_AUTH_REPO, "[getUserProfile] Network fetch exception: ${e::class.java.simpleName} - ${e.message}", e)
+            val latestCache = userDataStore.userProfileFlow.first()
+            val errorMsg = when(e) {
+                is IOException -> application.getString(R.string.error_network_connection)
+                is HttpException -> if (e.code() == 401 || e.code() == 403) application.getString(R.string.error_unauthorized) else "HTTP Error: ${e.code()} ${e.message()}"
+                else -> application.getString(R.string.error_unexpected_profile_fetch, e.message ?: "Unknown error")
+            }
+            Log.d(TAG_AUTH_REPO, "[getUserProfile] Sending ERROR (Network Exception).")
+            send(Resource.Error(errorMsg, latestCache))
+            lastSentCacheHash = latestCache?.hashCode()
+        }
+
+        awaitClose {
+            Log.d(TAG_AUTH_REPO, "[getUserProfile] Channel flow closing. Cancelling DataStore observer.")
+            dataStoreJob.cancel()
         }
     }
 
+
     override suspend fun updateUserProfile(request: UpdateUserProfileRequest): UserProfileResult {
-        return try {
+        val result = try {
             Log.d(TAG_AUTH_REPO, "Attempting to update user profile with display name: ${request.displayName ?: "Not Provided"}")
             val response = apiService.updateUserProfile(request)
 
@@ -276,6 +338,8 @@ class AuthRepositoryImpl @Inject constructor(
                 val updatedProfile = response.body()
                 if (updatedProfile != null) {
                     Log.i(TAG_AUTH_REPO, "User profile updated successfully. Email: ${updatedProfile.email}")
+                    Log.d(TAG_AUTH_REPO, "[updateUserProfile] Saving updated profile to DataStore (hash=${updatedProfile.hashCode()}).")
+                    userDataStore.saveUserProfile(updatedProfile)
                     Resource.Success(updatedProfile)
                 } else {
                     Log.w(TAG_AUTH_REPO, "Update profile successful (Code: ${response.code()}) but response body was null.")
@@ -284,35 +348,22 @@ class AuthRepositoryImpl @Inject constructor(
             } else {
                 val errorBody = response.errorBody()?.string()
                 val errorMessage = try {
-                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
-                } catch (e: Exception) {
-                    errorBody ?: "Unknown server error (Code: ${response.code()})"
-                }
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error" } catch (e: Exception) { errorBody ?: "Unknown server error (Code: ${response.code()})" }
                 Log.e(TAG_AUTH_REPO, "Update profile failed: ${response.code()} - $errorMessage")
-                if (response.code() == 401 || response.code() == 403) {
-                    Resource.Error(application.getString(R.string.error_unauthorized))
-                } else if (response.code() == 400) {
-                    Resource.Error("Update failed: Invalid data. ${errorMessage ?: ""}".trim())
-                }
-                else {
-                    Resource.Error(errorMessage)
-                }
+                val finalMessage = if (response.code() == 401 || response.code() == 403) {
+                    application.getString(R.string.error_unauthorized) } else if (response.code() == 400) { "Update failed: Invalid data. ${errorMessage ?: ""}".trim() } else { errorMessage }
+                Resource.Error(finalMessage)
             }
         } catch (e: IOException) {
-            Log.e(TAG_AUTH_REPO, "Network/IO exception during update profile: ${e.message}", e)
-            Resource.Error(application.getString(R.string.error_network_connection))
+            Log.e(TAG_AUTH_REPO, "Network/IO exception during update profile: ${e.message}", e); Resource.Error(application.getString(R.string.error_network_connection))
         } catch (e: HttpException) {
-            Log.e(TAG_AUTH_REPO, "HTTP exception during update profile: ${e.code()} - ${e.message()}", e)
-            if (e.code() == 401 || e.code() == 403) {
-                Resource.Error(application.getString(R.string.error_unauthorized))
-            } else {
-                Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
-            }
+            Log.e(TAG_AUTH_REPO, "HTTP exception during update profile: ${e.code()} - ${e.message()}", e); val finalMessage = if (e.code() == 401 || e.code() == 403) { application.getString(R.string.error_unauthorized) } else { "HTTP Error: ${e.code()} ${e.message()}" }; Resource.Error(finalMessage)
         } catch (e: Exception) {
-            Log.e(TAG_AUTH_REPO, "Unexpected exception during update profile: ${e.message}", e)
-            Resource.Error(application.getString(R.string.error_unexpected_profile_update, e.message ?: "Unknown error"))
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during update profile: ${e.message}", e); Resource.Error(application.getString(R.string.error_unexpected_profile_update, e.message ?: "Unknown error"))
         }
+        return result
     }
+
 
     override suspend fun uploadAvatar(imageUri: Uri): UserProfileResult {
         val contentResolver = application.contentResolver
@@ -339,24 +390,18 @@ class AuthRepositoryImpl @Inject constructor(
 
         Log.d(TAG_AUTH_REPO, "Preparing avatar upload. URI: $imageUri, Name: $fileName, Type: $mimeType, Size: $fileSize")
 
-        return try {
+
+        val result = try {
             val requestBody = object : RequestBody() {
                 override fun contentType() = mimeType.toMediaTypeOrNull()
-
                 override fun contentLength(): Long = fileSize ?: -1
-
                 override fun writeTo(sink: BufferedSink) {
                     contentResolver.openInputStream(imageUri)?.use { inputStream ->
                         sink.writeAll(inputStream.source())
                     } ?: throw IOException("Could not open input stream for URI: $imageUri")
                 }
             }
-
-            val bodyPart = MultipartBody.Part.createFormData(
-                "avatar",
-                fileName,
-                requestBody
-            )
+            val bodyPart = MultipartBody.Part.createFormData("avatar", fileName, requestBody)
 
             Log.d(TAG_AUTH_REPO, "Attempting to upload avatar via API service.")
             val response = apiService.uploadAvatar(bodyPart)
@@ -365,6 +410,8 @@ class AuthRepositoryImpl @Inject constructor(
                 val updatedProfile = response.body()
                 if (updatedProfile != null) {
                     Log.i(TAG_AUTH_REPO, "Avatar uploaded successfully. New profile URL: ${updatedProfile.profileImageUrl}")
+                    Log.d(TAG_AUTH_REPO, "[uploadAvatar] Saving updated profile to DataStore (hash=${updatedProfile.hashCode()}).")
+                    userDataStore.saveUserProfile(updatedProfile)
                     Resource.Success(updatedProfile)
                 } else {
                     Log.w(TAG_AUTH_REPO, "Avatar upload successful (Code: ${response.code()}) but response body was null.")
@@ -373,37 +420,22 @@ class AuthRepositoryImpl @Inject constructor(
             } else {
                 val errorBody = response.errorBody()?.string()
                 val errorMessage = try {
-                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: gson.fromJson(errorBody, UserProfileDto::class.java)?.displayName ?: errorBody ?: "Unknown server error during avatar upload"
-                } catch (e: Exception) {
-                    errorBody ?: "Unknown server error (Code: ${response.code()})"
-                }
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: gson.fromJson(errorBody, UserProfileDto::class.java)?.displayName ?: errorBody ?: "Unknown server error during avatar upload" } catch (e: Exception) { errorBody ?: "Unknown server error (Code: ${response.code()})" }
                 Log.e(TAG_AUTH_REPO, "Avatar upload failed: ${response.code()} - $errorMessage")
-                if (response.code() == 401 || response.code() == 403) {
-                    Resource.Error(application.getString(R.string.error_unauthorized))
-                } else if (response.code() == 413) {
-                    Resource.Error(application.getString(R.string.upload_error_size_exceeded_avatar))
-                } else if (response.code() == 415) {
-                    Resource.Error(application.getString(R.string.upload_error_unsupported_format_avatar))
-                }
-                else {
-                    Resource.Error("Avatar upload failed: $errorMessage")
-                }
+                val finalMessage = if (response.code() == 401 || response.code() == 403) {
+                    application.getString(R.string.error_unauthorized) } else if (response.code() == 413) { application.getString(R.string.upload_error_size_exceeded_avatar) } else if (response.code() == 415) { application.getString(R.string.upload_error_unsupported_format_avatar) } else { "Avatar upload failed: $errorMessage" }
+                Resource.Error(finalMessage)
             }
         } catch (e: IOException) {
-            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e)
-            Resource.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Could not read image file"))
+            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e); Resource.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Could not read image file"))
         } catch (e: HttpException) {
-            Log.e(TAG_AUTH_REPO, "HTTP exception during avatar upload: ${e.code()} - ${e.message()}", e)
-            if (e.code() == 401 || e.code() == 403) {
-                Resource.Error(application.getString(R.string.error_unauthorized))
-            } else {
-                Resource.Error("HTTP Error during avatar upload: ${e.code()} ${e.message()}")
-            }
+            Log.e(TAG_AUTH_REPO, "HTTP exception during avatar upload: ${e.code()} - ${e.message()}", e); val finalMessage = if (e.code() == 401 || e.code() == 403) { application.getString(R.string.error_unauthorized) } else { "HTTP Error during avatar upload: ${e.code()} ${e.message()}" }; Resource.Error(finalMessage)
         } catch (e: Exception) {
-            Log.e(TAG_AUTH_REPO, "Unexpected exception during avatar upload: ${e.message}", e)
-            Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during avatar upload: ${e.message}", e); Resource.Error(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"))
         }
+        return result
     }
+
 
     override suspend fun changePassword(request: ChangePasswordRequest): SimpleResult {
         return try {
@@ -441,5 +473,10 @@ class AuthRepositoryImpl @Inject constructor(
             Log.e(TAG_AUTH_REPO, "Unexpected exception during change password: ${e.message}", e)
             Resource.Error(application.getString(R.string.error_unexpected_change_password, e.message ?: "Unknown error"))
         }
+    }
+
+    override suspend fun clearLocalUserCache() {
+        Log.d(TAG_AUTH_REPO, "Clearing user profile from DataStore.")
+        userDataStore.clearUserProfile()
     }
 }

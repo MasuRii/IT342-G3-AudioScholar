@@ -414,7 +414,7 @@ fun EditProfileScreen(
                             if (!sheetState.isVisible) {
                                 showBottomSheet = false
                                 viewModel.onAvatarUriSelected(null)
-                                viewModel.onProfileImageUrlChange(null)
+                                viewModel.setProfileImageUrl(null)
                             }
                         }
                     }

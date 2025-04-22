@@ -1,4 +1,4 @@
-// components/uploading.jsx
+// components/Uploading.jsx
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -67,16 +67,24 @@ const Uploading = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header with Logout Button */}
+      {/* Header with Back to Dashboard and Logout Buttons */}
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
-          <button 
-            onClick={handleLogout}
-            className="text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10"
-          >
-            Logout
-          </button>
+          <div className="flex space-x-4">
+            <Link
+              to="/dashboard"
+              className="text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10"
+            >
+              Back to Dashboard
+            </Link>
+            <button 
+              onClick={handleLogout}
+              className="text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </header>
 

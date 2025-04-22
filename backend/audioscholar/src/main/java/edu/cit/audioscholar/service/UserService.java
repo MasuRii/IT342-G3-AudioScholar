@@ -24,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class UserService {
     private static final String COLLECTION_NAME = "users";
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
+
     private final FirebaseService firebaseService;
     private final NhostStorageService nhostStorageService;
 
@@ -39,11 +40,13 @@ public class UserService {
         if (!StringUtils.hasText(displayName)) {
             displayName = request.getEmail().split("@")[0];
         }
+
         UserRecord firebaseUserRecord = firebaseService.createFirebaseUser(
-            request.getEmail(),
-            request.getPassword(),
-            displayName
+                request.getEmail(),
+                request.getPassword(),
+                displayName
         );
+
         User newUser = new User();
         newUser.setUserId(firebaseUserRecord.getUid());
         newUser.setEmail(firebaseUserRecord.getEmail());
@@ -52,6 +55,7 @@ public class UserService {
         newUser.setLastName(request.getLastName());
         newUser.setProvider("email");
         newUser.setRoles(List.of("ROLE_USER"));
+
         log.info("Saving user profile to Firestore for UID: {}", firebaseUserRecord.getUid());
         return createUser(newUser);
     }
@@ -79,7 +83,9 @@ public class UserService {
                     user.setLastName(names[1]);
                 }
             }
-            firebaseService.saveData(COLLECTION_NAME, user.getUserId(), user.toMap());
+            Map<String, Object> userMap = user.toMap();
+            log.debug("User object map being sent to Firestore during creation for UID {}: {}", user.getUserId(), userMap);
+            firebaseService.saveData(COLLECTION_NAME, user.getUserId(), userMap);
             log.info("Successfully created user profile in Firestore for UID: {}", user.getUserId());
             return user;
         } catch (Exception e) {
@@ -108,12 +114,12 @@ public class UserService {
     }
 
     public User findOrCreateUserByFirebaseDetails(
-        @NonNull String uid,
-        String email,
-        String name,
-        String provider,
-        String providerId,
-        @Nullable String photoUrl
+            @NonNull String uid,
+            String email,
+            String name,
+            String provider,
+            String providerId,
+            @Nullable String photoUrl
     ) throws FirestoreInteractionException {
         if (uid.isBlank()) {
             log.error("Cannot find or create user with blank UID.");
@@ -121,16 +127,22 @@ public class UserService {
         }
         log.info("Finding or creating user profile for UID: {}", uid);
         User existingUser = getUserById(uid);
+
         if (existingUser != null) {
             log.info("Found existing user profile for UID: {}", uid);
             boolean needsUpdate = false;
-            if (!Objects.equals(photoUrl, existingUser.getProfileImageUrl())) {
-                log.info("Updating Firestore profile image URL for existing user: {}", uid);
+
+            if (StringUtils.hasText(photoUrl) && !StringUtils.hasText(existingUser.getProfileImageUrl())) {
+                log.info("Updating Firestore profile image URL from provider for existing user {} because Firestore URL was blank. New URL: {}", uid, photoUrl);
                 existingUser.setProfileImageUrl(photoUrl);
                 needsUpdate = true;
+            } else if (StringUtils.hasText(existingUser.getProfileImageUrl()) && StringUtils.hasText(photoUrl) && !Objects.equals(photoUrl, existingUser.getProfileImageUrl())) {
+                 log.debug("Keeping existing profile image URL for UID {} as it differs from provider URL '{}'.", uid, photoUrl);
             }
-            if (StringUtils.hasText(name) && !Objects.equals(name, existingUser.getDisplayName())) {
-                log.info("Updating Firestore display name from provider for existing user: {}", uid);
+
+
+            if (StringUtils.hasText(name) && !StringUtils.hasText(existingUser.getDisplayName())) {
+                log.info("Updating Firestore display name from provider for existing user {} because Firestore name was blank. New name: {}", uid, name);
                 existingUser.setDisplayName(name);
                 if (!StringUtils.hasText(existingUser.getFirstName()) || !StringUtils.hasText(existingUser.getLastName())) {
                     String[] names = name.split(" ", 2);
@@ -142,10 +154,16 @@ public class UserService {
                     }
                 }
                 needsUpdate = true;
+            } else if (StringUtils.hasText(existingUser.getDisplayName()) && StringUtils.hasText(name) && !Objects.equals(name, existingUser.getDisplayName())) {
+                log.debug("Keeping existing display name '{}' for UID {} as it differs from provider name '{}'.", existingUser.getDisplayName(), uid, name);
             }
+
+
             if (needsUpdate) {
+                log.info("Calling updateUser for UID {} due to provider data mismatch or necessary update.", uid);
                 return updateUser(existingUser);
             } else {
+                log.info("No provider data mismatch requiring update found for UID {}. Returning existing user.", uid);
                 return existingUser;
             }
         } else {
@@ -187,7 +205,12 @@ public class UserService {
             if (user.getFavoriteRecordingIds() == null) {
                 user.setFavoriteRecordingIds(List.of());
             }
-            firebaseService.saveData(COLLECTION_NAME, user.getUserId(), user.toMap());
+
+            Map<String, Object> userMap = user.toMap();
+            log.debug("User object map being sent to Firestore during update for UID {}: {}", user.getUserId(), userMap);
+            log.debug("Profile Image URL in map for UID {}: {}", user.getUserId(), userMap.get("profileImageUrl"));
+
+            firebaseService.saveData(COLLECTION_NAME, user.getUserId(), userMap);
             log.info("Successfully updated user profile in Firestore for UID: {}", user.getUserId());
             return user;
         } catch (Exception e) {
@@ -195,6 +218,7 @@ public class UserService {
             throw new FirestoreInteractionException("Failed to update user profile in Firestore for UID: " + user.getUserId(), e);
         }
     }
+
 
     public User updateUserProfileDetails(String userId, UpdateUserProfileRequest request) throws FirestoreInteractionException {
         if (!StringUtils.hasText(userId)) {
@@ -207,53 +231,57 @@ public class UserService {
             log.warn("Cannot update profile details. User not found in Firestore for ID: {}", userId);
             throw new RuntimeException("User not found with ID: " + userId);
         }
+
         boolean updated = false;
         if (StringUtils.hasText(request.getFirstName()) && !Objects.equals(request.getFirstName().trim(), existingUser.getFirstName())) {
             existingUser.setFirstName(request.getFirstName().trim());
             log.debug("Updating firstName for user ID: {}", userId);
             updated = true;
         }
+
         if (StringUtils.hasText(request.getLastName()) && !Objects.equals(request.getLastName().trim(), existingUser.getLastName())) {
             existingUser.setLastName(request.getLastName().trim());
             log.debug("Updating lastName for user ID: {}", userId);
             updated = true;
         }
+
         if (StringUtils.hasText(request.getDisplayName()) && !Objects.equals(request.getDisplayName().trim(), existingUser.getDisplayName())) {
             existingUser.setDisplayName(request.getDisplayName().trim());
-            log.debug("Updating displayName for user ID: {}", userId);
+            log.debug("Updating displayName explicitly for user ID: {}", userId);
             updated = true;
-        }
-        else if (!StringUtils.hasText(request.getDisplayName()) && updated) {
+        } else if (!StringUtils.hasText(request.getDisplayName()) && (updated || !StringUtils.hasText(existingUser.getDisplayName()))) {
             String potentialDisplayName = (existingUser.getFirstName() + " " + existingUser.getLastName()).trim();
             if (StringUtils.hasText(potentialDisplayName) && !potentialDisplayName.equals(existingUser.getDisplayName())) {
                 existingUser.setDisplayName(potentialDisplayName);
-                log.debug("Auto-updating displayName based on name change for user ID: {}", userId);
+                log.debug("Auto-updating displayName based on name change or initial setup for user ID: {}", userId);
             }
         }
+
         if (request.getProfileImageUrl() != null && !Objects.equals(request.getProfileImageUrl().trim(), existingUser.getProfileImageUrl())) {
             String newUrl = request.getProfileImageUrl().trim();
             existingUser.setProfileImageUrl(newUrl.isEmpty() ? null : newUrl);
-            log.debug("Updating profileImageUrl via PUT /me for user ID: {}", userId);
+            log.debug("Updating profileImageUrl via PUT /me request for user ID: {}. New URL: {}", userId, existingUser.getProfileImageUrl());
             updated = true;
         }
+
         if (updated) {
             log.info("Saving updated profile details for user ID: {}", userId);
             return updateUser(existingUser);
         } else {
-            log.info("No profile details changed for user ID: {}. No update performed.", userId);
+            log.info("No profile details changed via PUT /me request for user ID: {}. No update performed.", userId);
             return existingUser;
         }
     }
 
     public User updateUserAvatar(String userId, MultipartFile avatarFile) throws IOException, FirestoreInteractionException {
-         if (!StringUtils.hasText(userId)) {
+        if (!StringUtils.hasText(userId)) {
             log.error("User ID cannot be null or blank when updating avatar.");
             throw new IllegalArgumentException("User ID is required to update avatar.");
         }
-         if (avatarFile == null || avatarFile.isEmpty()) {
-             log.warn("Attempted to update avatar for user {} with null or empty file.", userId);
-             throw new IllegalArgumentException("Avatar file cannot be empty.");
-         }
+        if (avatarFile == null || avatarFile.isEmpty()) {
+            log.warn("Attempted to update avatar for user {} with null or empty file.", userId);
+            throw new IllegalArgumentException("Avatar file cannot be empty.");
+        }
 
         log.info("Attempting to update avatar for user ID: {}", userId);
         User existingUser = getUserById(userId);
@@ -277,6 +305,7 @@ public class UserService {
             throw new RuntimeException("Failed to process avatar upload with storage service.", e);
         }
 
+        log.debug("Setting profileImageUrl on User object for UID {} before saving. URL: {}", userId, publicUrl);
         existingUser.setProfileImageUrl(publicUrl);
 
         log.info("Saving updated user profile with new avatar URL for user ID: {}", userId);

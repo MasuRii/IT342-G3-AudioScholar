@@ -138,8 +138,14 @@ public class AudioSummarizationListenerService {
 
                         handleGeminiJsonResponse(recording, metadataId, geminiJsonResponse);
 
-                        AudioMetadata finalMetadata =
-                                        firebaseService.getAudioMetadataById(metadataId);
+                        AudioMetadata finalMetadata = null;
+                        try {
+                                finalMetadata = firebaseService.getAudioMetadataById(metadataId);
+                        } catch (Exception fetchEx) {
+                                log.warn("[{}] Failed to re-fetch metadata {} after processing to check status for recommendation trigger. Error: {}",
+                                                recordingId, metadataId, fetchEx.getMessage());
+                        }
+
                         if (finalMetadata != null && finalMetadata
                                         .getStatus() == ProcessingStatus.COMPLETED) {
                                 try {
@@ -165,7 +171,7 @@ public class AudioSummarizationListenerService {
                                 log.info("[{}] Skipping recommendation generation as metadata status is not COMPLETED (Current: {}).",
                                                 recordingId,
                                                 (finalMetadata != null ? finalMetadata.getStatus()
-                                                                : "UNKNOWN/DELETED"));
+                                                                : "UNKNOWN/FETCH_FAILED"));
                         }
 
                 } catch (FirestoreInteractionException e) {
@@ -197,6 +203,7 @@ public class AudioSummarizationListenerService {
                 }
         }
 
+
         private String createPrompt(Recording recording) {
                 String titleClause = "";
                 if (recording.getTitle() != null && !recording.getTitle().isBlank()) {
@@ -227,6 +234,7 @@ public class AudioSummarizationListenerService {
                 List<String> topics = Collections.emptyList();
                 List<Map<String, String>> glossary = Collections.emptyList();
                 boolean processedSuccessfully = false;
+                Summary savedSummary = null;
 
                 try {
                         JsonNode responseNode = objectMapper.readTree(geminiJsonResponse);
@@ -303,7 +311,6 @@ public class AudioSummarizationListenerService {
                         structuredSummary.setKeyPoints(keyPoints);
                         structuredSummary.setTopics(topics);
                         structuredSummary.setGlossary(glossary);
-                        structuredSummary.setCondensedSummary(null);
 
                         log.info("[{}] Attempting to save summary (ID: {}) with {} key points, {} topics, {} glossary items to Firestore.",
                                         recordingId, structuredSummary.getSummaryId(),
@@ -311,9 +318,36 @@ public class AudioSummarizationListenerService {
                                         structuredSummary.getTopics().size(),
                                         structuredSummary.getGlossary().size());
 
-                        summaryService.createSummary(structuredSummary);
+                        savedSummary = summaryService.createSummary(structuredSummary);
+
                         log.info("[{}] Summary (ID: {}) saved successfully and linked to recording.",
-                                        recordingId, structuredSummary.getSummaryId());
+                                        recordingId,
+                                        savedSummary != null ? savedSummary.getSummaryId()
+                                                        : structuredSummary.getSummaryId());
+
+                        String finalSummaryId = savedSummary != null ? savedSummary.getSummaryId()
+                                        : structuredSummary.getSummaryId();
+                        if (finalSummaryId != null && !finalSummaryId.isBlank()) {
+                                log.info("[{}] Attempting to update metadata {} with summaryId: {}",
+                                                recordingId, metadataId, finalSummaryId);
+                                try {
+                                        Map<String, Object> updateMap =
+                                                        Map.of("summaryId", finalSummaryId);
+                                        firebaseService.updateDataWithMap(firebaseService
+                                                        .getAudioMetadataCollectionName(),
+                                                        metadataId, updateMap);
+                                        log.info("[{}] Successfully updated metadata {} with summaryId.",
+                                                        recordingId, metadataId);
+                                } catch (Exception updateEx) {
+                                        log.error("[{}] Failed to update metadata {} with summaryId {} after saving summary. Summary is saved, but link in metadata is missing. Error: {}",
+                                                        recordingId, metadataId, finalSummaryId,
+                                                        updateEx.getMessage(), updateEx);
+                                }
+                        } else {
+                                log.warn("[{}] Could not obtain a valid summaryId to update metadata {}. Proceeding without linking.",
+                                                recordingId, metadataId);
+                        }
+
 
                         log.info("[{}] Updating metadata {} status to COMPLETED.", recordingId,
                                         metadataId);
@@ -332,12 +366,13 @@ public class AudioSummarizationListenerService {
                                         recordingId, metadataId, e);
                         if (e instanceof InterruptedException)
                                 Thread.currentThread().interrupt();
+
                         if (!processedSuccessfully) {
                                 updateMetadataStatusToFailed(metadataId,
                                                 "Failed during summary processing/saving: "
                                                                 + e.getMessage());
                         } else {
-                                log.error("[{}] Error occurred *after* successful JSON parsing, possibly during Firestore save or status update. Summary might be partially processed.",
+                                log.error("[{}] Error occurred *after* successful JSON parsing, possibly during Firestore save or status update. Summary might be partially processed or metadata link missing.",
                                                 recordingId);
                         }
                 } catch (Exception e) {

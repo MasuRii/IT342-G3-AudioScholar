@@ -3,9 +3,11 @@ package edu.cit.audioscholar.service;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +16,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdTokenVerifier;
 import com.google.api.client.http.javanet.NetHttpTransport;
@@ -54,6 +55,7 @@ public class FirebaseService {
 
     @Value("${google.oauth.web.client.id}")
     private String webClientIdFromTokenAud;
+
     @Value("${google.oauth.android.client.id}")
     private String androidClientId;
 
@@ -107,7 +109,6 @@ public class FirebaseService {
             log.warn("Attempted to verify a null or blank Google ID token.");
             throw new IllegalArgumentException("Google ID token cannot be null or blank.");
         }
-
         List<String> audiences = new ArrayList<>();
         if (StringUtils.hasText(webClientIdFromTokenAud)) {
             audiences.add(webClientIdFromTokenAud);
@@ -115,17 +116,14 @@ public class FirebaseService {
         if (StringUtils.hasText(androidClientId)) {
             audiences.add(androidClientId);
         }
-
         if (audiences.isEmpty()) {
             log.error("No Google OAuth Client IDs configured for audience verification. Check application.properties");
             throw new IllegalStateException("Missing Google OAuth Client ID configuration for token verification.");
         }
-
         log.debug("Attempting to verify Google ID token using GoogleIdTokenVerifier. Expected audience(s): {}", audiences);
         GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), GsonFactory.getDefaultInstance())
                 .setAudience(audiences)
                 .build();
-
         GoogleIdToken idToken = verifier.verify(googleIdTokenString);
         if (idToken != null) {
             GoogleIdToken.Payload payload = idToken.getPayload();
@@ -145,7 +143,6 @@ public class FirebaseService {
                 .setDisplayName(displayName)
                 .setEmailVerified(false)
                 .setDisabled(false);
-
         log.info("Attempting to create Firebase Auth user for email: {}", email);
         try {
             UserRecord userRecord = getFirebaseAuth().createUser(request);
@@ -166,7 +163,6 @@ public class FirebaseService {
             log.error("Cannot update password to a blank value for UID: {}", uid);
             throw new IllegalArgumentException("New password cannot be blank.");
         }
-
         log.info("Attempting to update password for Firebase user UID: {}", uid);
         try {
             UpdateRequest request = new UpdateRequest(uid).setPassword(newPassword);
@@ -177,8 +173,6 @@ public class FirebaseService {
             throw e;
         }
     }
-
-
 
     public String saveData(String collection, String document, Map<String, Object> data) {
         try {
@@ -195,10 +189,10 @@ public class FirebaseService {
     }
 
     public Map<String, Object> getData(String collection, String document) {
-         if (!StringUtils.hasText(collection) || !StringUtils.hasText(document)) {
-             log.warn("Attempted Firestore getData with blank collection or document name.");
-             return null;
-         }
+        if (!StringUtils.hasText(collection) || !StringUtils.hasText(document)) {
+            log.warn("Attempted Firestore getData with blank collection or document name.");
+            return null;
+        }
         try {
             Firestore firestore = getFirestore();
             DocumentSnapshot snapshot = firestore.collection(collection).document(document).get().get();
@@ -262,7 +256,6 @@ public class FirebaseService {
         }
     }
 
-
     public AudioMetadata saveAudioMetadata(AudioMetadata metadata) {
         if (metadata == null) {
             throw new IllegalArgumentException("AudioMetadata cannot be null.");
@@ -271,11 +264,9 @@ public class FirebaseService {
             Firestore firestore = getFirestore();
             CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
             Map<String, Object> dataMap = convertToMap(metadata);
-
             ApiFuture<DocumentReference> futureRef = colRef.add(dataMap);
             String generatedId = futureRef.get().getId();
             metadata.setId(generatedId);
-
             log.info("Saved AudioMetadata to Firestore collection {} with generated ID: {}",
                     audioMetadataCollectionName, generatedId);
             return metadata;
@@ -287,7 +278,7 @@ public class FirebaseService {
         }
     }
 
-     public void updateAudioMetadataStatus(String metadataId, ProcessingStatus status) throws FirestoreInteractionException {
+    public void updateAudioMetadataStatus(String metadataId, ProcessingStatus status) throws FirestoreInteractionException {
         if (!StringUtils.hasText(metadataId) || status == null) {
             log.error("Cannot update status with blank metadataId or null status. ID: {}, Status: {}", metadataId, status);
             throw new IllegalArgumentException("Metadata ID and Status cannot be null/blank for update.");
@@ -317,9 +308,13 @@ public class FirebaseService {
             List<AudioMetadata> audioMetadataList = new ArrayList<>();
             List<QueryDocumentSnapshot> documents = future.get().getDocuments();
             for (QueryDocumentSnapshot document : documents) {
-                AudioMetadata metadata = fromDocumentSnapshot(document);
-                if (metadata != null) {
-                    audioMetadataList.add(metadata);
+                try {
+                    AudioMetadata metadata = fromDocumentSnapshot(document);
+                    if (metadata != null) {
+                        audioMetadataList.add(metadata);
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to process document {} in getAllAudioMetadata: {}", document.getId(), e.getMessage(), e);
                 }
             }
             log.info("Retrieved {} total AudioMetadata documents from Firestore.", audioMetadataList.size());
@@ -333,11 +328,13 @@ public class FirebaseService {
 
     public List<AudioMetadata> getAudioMetadataByUserId(String userId, int pageSize, @Nullable String lastDocumentId) {
         if (!StringUtils.hasText(userId)) {
-             log.warn("Attempted to get AudioMetadata with blank userId.");
-             return List.of();
+            log.warn("Attempted to get AudioMetadata with blank userId.");
+            return Collections.emptyList();
         }
         log.info("Retrieving AudioMetadata for user ID: {}, page size: {}, starting after document ID: {}",
                 userId, pageSize, lastDocumentId == null ? "N/A" : lastDocumentId);
+
+        List<AudioMetadata> userMetadataList = new ArrayList<>();
         try {
             Firestore firestore = getFirestore();
             CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
@@ -346,50 +343,92 @@ public class FirebaseService {
                     .limit(pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE);
 
             if (StringUtils.hasText(lastDocumentId)) {
-                DocumentSnapshot lastSnapshot = colRef.document(lastDocumentId).get().get();
-                if (lastSnapshot.exists()) {
+                DocumentSnapshot lastSnapshot = null;
+                try {
+                    ApiFuture<DocumentSnapshot> lastSnapshotFuture = colRef.document(lastDocumentId).get();
+                    lastSnapshot = lastSnapshotFuture.get();
+                } catch (ExecutionException | InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("Error fetching pagination document snapshot for ID: {} used in startAfter. Aborting pagination.", lastDocumentId, e);
+                    throw new FirestoreInteractionException("Failed to fetch pagination cursor document " + lastDocumentId, e);
+                }
+
+                if (lastSnapshot != null && lastSnapshot.exists()) {
                     query = query.startAfter(lastSnapshot);
                     log.debug("Pagination query starting after document: {}", lastDocumentId);
                 } else {
-                    log.warn("lastDocumentId '{}' provided for pagination but document not found. Fetching first page.", lastDocumentId);
+                    log.warn("lastDocumentId '{}' provided for pagination but document not found or fetch failed. Fetching first page.", lastDocumentId);
+                    query = colRef.whereEqualTo("userId", userId)
+                                  .orderBy("uploadTimestamp", Query.Direction.DESCENDING)
+                                  .limit(pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE);
                 }
             }
 
+
             ApiFuture<QuerySnapshot> future = query.get();
-            List<AudioMetadata> userMetadataList = new ArrayList<>();
-            List<QueryDocumentSnapshot> documents = future.get().getDocuments();
+            List<QueryDocumentSnapshot> documents;
+            try {
+                documents = future.get().getDocuments();
+            } catch (ExecutionException | InterruptedException e) {
+                 Thread.currentThread().interrupt();
+                 log.error("Firestore query execution failed for user ID: {}", userId, e);
+                 if (e.getCause() instanceof NullPointerException && e.getCause().getMessage() != null && e.getCause().getMessage().contains("Cannot read the array length because \"value\" is null")) {
+                     log.error("Caught the specific NullPointerException during query execution, likely an internal Firestore client issue with data mapping or query processing.");
+                 }
+                 throw new FirestoreInteractionException("Firestore query execution failed for user " + userId, e);
+            } catch (Exception e) {
+                 log.error("Unexpected error during Firestore query execution for user ID: {}", userId, e);
+                 throw new FirestoreInteractionException("Unexpected error during query execution for user " + userId, e);
+            }
+
+            log.debug("Query executed successfully, processing {} documents for user {}", documents.size(), userId);
             for (QueryDocumentSnapshot document : documents) {
-                AudioMetadata metadata = fromDocumentSnapshot(document);
-                if (metadata != null) {
-                    userMetadataList.add(metadata);
+                try {
+                    AudioMetadata metadata = fromDocumentSnapshot(document);
+                    if (metadata != null) {
+                        userMetadataList.add(metadata);
+                    } else {
+                        log.warn("Document {} resulted in null AudioMetadata object after mapping.", document.getId());
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to process document {} for user {} in getAudioMetadataByUserId: {}",
+                              document.getId(), userId, e.getMessage(), e);
                 }
             }
-            log.info("Retrieved {} AudioMetadata documents for user ID: {} (page)",
+
+            log.info("Successfully retrieved {} AudioMetadata documents for user ID: {} (page)",
                     userMetadataList.size(), userId);
             return userMetadataList;
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Error retrieving paginated AudioMetadata for user ID: {}", userId, e);
-            throw new FirestoreInteractionException("Failed to retrieve paginated AudioMetadata for user " + userId, e);
+
+        } catch (FirestoreInteractionException e) {
+            log.error("Firestore interaction failed while retrieving metadata for user ID: {}", userId, e);
+            throw e;
+        } catch (Exception e) {
+             Thread.currentThread().interrupt();
+             log.error("Unexpected error retrieving paginated AudioMetadata for user ID: {}", userId, e);
+             throw new FirestoreInteractionException("Unexpected error retrieving paginated AudioMetadata for user " + userId, e);
         }
     }
 
+
     public AudioMetadata getAudioMetadataById(String metadataId) {
-         if (!StringUtils.hasText(metadataId)) {
-             log.warn("Attempted to get AudioMetadata with blank ID.");
-             return null;
-         }
+        if (!StringUtils.hasText(metadataId)) {
+            log.warn("Attempted to get AudioMetadata with blank ID.");
+            return null;
+        }
         log.debug("Retrieving AudioMetadata document by ID: {}", metadataId);
         try {
             Firestore firestore = getFirestore();
             DocumentReference docRef = firestore.collection(audioMetadataCollectionName).document(metadataId);
             ApiFuture<DocumentSnapshot> future = docRef.get();
             DocumentSnapshot document = future.get();
+
             if (document.exists()) {
                 AudioMetadata metadata = fromDocumentSnapshot(document);
                 if (metadata != null) {
                     log.info("Retrieved AudioMetadata document with ID: {}", metadataId);
                 } else {
+                    log.warn("Mapping failed for existing document ID: {}", metadataId);
                 }
                 return metadata;
             } else {
@@ -400,6 +439,9 @@ public class FirebaseService {
             Thread.currentThread().interrupt();
             log.error("Error retrieving AudioMetadata document by ID: {}", metadataId, e);
             throw new FirestoreInteractionException("Failed to retrieve AudioMetadata by ID " + metadataId, e);
+        } catch (Exception e) {
+             log.error("Unexpected error retrieving AudioMetadata document by ID: {}", metadataId, e);
+             throw new FirestoreInteractionException("Unexpected error retrieving AudioMetadata by ID " + metadataId, e);
         }
     }
 
@@ -427,6 +469,7 @@ public class FirebaseService {
             throw new FirestoreInteractionException("Unexpected error saving summary " + summaryId, e);
         }
     }
+
 
     public void saveLearningRecommendations(List<LearningRecommendation> recommendations) throws FirestoreInteractionException {
         if (recommendations == null || recommendations.isEmpty()) {
@@ -485,7 +528,7 @@ public class FirebaseService {
                     recommendationList.add(recommendation);
                 } catch (Exception e) {
                     log.error("Error mapping Firestore document {} to LearningRecommendation object for recordingId {}: {}",
-                            document.getId(), recordingId, e.getMessage(), e);
+                              document.getId(), recordingId, e.getMessage(), e);
                 }
             }
             log.info("Retrieved {} recommendations for recording ID: {}", recommendationList.size(), recordingId);
@@ -501,15 +544,14 @@ public class FirebaseService {
     }
 
 
-
     private Map<String, Object> convertToMap(AudioMetadata metadata) {
         Map<String, Object> map = new HashMap<>();
         map.put("userId", metadata.getUserId());
         map.put("fileName", metadata.getFileName());
         map.put("fileSize", metadata.getFileSize());
         map.put("contentType", metadata.getContentType());
-        map.put("title", metadata.getTitle());
-        map.put("description", metadata.getDescription());
+        map.put("title", Objects.toString(metadata.getTitle(), ""));
+        map.put("description", Objects.toString(metadata.getDescription(), ""));
         map.put("nhostFileId", metadata.getNhostFileId());
         map.put("storageUrl", metadata.getStorageUrl());
         map.put("uploadTimestamp", metadata.getUploadTimestamp() != null ? metadata.getUploadTimestamp() : Timestamp.now());
@@ -519,8 +561,12 @@ public class FirebaseService {
 
     private AudioMetadata fromDocumentSnapshot(DocumentSnapshot document) {
         if (document == null || !document.exists()) {
+            log.warn("Attempted to map null or non-existent document snapshot.");
             return null;
         }
+        AudioMetadata metadata = new AudioMetadata();
+        metadata.setId(document.getId());
+
         try {
             Map<String, Object> data = document.getData();
             if (data == null) {
@@ -528,48 +574,67 @@ public class FirebaseService {
                 return null;
             }
 
-            AudioMetadata metadata = new AudioMetadata();
-            metadata.setId(document.getId());
-            metadata.setUserId((String) data.get("userId"));
-            metadata.setFileName((String) data.get("fileName"));
+            metadata.setUserId(getString(data, "userId", document.getId()));
+            metadata.setFileName(getString(data, "fileName", document.getId()));
+            metadata.setFileSize(getLong(data, "fileSize", document.getId()));
+            metadata.setContentType(getString(data, "contentType", document.getId()));
+            metadata.setTitle(getString(data, "title", document.getId()));
+            metadata.setDescription(getString(data, "description", document.getId()));
+            metadata.setNhostFileId(getString(data, "nhostFileId", document.getId()));
+            metadata.setStorageUrl(getString(data, "storageUrl", document.getId()));
+            metadata.setUploadTimestamp(getTimestamp(data, "uploadTimestamp", document.getId()));
 
-            Object fileSizeObj = data.get("fileSize");
-            if (fileSizeObj instanceof Number) {
-                metadata.setFileSize(((Number) fileSizeObj).longValue());
-            } else if (fileSizeObj != null) {
-                 log.warn("fileSize field was not a Number for document ID: {}. Type: {}", document.getId(), fileSizeObj.getClass().getName());
-            }
-
-            metadata.setContentType((String) data.get("contentType"));
-            metadata.setTitle((String) data.get("title"));
-            metadata.setDescription((String) data.get("description"));
-            metadata.setNhostFileId((String) data.get("nhostFileId"));
-            metadata.setStorageUrl((String) data.get("storageUrl"));
-
-            Object timestampObj = data.get("uploadTimestamp");
-            if (timestampObj instanceof Timestamp) {
-                metadata.setUploadTimestamp((Timestamp) timestampObj);
-            } else if (timestampObj != null) {
-                log.warn("uploadTimestamp field was not of expected type com.google.cloud.Timestamp for document ID: {}. Type found: {}", document.getId(), timestampObj.getClass().getName());
-            }
-
-            String statusStr = (String) data.get("status");
+            String statusStr = getString(data, "status", document.getId());
             if (StringUtils.hasText(statusStr)) {
                 try {
                     metadata.setStatus(ProcessingStatus.valueOf(statusStr));
                 } catch (IllegalArgumentException e) {
-                    log.warn("Invalid status value '{}' found in Firestore for document ID: {}. Setting status to null.", statusStr, document.getId());
-                    metadata.setStatus(null);
+                    log.warn("Invalid status value '{}' found in Firestore for document ID: {}. Setting status to UPLOADED.", statusStr, document.getId());
+                    metadata.setStatus(ProcessingStatus.UPLOADED);
                 }
             } else {
-                metadata.setStatus(ProcessingStatus.UPLOADED);
                 log.debug("Status field missing or blank for document ID: {}. Defaulting to UPLOADED.", document.getId());
+                metadata.setStatus(ProcessingStatus.UPLOADED);
             }
 
             return metadata;
+
         } catch (Exception e) {
-            log.error("Error mapping Firestore document data to AudioMetadata for ID: {}. Error: {}", document.getId(), e.getMessage(), e);
+            log.error("Critical error mapping Firestore document data to AudioMetadata for ID: {}. Error: {}", document.getId(), e.getMessage(), e);
             return null;
         }
     }
+
+
+    private String getString(Map<String, Object> data, String key, String docId) {
+        Object value = data.get(key);
+        if (value instanceof String) {
+            return (String) value;
+        } else if (value != null) {
+            log.warn("Field '{}' was not a String for document ID: {}. Type: {}. Returning toString().", key, docId, value.getClass().getName());
+            return value.toString();
+        }
+        return null;
+    }
+
+    private long getLong(Map<String, Object> data, String key, String docId) {
+        Object value = data.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).longValue();
+        } else if (value != null) {
+            log.warn("Field '{}' was not a Number for document ID: {}. Type: {}. Returning 0.", key, docId, value.getClass().getName());
+        }
+        return 0L;
+    }
+
+     private Timestamp getTimestamp(Map<String, Object> data, String key, String docId) {
+        Object value = data.get(key);
+        if (value instanceof Timestamp) {
+            return (Timestamp) value;
+        } else if (value != null) {
+            log.warn("Field '{}' was not a Timestamp for document ID: {}. Type: {}. Returning null.", key, docId, value.getClass().getName());
+        }
+        return null;
+    }
+
 }

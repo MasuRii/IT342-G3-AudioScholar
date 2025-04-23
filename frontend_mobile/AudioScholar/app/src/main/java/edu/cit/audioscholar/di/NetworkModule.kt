@@ -4,8 +4,6 @@ import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import com.google.firebase.auth.FirebaseAuth
 import com.google.gson.Gson
 import dagger.Module
@@ -14,6 +12,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import edu.cit.audioscholar.data.local.UserDataStore
+import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.domain.repository.AuthRepositoryImpl
@@ -97,8 +96,8 @@ object NetworkModule {
                     primaryResponse = chain.proceed(originalRequest)
                     primaryResponseCode = primaryResponse.code
 
-                    if (primaryResponseCode == 404) {
-                        Log.w(TAG, "Primary URL request returned 404 Not Found. Will attempt fallback.")
+                    if (primaryResponseCode >= 500 || primaryResponseCode == 404) {
+                        Log.w(TAG, "Primary URL request returned code: $primaryResponseCode. Will attempt fallback.")
                         attemptFallback = true
                         primaryResponse.close()
                         primaryResponse = null
@@ -108,9 +107,10 @@ object NetworkModule {
                     }
 
                 } catch (e: IOException) {
-                    Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Not falling back.")
+                    Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback.")
+                    attemptFallback = true
                     primaryResponse?.close()
-                    throw e
+                    primaryResponse = null
                 }
             } else {
                 val reason = if (primaryHttpUrl == null) "primary URL invalid" else "host mismatch (${originalRequest.url.host} != ${primaryHttpUrl.host})"
@@ -135,17 +135,18 @@ object NetworkModule {
                     return@Interceptor fallbackResponse
                 } catch (fallbackException: IOException) {
                     Log.e(TAG, "Fallback URL request also failed with IOException (${fallbackException::class.java.simpleName}): ${fallbackException.message}")
-                    throw IOException("Primary URL returned 404, and fallback attempt failed with network error: ${fallbackException.message}", fallbackException)
+                    throw IOException("Primary request failed (or returned $primaryResponseCode), and fallback attempt also failed: ${fallbackException.message}", fallbackException)
                 }
             } else if (attemptFallback) {
-                Log.e(TAG, "Primary URL returned 404, but fallback URL is not configured or invalid. Cannot fallback.")
-                throw IOException("Primary request to ${originalRequest.url} returned 404, but no valid fallback URL configured.")
+                Log.e(TAG, "Primary request failed (or returned $primaryResponseCode), but fallback URL is not configured or invalid. Cannot fallback.")
+                throw IOException("Primary request to ${originalRequest.url} failed (or returned $primaryResponseCode), but no valid fallback URL configured.")
             } else {
                 Log.e(TAG, "Fallback logic reached unexpectedly. Should have returned or thrown earlier. Code: $primaryResponseCode")
                 throw IOException("Unexpected state in fallback interceptor.")
             }
         }
     }
+
 
     @Provides
     @Singleton
@@ -199,11 +200,19 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideRecordingFileHandler(@ApplicationContext context: Context): RecordingFileHandler {
+        return RecordingFileHandler(context)
+    }
+
+    @Provides
+    @Singleton
     fun provideLocalAudioRepository(
+        @ApplicationContext context: Context,
         application: Application,
-        gson: Gson
+        gson: Gson,
+        recordingFileHandler: RecordingFileHandler
     ): LocalAudioRepository {
-        return LocalAudioRepositoryImpl(application, gson)
+        return LocalAudioRepositoryImpl(context, application, gson, recordingFileHandler)
     }
 
     @Provides

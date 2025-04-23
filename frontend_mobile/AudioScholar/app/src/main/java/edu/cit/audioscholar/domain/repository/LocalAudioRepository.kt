@@ -1,5 +1,6 @@
 package edu.cit.audioscholar.domain.repository
 
+import android.net.Uri
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import kotlinx.coroutines.flow.Flow
 
@@ -9,4 +10,6 @@ interface LocalAudioRepository {
     suspend fun deleteLocalRecording(metadata: RecordingMetadata): Boolean
     suspend fun deleteLocalRecordings(filePaths: List<String>): Boolean
     suspend fun updateRecordingTitle(filePath: String, newTitle: String): Boolean
+
+    suspend fun importAudioFile(sourceUri: Uri, title: String?, description: String?): Result<RecordingMetadata>
 }

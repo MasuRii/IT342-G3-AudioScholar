@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -79,6 +83,7 @@ import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.TimestampDto
 import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -165,6 +170,14 @@ fun LibraryScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri: Uri? ->
+            Log.d("LibraryScreen", "Audio picker result: $uri")
+            viewModel.onAudioFileSelected(uri)
+        }
+    )
+
     val showSnackbar: suspend (String) -> Unit = { message ->
         snackbarHostState.showSnackbar(
             message = message,
@@ -214,6 +227,31 @@ fun LibraryScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.eventFlow.collectLatest { event ->
+            when (event) {
+                is LibraryViewEvent.LaunchFilePicker -> {
+                    Log.d("LibraryScreen", "Received LaunchFilePicker event, launching picker...")
+                    try {
+                        audioPickerLauncher.launch("audio/*")
+                    } catch (e: ActivityNotFoundException) {
+                        Log.e("LibraryScreen", "No activity found to handle picking audio files.", e)
+                        scope.launch { showSnackbar("Cannot open file picker. No suitable app found.") }
+                    }
+                }
+
+                is LibraryViewEvent.ShowSnackbar -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = event.message,
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     if (uiState.showMultiDeleteConfirmation) {
         MultiDeleteConfirmationDialog(
             count = uiState.selectedRecordingIds.size,
@@ -221,6 +259,17 @@ fun LibraryScreen(
             onDismiss = viewModel::cancelMultiDelete,
         )
     }
+
+    uiState.importDialogState?.let { importState ->
+        ImportDetailsDialog(
+            state = importState,
+            onDismiss = viewModel::onImportDialogDismiss,
+            onConfirm = viewModel::onImportDetailsConfirm,
+            onTitleChange = viewModel::onImportTitleChange,
+            onDescriptionChange = viewModel::onImportDescriptionChange
+        )
+    }
+
 
     Scaffold(
         modifier = modifier,
@@ -246,6 +295,19 @@ fun LibraryScreen(
                             )
                         }
                     },
+                    actions = {
+                        if (pagerState.currentPage == 0) {
+                            IconButton(onClick = {
+                                Log.d("LibraryScreen", "Upload/Import Icon Clicked - Calling ViewModel")
+                                viewModel.onImportAudioClicked()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Filled.UploadFile,
+                                    contentDescription = stringResource(R.string.cd_import_local_audio)
+                                )
+                            }
+                        }
+                    }
                 )
             }
         },
@@ -262,11 +324,9 @@ fun LibraryScreen(
                     )
                 }
             }
-
-            val showLoadingIndicator =
-                (pagerState.currentPage == 0 && uiState.isLoadingLocal) ||
-                        (pagerState.currentPage == 1 && uiState.isLoadingCloud)
-            if (showLoadingIndicator) {
+            val showLocalLoading = (uiState.isLoadingLocal || uiState.isImporting) && pagerState.currentPage == 0
+            val showCloudLoading = uiState.isLoadingCloud && pagerState.currentPage == 1
+            if (showLocalLoading || showCloudLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
@@ -361,6 +421,7 @@ fun MultiSelectTopAppBar(
     )
 }
 
+
 @Composable
 fun LocalRecordingsTabPage(
     uiState: LibraryUiState,
@@ -416,6 +477,7 @@ fun LocalRecordingsTabPage(
     }
 }
 
+
 @Composable
 fun CloudRecordingsTabPage(
     uiState: LibraryUiState,
@@ -453,6 +515,7 @@ fun CloudRecordingsTabPage(
         }
     }
 }
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -540,6 +603,7 @@ fun LocalRecordingListItem(
     }
 }
 
+
 @Composable
 fun CloudRecordingListItem(
     metadata: AudioMetadataDto,
@@ -608,6 +672,7 @@ fun CloudRecordingListItem(
     }
 }
 
+
 @Composable
 fun MultiDeleteConfirmationDialog(
     count: Int,
@@ -640,5 +705,56 @@ fun MultiDeleteConfirmationDialog(
                 Text(stringResource(R.string.dialog_action_cancel))
             }
         },
+    )
+}
+
+@Composable
+fun ImportDetailsDialog(
+    state: ImportDialogState,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    onTitleChange: (String) -> Unit,
+    onDescriptionChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AlertDialog(
+        modifier = modifier,
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.dialog_import_details_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = state.title,
+                    onValueChange = onTitleChange,
+                    label = { Text(stringResource(R.string.dialog_import_field_title)) },
+                    placeholder = { Text(stringResource(R.string.dialog_import_field_title_placeholder)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = state.description,
+                    onValueChange = onDescriptionChange,
+                    label = { Text(stringResource(R.string.dialog_import_field_description)) },
+                    placeholder = { Text(stringResource(R.string.dialog_import_field_description_placeholder)) },
+                    modifier = Modifier.fillMaxWidth().height(100.dp)
+                )
+                Text(
+                    text = stringResource(R.string.dialog_import_selected_file, state.fileUri.lastPathSegment ?: state.fileUri.toString()),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.dialog_action_import))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.dialog_action_cancel))
+            }
+        }
     )
 }

@@ -22,7 +22,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -427,7 +426,7 @@ class AuthRepositoryImpl @Inject constructor(
                 Resource.Error(finalMessage)
             }
         } catch (e: IOException) {
-            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e); Resource.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Could not read image file"))
+            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e); Resource.Error(application.getString(R.string.error_unexpected, e.message ?: "Could not read image file"))
         } catch (e: HttpException) {
             Log.e(TAG_AUTH_REPO, "HTTP exception during avatar upload: ${e.code()} - ${e.message()}", e); val finalMessage = if (e.code() == 401 || e.code() == 403) { application.getString(R.string.error_unauthorized) } else { "HTTP Error during avatar upload: ${e.code()} ${e.message()}" }; Resource.Error(finalMessage)
         } catch (e: Exception) {

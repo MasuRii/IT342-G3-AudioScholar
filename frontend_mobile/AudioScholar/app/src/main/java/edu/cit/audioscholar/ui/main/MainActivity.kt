@@ -26,7 +26,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
@@ -91,10 +90,8 @@ import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
-import edu.cit.audioscholar.ui.upload.UploadScreen
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -102,7 +99,6 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
     object Record : Screen("record", R.string.nav_record, Icons.Filled.Mic)
     object Library : Screen("library", R.string.nav_library, Icons.AutoMirrored.Filled.List)
-    object Upload : Screen("upload", R.string.nav_upload, Icons.Filled.CloudUpload)
     object Settings : Screen("settings", R.string.nav_settings, Icons.Filled.Settings)
     object Profile : Screen("profile", R.string.nav_profile, Icons.Filled.AccountCircle)
     object EditProfile : Screen("edit_profile", R.string.nav_edit_profile, Icons.Filled.Edit)
@@ -119,7 +115,6 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
 val screensWithDrawer = listOf(
     Screen.Record.route,
     Screen.Library.route,
-    Screen.Upload.route,
     Screen.Settings.route,
     Screen.Profile.route,
     Screen.About.route,
@@ -301,38 +296,21 @@ class MainActivity : ComponentActivity() {
         logIntentExtras("handleNavigationIntent", intent)
 
         if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == LoginViewModel.GITHUB_REDIRECT_URI_SCHEME) {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping standard navigation handling.")
+            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping.")
             return
         }
 
         val navigateTo = intent?.getStringExtra(NAVIGATE_TO_EXTRA)
         Log.d("MainActivity", "[handleNavigationIntent] Value from getExtra(NAVIGATE_TO_EXTRA): $navigateTo")
 
-        val currentRoute = navController.currentBackStackEntry?.destination?.route
-        val isAuthScreen = currentRoute == Screen.Login.route ||
-                currentRoute == Screen.Registration.route ||
-                currentRoute == Screen.Onboarding.route
-
         if (navigateTo == UPLOAD_SCREEN_VALUE) {
-            if (!isAuthScreen) {
-                if (currentRoute != Screen.Upload.route) {
-                    Log.d("MainActivity", "Navigating to Upload screen via intent.")
-                    navController.navigate(Screen.Upload.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                } else {
-                    Log.d("MainActivity", "Already on Upload screen, no navigation needed from intent.")
-                }
-            } else {
-                Log.d("MainActivity", "Intent requests Upload screen, but currently on Auth/Onboarding. Ignoring.")
-            }
+            Log.w("MainActivity", "[handleNavigationIntent] Intent requested navigation to removed Upload screen. Ignoring.")
+            intent?.removeExtra(NAVIGATE_TO_EXTRA)
+        } else if (navigateTo != null) {
+            Log.d("MainActivity", "[handleNavigationIntent] Received navigation intent for target: $navigateTo (not implemented or handled elsewhere).")
             intent?.removeExtra(NAVIGATE_TO_EXTRA)
         } else {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to Upload screen or currently on Auth.")
+            Log.d("MainActivity", "[handleNavigationIntent] No specific navigation target in intent extras.")
         }
     }
 }
@@ -437,7 +415,7 @@ fun MainAppScreen(
                 }
                 HorizontalDivider()
 
-                val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Upload, Screen.Settings, Screen.About)
+                val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Settings, Screen.About)
                 Spacer(Modifier.height(12.dp))
                 mainNavItems.forEach { screen ->
                     screen.icon?.let { icon ->
@@ -461,7 +439,6 @@ fun MainAppScreen(
 
                 Spacer(Modifier.weight(1f))
                 HorizontalDivider()
-
                 NavigationDrawerItem(
                     icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
                     label = { Text(stringResource(R.string.nav_logout)) },
@@ -502,18 +479,6 @@ fun MainAppScreen(
             composable(Screen.Library.route) {
                 LibraryScreen(
                     navController = navController,
-                    drawerState = drawerState,
-                    scope = scope
-                )
-            }
-            composable(Screen.Upload.route) {
-                UploadScreen(
-                    onNavigateToRecording = {
-                        navController.navigate(Screen.Record.route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true; restoreState = true
-                        }
-                    },
                     drawerState = drawerState,
                     scope = scope
                 )
@@ -563,7 +528,7 @@ fun MainAppScreen(
                     navController = navController
                 )
             }
+            }
         }
-    }
     }
 }

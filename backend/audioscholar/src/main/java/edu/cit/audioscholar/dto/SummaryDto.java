@@ -1,9 +1,8 @@
 package edu.cit.audioscholar.dto;
 
-import edu.cit.audioscholar.model.Summary;
-
 import java.util.Date;
 import java.util.List;
+import edu.cit.audioscholar.model.Summary;
 
 public class SummaryDto {
 
@@ -18,14 +17,37 @@ public class SummaryDto {
 
     private SummaryDto() {}
 
-    public String getSummaryId() { return summaryId; }
-    public String getRecordingId() { return recordingId; }
-    public String getFullText() { return fullText; }
-    public String getCondensedSummary() { return condensedSummary; }
-    public List<String> getKeyPoints() { return keyPoints; }
-    public List<String> getTopics() { return topics; }
-    public String getFormattedSummaryText() { return formattedSummaryText; }
-    public Date getCreatedAt() { return createdAt; }
+    public String getSummaryId() {
+        return summaryId;
+    }
+
+    public String getRecordingId() {
+        return recordingId;
+    }
+
+    public String getFullText() {
+        return fullText;
+    }
+
+    public String getCondensedSummary() {
+        return condensedSummary;
+    }
+
+    public List<String> getKeyPoints() {
+        return keyPoints;
+    }
+
+    public List<String> getTopics() {
+        return topics;
+    }
+
+    public String getFormattedSummaryText() {
+        return formattedSummaryText;
+    }
+
+    public Date getCreatedAt() {
+        return createdAt;
+    }
 
     public static SummaryDto fromModel(Summary summary) {
         if (summary == null) {
@@ -34,6 +56,7 @@ public class SummaryDto {
         SummaryDto dto = new SummaryDto();
         dto.summaryId = summary.getSummaryId();
         dto.recordingId = summary.getRecordingId();
+        dto.fullText = summary.getFullText();
         dto.condensedSummary = summary.getCondensedSummary();
         dto.keyPoints = summary.getKeyPoints();
         dto.topics = summary.getTopics();

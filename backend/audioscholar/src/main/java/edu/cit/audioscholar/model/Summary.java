@@ -1,11 +1,6 @@
 package edu.cit.audioscholar.model;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
+import java.util.*;
 import com.google.cloud.Timestamp;
 
 public class Summary {
@@ -31,29 +26,69 @@ public class Summary {
         this.fullText = fullText;
     }
 
-    public String getSummaryId() { return summaryId; }
-    public void setSummaryId(String summaryId) { this.summaryId = summaryId; }
+    public String getSummaryId() {
+        return summaryId;
+    }
 
-    public String getRecordingId() { return recordingId; }
-    public void setRecordingId(String recordingId) { this.recordingId = recordingId; }
+    public void setSummaryId(String summaryId) {
+        this.summaryId = summaryId;
+    }
 
-    public String getFullText() { return fullText; }
-    public void setFullText(String fullText) { this.fullText = fullText; }
+    public String getRecordingId() {
+        return recordingId;
+    }
 
-    public String getCondensedSummary() { return condensedSummary; }
-    public void setCondensedSummary(String condensedSummary) { this.condensedSummary = condensedSummary; }
+    public void setRecordingId(String recordingId) {
+        this.recordingId = recordingId;
+    }
 
-    public List<String> getKeyPoints() { return keyPoints; }
-    public void setKeyPoints(List<String> keyPoints) { this.keyPoints = keyPoints; }
+    public String getFullText() {
+        return fullText;
+    }
 
-    public List<String> getTopics() { return topics; }
-    public void setTopics(List<String> topics) { this.topics = topics; }
+    public void setFullText(String fullText) {
+        this.fullText = fullText;
+    }
 
-    public String getFormattedSummaryText() { return formattedSummaryText; }
-    public void setFormattedSummaryText(String formattedSummaryText) { this.formattedSummaryText = formattedSummaryText; }
+    public String getCondensedSummary() {
+        return condensedSummary;
+    }
 
-    public Date getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Date createdAt) { this.createdAt = createdAt; }
+    public void setCondensedSummary(String condensedSummary) {
+        this.condensedSummary = condensedSummary;
+    }
+
+    public List<String> getKeyPoints() {
+        return keyPoints;
+    }
+
+    public void setKeyPoints(List<String> keyPoints) {
+        this.keyPoints = keyPoints;
+    }
+
+    public List<String> getTopics() {
+        return topics;
+    }
+
+    public void setTopics(List<String> topics) {
+        this.topics = topics;
+    }
+
+    public String getFormattedSummaryText() {
+        return formattedSummaryText;
+    }
+
+    public void setFormattedSummaryText(String formattedSummaryText) {
+        this.formattedSummaryText = formattedSummaryText;
+    }
+
+    public Date getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Date createdAt) {
+        this.createdAt = createdAt;
+    }
 
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
@@ -95,7 +130,7 @@ public class Summary {
         if (createdAtObj instanceof Timestamp) {
             summary.createdAt = ((Timestamp) createdAtObj).toDate();
         } else if (createdAtObj instanceof Date) {
-             summary.createdAt = (Date) createdAtObj;
+            summary.createdAt = (Date) createdAtObj;
         }
 
         return summary;

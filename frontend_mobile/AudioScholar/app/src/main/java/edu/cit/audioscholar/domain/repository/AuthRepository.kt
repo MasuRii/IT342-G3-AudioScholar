@@ -30,5 +30,7 @@ interface AuthRepository {
 
     suspend fun changePassword(request: ChangePasswordRequest): SimpleResult
 
+    suspend fun logout(): SimpleResult
+
     suspend fun clearLocalUserCache()
 }

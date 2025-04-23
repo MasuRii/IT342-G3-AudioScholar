@@ -75,4 +75,7 @@ interface ApiService {
     suspend fun changePassword(
         @Body changePasswordRequest: ChangePasswordRequest
     ): Response<AuthResponse>
+
+    @POST("/api/auth/logout")
+    suspend fun logout(): Response<Unit>
 }

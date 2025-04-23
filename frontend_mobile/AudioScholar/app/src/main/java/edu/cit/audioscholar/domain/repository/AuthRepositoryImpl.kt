@@ -475,6 +475,36 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun logout(): SimpleResult {
+        return try {
+            Log.d(TAG_AUTH_REPO, "Attempting API logout call.")
+            val response = apiService.logout()
+
+            if (response.isSuccessful) {
+                Log.i(TAG_AUTH_REPO, "API logout successful (Code: ${response.code()}).")
+                Resource.Success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error during logout"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.w(TAG_AUTH_REPO, "API logout failed (Code: ${response.code()}): $errorMessage")
+                Resource.Error("API Logout Failed: ${response.code()} - $errorMessage")
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_AUTH_REPO, "Network/IO exception during logout: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_AUTH_REPO, "HTTP exception during logout: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error during logout: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during logout: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected, e.message ?: "Unknown error"))
+        }
+    }
+
     override suspend fun clearLocalUserCache() {
         Log.d(TAG_AUTH_REPO, "Clearing user profile from DataStore.")
         userDataStore.clearUserProfile()

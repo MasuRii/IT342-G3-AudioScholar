@@ -94,6 +94,7 @@ import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.ui.upload.UploadScreen
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -230,7 +231,6 @@ class MainActivity : ComponentActivity() {
                     navController = navController,
                     startDestination = startDestination,
                     onOnboardingComplete = onOnboardingCompleteAction,
-                    prefs = prefs,
                     loginViewModel = loginViewModel,
                     mainViewModel = mainViewModel
                 )
@@ -344,7 +344,6 @@ fun MainAppScreen(
     navController: NavHostController,
     startDestination: String,
     onOnboardingComplete: () -> Unit,
-    prefs: SharedPreferences,
     loginViewModel: LoginViewModel,
     mainViewModel: MainViewModel
 ) {
@@ -362,6 +361,16 @@ fun MainAppScreen(
         userProfileState.data
     } else {
         (userProfileState as? Resource.Loading)?.data ?: (userProfileState as? Resource.Error)?.data
+    }
+
+    LaunchedEffect(Unit) {
+        mainViewModel.logoutCompleteEventFlow.collectLatest {
+            Log.d("MainAppScreen", "Logout complete event received. Navigating to Login.")
+            navController.navigate(Screen.Login.route) {
+                popUpTo(navController.graph.id) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
     }
 
 
@@ -460,17 +469,8 @@ fun MainAppScreen(
                     onClick = {
                         scope.launch {
                             drawerState.close()
-                            Log.d("DrawerFooter", "Logout clicked - Clearing login state and Navigating to Login")
-                            mainViewModel.clearUserCacheOnLogout()
-                            with(prefs.edit()) {
-                                putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
-                                remove(LoginViewModel.KEY_AUTH_TOKEN)
-                                apply()
-                            }
-                            navController.navigate(Screen.Login.route) {
-                                popUpTo(navController.graph.id) { inclusive = true }
-                                launchSingleTop = true
-                            }
+                            Log.d("DrawerFooter", "Logout clicked - Calling ViewModel performLogout.")
+                            mainViewModel.performLogout()
                         }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
@@ -479,91 +479,91 @@ fun MainAppScreen(
             }
         }
     ) { Scaffold { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = startDestination,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                composable(Screen.Onboarding.route) {
-                    OnboardingScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        onOnboardingComplete = onOnboardingComplete
-                    )
-                }
-                composable(Screen.Record.route) {
-                    RecordingScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Library.route) {
-                    LibraryScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Upload.route) {
-                    UploadScreen(
-                        onNavigateToRecording = {
-                            navController.navigate(Screen.Record.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true; restoreState = true
-                            }
-                        },
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Settings.route) {
-                    edu.cit.audioscholar.ui.settings.SettingsScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Profile.route) {
-                    UserProfileScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.EditProfile.route) {
-                    EditProfileScreen(
-                        navController = navController
-                    )
-                }
-                composable(Screen.About.route) {
-                    AboutScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Login.route) {
-                    LoginScreen(navController = navController)
-                }
-                composable(Screen.Registration.route) {
-                    RegistrationScreen(navController = navController)
-                }
-                composable(Screen.ChangePassword.route) {
-                    edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
-                        navController = navController
-                    )
-                }
-                composable(
-                    route = Screen.RecordingDetails.route,
-                    arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
-                ) { backStackEntry ->
-                    RecordingDetailsScreen(
-                        navController = navController
-                    )
-                }
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            composable(Screen.Onboarding.route) {
+                OnboardingScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onOnboardingComplete = onOnboardingComplete
+                )
+            }
+            composable(Screen.Record.route) {
+                RecordingScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Library.route) {
+                LibraryScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Upload.route) {
+                UploadScreen(
+                    onNavigateToRecording = {
+                        navController.navigate(Screen.Record.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true; restoreState = true
+                        }
+                    },
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Settings.route) {
+                edu.cit.audioscholar.ui.settings.SettingsScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Profile.route) {
+                UserProfileScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.EditProfile.route) {
+                EditProfileScreen(
+                    navController = navController
+                )
+            }
+            composable(Screen.About.route) {
+                AboutScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Login.route) {
+                LoginScreen(navController = navController)
+            }
+            composable(Screen.Registration.route) {
+                RegistrationScreen(navController = navController)
+            }
+            composable(Screen.ChangePassword.route) {
+                edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
+                    navController = navController
+                )
+            }
+            composable(
+                route = Screen.RecordingDetails.route,
+                arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                RecordingDetailsScreen(
+                    navController = navController
+                )
             }
         }
+    }
     }
 }

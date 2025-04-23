@@ -257,6 +257,8 @@
     <string name="onboarding_back">Back</string>
     <string name="onboarding_finish">Finish</string>
 
+    <string name="error_unexpected">An unexpected error occurred: %1$s</string>
+
     <string name="placeholder_username">User Name</string>
     <string name="placeholder_email">user.email@example.com</string>
     <string name="desc_user_avatar">User avatar</string>

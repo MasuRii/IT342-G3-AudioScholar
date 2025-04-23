@@ -589,8 +589,6 @@ public class FirebaseService {
         }
     }
 
-
-
     private Map<String, Object> convertToMap(AudioMetadata metadata) {
         Map<String, Object> map = new HashMap<>();
         map.put("userId", metadata.getUserId());
@@ -606,6 +604,12 @@ public class FirebaseService {
                         : Timestamp.now());
         map.put("status", metadata.getStatus() != null ? metadata.getStatus().name()
                 : ProcessingStatus.UPLOADED.name());
+        if (metadata.getRecordingId() != null) {
+            map.put("recordingId", metadata.getRecordingId());
+        }
+        if (metadata.getSummaryId() != null) {
+            map.put("summaryId", metadata.getSummaryId());
+        }
         return map;
     }
 
@@ -633,6 +637,9 @@ public class FirebaseService {
             metadata.setStorageUrl(getString(data, "storageUrl", document.getId()));
             metadata.setUploadTimestamp(getTimestamp(data, "uploadTimestamp", document.getId()));
 
+            metadata.setRecordingId(getString(data, "recordingId", document.getId()));
+            metadata.setSummaryId(getString(data, "summaryId", document.getId()));
+
             String statusStr = getString(data, "status", document.getId());
             if (StringUtils.hasText(statusStr)) {
                 try {
@@ -659,16 +666,18 @@ public class FirebaseService {
         }
     }
 
+
     private String getString(Map<String, Object> data, String key, String docId) {
         Object value = data.get(key);
         if (value instanceof String) {
             return (String) value;
         } else if (value != null) {
-            log.warn(
+            log.trace(
                     "Field '{}' was not a String for document ID: {}. Type: {}. Returning toString().",
                     key, docId, value.getClass().getName());
             return value.toString();
         }
+        log.trace("Field '{}' not found or null for document ID: {}", key, docId);
         return null;
     }
 
@@ -679,6 +688,8 @@ public class FirebaseService {
         } else if (value != null) {
             log.warn("Field '{}' was not a Number for document ID: {}. Type: {}. Returning 0.", key,
                     docId, value.getClass().getName());
+        } else {
+            log.trace("Field '{}' not found or null for document ID: {}", key, docId);
         }
         return 0L;
     }
@@ -691,7 +702,10 @@ public class FirebaseService {
             log.warn(
                     "Field '{}' was not a Timestamp for document ID: {}. Type: {}. Returning null.",
                     key, docId, value.getClass().getName());
+        } else {
+            log.trace("Field '{}' not found or null for document ID: {}", key, docId);
         }
         return null;
     }
+
 }

@@ -1,21 +1,23 @@
 package edu.cit.audioscholar.dto;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import edu.cit.audioscholar.model.Summary;
 
 public class SummaryDto {
 
     private String summaryId;
     private String recordingId;
-    private String fullText;
-    private String condensedSummary;
     private List<String> keyPoints;
     private List<String> topics;
+    private List<Map<String, String>> glossary;
     private String formattedSummaryText;
     private Date createdAt;
 
     private SummaryDto() {}
+
 
     public String getSummaryId() {
         return summaryId;
@@ -25,20 +27,17 @@ public class SummaryDto {
         return recordingId;
     }
 
-    public String getFullText() {
-        return fullText;
-    }
-
-    public String getCondensedSummary() {
-        return condensedSummary;
-    }
 
     public List<String> getKeyPoints() {
-        return keyPoints;
+        return (keyPoints != null) ? Collections.unmodifiableList(keyPoints) : null;
     }
 
     public List<String> getTopics() {
-        return topics;
+        return (topics != null) ? Collections.unmodifiableList(topics) : null;
+    }
+
+    public List<Map<String, String>> getGlossary() {
+        return (glossary != null) ? Collections.unmodifiableList(glossary) : null;
     }
 
     public String getFormattedSummaryText() {
@@ -46,22 +45,23 @@ public class SummaryDto {
     }
 
     public Date getCreatedAt() {
-        return createdAt;
+        return (createdAt != null) ? (Date) createdAt.clone() : null;
     }
 
     public static SummaryDto fromModel(Summary summary) {
         if (summary == null) {
             return null;
         }
+
         SummaryDto dto = new SummaryDto();
         dto.summaryId = summary.getSummaryId();
         dto.recordingId = summary.getRecordingId();
-        dto.fullText = summary.getFullText();
-        dto.condensedSummary = summary.getCondensedSummary();
         dto.keyPoints = summary.getKeyPoints();
         dto.topics = summary.getTopics();
+        dto.glossary = summary.getGlossary();
         dto.formattedSummaryText = summary.getFormattedSummaryText();
         dto.createdAt = summary.getCreatedAt();
+
         return dto;
     }
 }

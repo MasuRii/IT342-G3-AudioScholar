@@ -8,7 +8,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.auth.LoginViewModel
-import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow

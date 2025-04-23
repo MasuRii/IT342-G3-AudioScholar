@@ -70,14 +70,14 @@ class RemoteAudioRepositoryImpl @Inject constructor(
             contentResolver.openInputStream(fileUri)?.use { it.readBytes() }
         } catch (e: Exception) {
             Log.e(TAG_REMOTE_REPO, "Failed to read file bytes", e)
-            trySend(UploadResult.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Unknown reason")))
+            trySend(UploadResult.Error(application.getString(R.string.error_unexpected, "Failed to read file: ${e.message ?: "Unknown reason"}")))
             close(e)
             return@callbackFlow
         }
 
         if (fileBytes == null) {
             Log.e(TAG_REMOTE_REPO, "Failed to read file content (stream was null or empty).")
-            val error = IOException(application.getString(R.string.upload_error_read_empty))
+            val error = IOException("Failed to read file content (empty).")
             trySend(UploadResult.Error(error.message ?: "Empty file error"))
             close(error)
             return@callbackFlow

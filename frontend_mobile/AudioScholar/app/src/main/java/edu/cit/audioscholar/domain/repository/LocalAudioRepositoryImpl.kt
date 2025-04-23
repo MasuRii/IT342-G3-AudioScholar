@@ -1,9 +1,13 @@
 package edu.cit.audioscholar.domain.repository
 
 import android.app.Application
+import android.content.Context
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.util.Log
 import com.google.gson.Gson
+import dagger.hilt.android.qualifiers.ApplicationContext
+import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -14,6 +18,7 @@ import java.io.File
 import java.io.IOException
 import java.text.ParseException
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,8 +32,10 @@ private const val TAG_LOCAL_REPO = "LocalAudioRepoImpl"
 
 @Singleton
 class LocalAudioRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val application: Application,
-    private val gson: Gson
+    private val gson: Gson,
+    private val recordingFileHandler: RecordingFileHandler
 ) : LocalAudioRepository {
 
     override fun getRecordingMetadata(filePath: String): Flow<Result<RecordingMetadata>> = flow {
@@ -248,36 +255,38 @@ class LocalAudioRepositoryImpl @Inject constructor(
             return@withContext false
         }
 
-        try {
-            val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { metadata.fileName.endsWith(it, ignoreCase = true) } ?: ""
-            val baseName = metadata.fileName.removeSuffix(fileExtension)
-            val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
+        if (audioDeleted) {
+            try {
+                val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { metadata.fileName.endsWith(it, ignoreCase = true) } ?: ""
+                val baseName = metadata.fileName.removeSuffix(fileExtension)
+                val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
 
-            val recordingsDir = File(metadata.filePath).parentFile
+                val recordingsDir = File(metadata.filePath).parentFile
 
-            if (recordingsDir != null) {
-                val jsonFile = File(recordingsDir, jsonFileName)
-                if (jsonFile.exists()) {
-                    jsonDeletedOrNotFound = jsonFile.delete()
-                    if (jsonDeletedOrNotFound) {
-                        Log.i(TAG_LOCAL_REPO, "Successfully deleted metadata file: ${jsonFile.name}")
+                if (recordingsDir != null) {
+                    val jsonFile = File(recordingsDir, jsonFileName)
+                    if (jsonFile.exists()) {
+                        jsonDeletedOrNotFound = jsonFile.delete()
+                        if (jsonDeletedOrNotFound) {
+                            Log.i(TAG_LOCAL_REPO, "Successfully deleted metadata file: ${jsonFile.name}")
+                        } else {
+                            Log.w(TAG_LOCAL_REPO, "Failed to delete metadata file: ${jsonFile.name}")
+                        }
                     } else {
-                        Log.w(TAG_LOCAL_REPO, "Failed to delete metadata file: ${jsonFile.name}")
+                        Log.i(TAG_LOCAL_REPO, "Metadata file not found (considered success): ${jsonFile.name}")
+                        jsonDeletedOrNotFound = true
                     }
                 } else {
-                    Log.i(TAG_LOCAL_REPO, "Metadata file not found (considered success): ${jsonFile.name}")
-                    jsonDeletedOrNotFound = true
+                    Log.w(TAG_LOCAL_REPO, "Could not get parent directory to find/delete JSON file for ${metadata.fileName}.")
+                    jsonDeletedOrNotFound = false
                 }
-            } else {
-                Log.w(TAG_LOCAL_REPO, "Could not get parent directory to find/delete JSON file for ${metadata.fileName}.")
+            } catch (e: SecurityException) {
+                Log.e(TAG_LOCAL_REPO, "SecurityException during JSON file deletion: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
+                jsonDeletedOrNotFound = false
+            } catch (e: Exception) {
+                Log.e(TAG_LOCAL_REPO, "Error deleting JSON file: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
                 jsonDeletedOrNotFound = false
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG_LOCAL_REPO, "SecurityException during JSON file deletion: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
-            jsonDeletedOrNotFound = false
-        } catch (e: Exception) {
-            Log.e(TAG_LOCAL_REPO, "Error deleting JSON file: ${metadata.fileName.replaceAfterLast('.', FILENAME_EXTENSION_METADATA)}", e)
-            jsonDeletedOrNotFound = false
         }
 
         return@withContext jsonDeletedOrNotFound
@@ -301,13 +310,12 @@ class LocalAudioRepositoryImpl @Inject constructor(
 
             try {
                 audioDeleted = file.delete()
-                if (audioDeleted) {
-                    Log.i(TAG_LOCAL_REPO, "Multi-delete: Successfully deleted audio file: $fileName")
-                } else {
+                if (!audioDeleted) {
                     Log.w(TAG_LOCAL_REPO, "Multi-delete: Failed to delete audio file: $fileName")
                     allSucceeded = false
                     continue
                 }
+                Log.i(TAG_LOCAL_REPO, "Multi-delete: Successfully deleted audio file: $fileName")
             } catch (e: SecurityException) {
                 Log.e(TAG_LOCAL_REPO, "Multi-delete: SecurityException during audio file deletion: $fileName", e)
                 allSucceeded = false
@@ -332,6 +340,7 @@ class LocalAudioRepositoryImpl @Inject constructor(
                             Log.i(TAG_LOCAL_REPO, "Multi-delete: Successfully deleted metadata file: ${jsonFile.name}")
                         } else {
                             Log.w(TAG_LOCAL_REPO, "Multi-delete: Failed to delete metadata file: ${jsonFile.name}")
+                            allSucceeded = false
                         }
                     } else {
                         Log.i(TAG_LOCAL_REPO, "Multi-delete: Metadata file not found (considered success): ${jsonFile.name}")
@@ -347,10 +356,6 @@ class LocalAudioRepositoryImpl @Inject constructor(
                 allSucceeded = false
             } catch (e: Exception) {
                 Log.e(TAG_LOCAL_REPO, "Multi-delete: Error deleting JSON file for $fileName", e)
-            }
-
-            if (!jsonDeletedOrNotFound) {
-                allSucceeded = false
             }
         }
         Log.i(TAG_LOCAL_REPO, "Multi-delete operation finished. Overall success: $allSucceeded")
@@ -415,6 +420,89 @@ class LocalAudioRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun importAudioFile(sourceUri: Uri, title: String?, description: String?): Result<RecordingMetadata> = withContext(Dispatchers.IO) {
+        Log.i(TAG_LOCAL_REPO, "Starting import for URI: $sourceUri, Title: $title")
+
+        val copyResult = recordingFileHandler.copyUriToLocalRecordings(sourceUri)
+        if (copyResult.isFailure) {
+            Log.e(TAG_LOCAL_REPO, "Import failed: Could not copy file from URI.", copyResult.exceptionOrNull())
+            return@withContext Result.failure(copyResult.exceptionOrNull() ?: IOException("File copy failed"))
+        }
+        val destinationFile = copyResult.getOrThrow()
+        Log.d(TAG_LOCAL_REPO, "File copied successfully to: ${destinationFile.absolutePath}")
+
+        var durationMillis: Long
+        var retriever: MediaMetadataRetriever? = null
+        try {
+            retriever = MediaMetadataRetriever()
+            if (sourceUri.scheme == "content") {
+                retriever.setDataSource(context, sourceUri)
+            } else {
+                retriever.setDataSource(destinationFile.absolutePath)
+            }
+            durationMillis = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            Log.d(TAG_LOCAL_REPO, "Extracted duration: $durationMillis ms")
+        } catch (e: Exception) {
+            Log.e(TAG_LOCAL_REPO, "Failed to get duration for imported file: ${destinationFile.name}", e)
+            durationMillis = 0L
+        } finally {
+            try {
+                retriever?.release()
+            } catch (e: Exception) {
+                Log.e(TAG_LOCAL_REPO, "Error releasing MediaMetadataRetriever during import", e)
+            }
+        }
+
+        val timestampMillis = System.currentTimeMillis()
+        val fileName = destinationFile.name
+        val finalTitle = if (title.isNullOrBlank()) {
+            fileName.substringBeforeLast('.', fileName)
+        } else {
+            title
+        }
+
+        val metadata = RecordingMetadata(
+            id = timestampMillis,
+            filePath = destinationFile.absolutePath,
+            fileName = fileName,
+            title = finalTitle,
+            timestampMillis = timestampMillis,
+            durationMillis = durationMillis
+        )
+        Log.d(TAG_LOCAL_REPO, "Created metadata object: $metadata")
+
+        val recordingsDir = destinationFile.parentFile
+        if (recordingsDir == null) {
+            Log.e(TAG_LOCAL_REPO, "Could not get parent directory for ${destinationFile.name} to save JSON.")
+            destinationFile.delete()
+            return@withContext Result.failure(IOException("Failed to get recordings directory"))
+        }
+
+        val fileExtension = SUPPORTED_LOCAL_AUDIO_EXTENSIONS.firstOrNull { fileName.endsWith(it, ignoreCase = true) } ?: ""
+        val baseName = fileName.removeSuffix(fileExtension)
+        val jsonFileName = "$baseName$FILENAME_EXTENSION_METADATA"
+        val jsonFile = File(recordingsDir, jsonFileName)
+
+        try {
+            val jsonContent = gson.toJson(metadata)
+            jsonFile.writeText(jsonContent)
+            Log.i(TAG_LOCAL_REPO, "Successfully saved metadata to ${jsonFile.name}")
+            return@withContext Result.success(metadata)
+        } catch (e: IOException) {
+            Log.e(TAG_LOCAL_REPO, "IOException saving JSON metadata for ${jsonFile.name}", e)
+            destinationFile.delete()
+            return@withContext Result.failure(e)
+        } catch (e: SecurityException) {
+            Log.e(TAG_LOCAL_REPO, "SecurityException saving JSON metadata for ${jsonFile.name}", e)
+            destinationFile.delete()
+            return@withContext Result.failure(e)
+        } catch (e: Exception) {
+            Log.e(TAG_LOCAL_REPO, "Unexpected error saving JSON metadata for ${jsonFile.name}", e)
+            destinationFile.delete()
+            return@withContext Result.failure(e)
+        }
+    }
+
     private fun getRecordingsDirectory(): File? {
         val baseDir = application.getExternalFilesDir(null)
         if (baseDir == null) {
@@ -427,8 +515,13 @@ class LocalAudioRepositoryImpl @Inject constructor(
                 Log.i(TAG_LOCAL_REPO, "Created recordings directory at: ${recordingsDir.absolutePath}")
             } else {
                 Log.e(TAG_LOCAL_REPO, "Failed to create recordings directory.")
-                return null
+                if (!recordingsDir.exists() || !recordingsDir.isDirectory) {
+                    return null
+                }
             }
+        } else if (!recordingsDir.isDirectory) {
+            Log.e(TAG_LOCAL_REPO, "Recordings path exists but is not a directory.")
+            return null
         }
         return recordingsDir
     }

@@ -3,8 +3,6 @@ package edu.cit.audioscholar.config;
 import java.util.Arrays;
 import java.util.List;
 import javax.crypto.SecretKey;
-import edu.cit.audioscholar.security.JwtDenylistFilter;
-import edu.cit.audioscholar.service.TokenRevocationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,116 +20,102 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import edu.cit.audioscholar.security.JwtDenylistFilter;
 import edu.cit.audioscholar.security.JwtTokenProvider;
 import edu.cit.audioscholar.service.OAuth2LoginSuccessHandler;
+import edu.cit.audioscholar.service.TokenRevocationService;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true, securedEnabled = true, jsr250Enabled = true)
 public class SecurityConfig {
 
-    @Autowired
-    private OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
+        @Autowired
+        private OAuth2LoginSuccessHandler oAuth2LoginSuccessHandler;
 
-    @Autowired
-    private JwtTokenProvider tokenProvider;
+        @Autowired
+        private JwtTokenProvider tokenProvider;
 
-    @Autowired
-    private TokenRevocationService tokenRevocationService;
+        @Autowired
+        private TokenRevocationService tokenRevocationService;
 
-    @Bean
-    JwtDecoder jwtDecoder() {
-        SecretKey secretKey = tokenProvider.getJwtSecretKey();
-        if (secretKey == null) {
-            throw new IllegalStateException("JWT Secret Key cannot be null. Check JwtTokenProvider initialization and configuration.");
+        @Bean
+        JwtDecoder jwtDecoder() {
+                SecretKey secretKey = tokenProvider.getJwtSecretKey();
+                if (secretKey == null) {
+                        throw new IllegalStateException(
+                                        "JWT Secret Key cannot be null. Check JwtTokenProvider initialization and configuration.");
+                }
+                return NimbusJwtDecoder.withSecretKey(secretKey).build();
         }
-        return NimbusJwtDecoder.withSecretKey(secretKey).build();
-    }
 
-    @Bean
-    PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+        @Bean
+        PasswordEncoder passwordEncoder() {
+                return new BCryptPasswordEncoder();
+        }
 
-    @Bean
-    CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(
-                "http://localhost:8100",
-                "http://localhost",
-                "capacitor://localhost",
-                "http://192.168.1.10:8100",
-                "http://localhost:5173"
-        ));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(Arrays.asList(
-                "Authorization",
-                "Cache-Control",
-                "Content-Type",
-                "X-Requested-With",
-                "Accept",
-                "X-CSRF-TOKEN"
-        ));
-        configuration.setAllowCredentials(true);
-        configuration.setExposedHeaders(List.of("Authorization"));
-        configuration.setMaxAge(3600L);
+        @Bean
+        CorsConfigurationSource corsConfigurationSource() {
+                CorsConfiguration configuration = new CorsConfiguration();
+                configuration.setAllowedOrigins(List.of("http://localhost:8100", "http://localhost",
+                                "capacitor://localhost", "http://192.168.1.10:8100",
+                                "http://localhost:5173"));
+                configuration.setAllowedMethods(
+                                Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+                configuration.setAllowedHeaders(Arrays.asList("Authorization", "Cache-Control",
+                                "Content-Type", "X-Requested-With", "Accept", "X-CSRF-TOKEN"));
+                configuration.setAllowCredentials(true);
+                configuration.setExposedHeaders(List.of("Authorization"));
+                configuration.setMaxAge(3600L);
 
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        return source;
-    }
+                UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+                source.registerCorsConfiguration("/**", configuration);
+                return source;
+        }
 
-    @Bean
-    @Order(1)
-    SecurityFilterChain statefulFilterChain(HttpSecurity http) throws Exception {
-        http
-                .securityMatcher("/login/**", "/oauth2/**", "/error", "/api/auth/token")
-                .authorizeHttpRequests(authz -> authz
-                        .requestMatchers("/login/**", "/oauth2/**", "/error").permitAll()
-                        .requestMatchers("/api/auth/token").authenticated()
-                        .anyRequest().denyAll()
-                )
-                .oauth2Login(oauth2 -> oauth2
-                        .successHandler(oAuth2LoginSuccessHandler)
-                )
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(AbstractHttpConfigurer::disable);
+        @Bean
+        @Order(1)
+        SecurityFilterChain statefulFilterChain(HttpSecurity http) throws Exception {
+                http.securityMatcher("/login/**", "/oauth2/**", "/error", "/api/auth/token")
+                                .authorizeHttpRequests(authz -> authz
+                                                .requestMatchers("/login/**", "/oauth2/**",
+                                                                "/error")
+                                                .permitAll().requestMatchers("/api/auth/token")
+                                                .authenticated().anyRequest().denyAll())
+                                .oauth2Login(oauth2 -> oauth2
+                                                .successHandler(oAuth2LoginSuccessHandler))
+                                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                                .csrf(AbstractHttpConfigurer::disable);
 
-        return http.build();
-    }
+                return http.build();
+        }
 
-    @Bean
-    @Order(2)
-    SecurityFilterChain statelessFilterChain(HttpSecurity http) throws Exception {
-        JwtDenylistFilter jwtDenylistFilter = new JwtDenylistFilter(tokenRevocationService);
+        @Bean
+        @Order(2)
+        SecurityFilterChain statelessFilterChain(HttpSecurity http) throws Exception {
+                JwtDenylistFilter jwtDenylistFilter = new JwtDenylistFilter(tokenRevocationService);
 
-        http
-                .securityMatcher("/api/**")
-                .authorizeHttpRequests(authz -> authz
-                        .requestMatchers(HttpMethod.POST,
-                                "/api/auth/register",
-                                "/api/auth/verify-firebase-token",
-                                "/api/auth/verify-google-token",
-                                "/api/auth/verify-github-code"
-                        ).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/auth/logout").authenticated()
-                        .requestMatchers(AntPathRequestMatcher.antMatcher("/api/**")).authenticated()
-                        .anyRequest().denyAll()
-                )
-                .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.decoder(jwtDecoder()))
-                )
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-                .addFilterAfter(jwtDenylistFilter, BearerTokenAuthenticationFilter.class)
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(AbstractHttpConfigurer::disable);
+                http.securityMatcher("/api/**").authorizeHttpRequests(authz -> authz
+                                .requestMatchers(HttpMethod.POST, "/api/auth/register",
+                                                "/api/auth/verify-firebase-token",
+                                                "/api/auth/verify-google-token",
+                                                "/api/auth/verify-github-code")
+                                .permitAll().requestMatchers(HttpMethod.POST, "/api/auth/logout")
+                                .authenticated()
+                                .requestMatchers(AntPathRequestMatcher.antMatcher("/api/**"))
+                                .authenticated().anyRequest().denyAll())
+                                .oauth2ResourceServer(oauth2 -> oauth2
+                                                .jwt(jwt -> jwt.decoder(jwtDecoder())))
+                                .sessionManagement(session -> session.sessionCreationPolicy(
+                                                SessionCreationPolicy.STATELESS))
+                                .addFilterAfter(jwtDenylistFilter,
+                                                BearerTokenAuthenticationFilter.class)
+                                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                                .csrf(AbstractHttpConfigurer::disable);
 
-        return http.build();
-    }
+                return http.build();
+        }
 }

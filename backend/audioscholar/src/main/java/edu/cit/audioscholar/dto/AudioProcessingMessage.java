@@ -1,25 +1,53 @@
 package edu.cit.audioscholar.dto;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import java.io.Serializable;
 
-public class AudioProcessingMessage {
+public class AudioProcessingMessage implements Serializable {
 
-    private final String audioMetadataId;
+    private static final long serialVersionUID = 2L;
 
-    @JsonCreator
-    public AudioProcessingMessage(@JsonProperty("audioMetadataId") String audioMetadataId) {
-        this.audioMetadataId = audioMetadataId;
+    private String recordingId;
+    private String userId;
+    private String metadataId;
+
+    public AudioProcessingMessage() {}
+
+    public AudioProcessingMessage(String recordingId, String userId, String metadataId) {
+        this.recordingId = recordingId;
+        this.userId = userId;
+        this.metadataId = metadataId;
     }
 
-    public String getAudioMetadataId() {
-        return audioMetadataId;
+    public String getRecordingId() {
+        return recordingId;
+    }
+
+    public void setRecordingId(String recordingId) {
+        this.recordingId = recordingId;
+    }
+
+    public String getUserId() {
+        return userId;
+    }
+
+    public void setUserId(String userId) {
+        this.userId = userId;
+    }
+
+    public String getMetadataId() {
+        return metadataId;
+    }
+
+    public void setMetadataId(String metadataId) {
+        this.metadataId = metadataId;
     }
 
     @Override
     public String toString() {
         return "AudioProcessingMessage{" +
-               "audioMetadataId='" + audioMetadataId + '\'' +
-               '}';
+                "recordingId='" + recordingId + '\'' +
+                ", userId='" + userId + '\'' +
+                ", metadataId='" + metadataId + '\'' +
+                '}';
     }
 }

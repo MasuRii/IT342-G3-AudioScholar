@@ -1,16 +1,18 @@
 package edu.cit.audioscholar.service;
 
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.dto.AudioProcessingMessage;
 import edu.cit.audioscholar.model.ProcessingStatus;
 import java.io.IOException;
-import java.util.Base64;
 import java.util.List;
-import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 import edu.cit.audioscholar.exception.InvalidAudioFileException;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
+import edu.cit.audioscholar.model.Recording;
 import edu.cit.audioscholar.model.Summary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +24,6 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
-import com.google.cloud.Timestamp;
 
 
 @Service
@@ -32,22 +33,20 @@ public class AudioProcessingService {
     private static final String CACHE_METADATA_BY_ID = "audioMetadataById";
     private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
 
-    private final GeminiService geminiService;
     private final FirebaseService firebaseService;
-    private final NhostStorageService nhostStorageService;
     private final RabbitTemplate rabbitTemplate;
+    private final RecordingService recordingService;
     private final String maxFileSizeValue;
+    private final String queueName = RabbitMQConfig.QUEUE_NAME;
 
     public AudioProcessingService(
-            GeminiService geminiService,
             FirebaseService firebaseService,
-            NhostStorageService nhostStorageService,
             RabbitTemplate rabbitTemplate,
+            RecordingService recordingService,
             @Value("${spring.servlet.multipart.max-file-size}") String maxFileSizeValue) {
-        this.geminiService = geminiService;
         this.firebaseService = firebaseService;
-        this.nhostStorageService = nhostStorageService;
         this.rabbitTemplate = rabbitTemplate;
+        this.recordingService = recordingService;
         this.maxFileSizeValue = maxFileSizeValue;
     }
 
@@ -55,9 +54,12 @@ public class AudioProcessingService {
         return DataSize.parse(maxFileSizeValue).toBytes();
     }
 
-    @CacheEvict(value = CACHE_METADATA_BY_USER, allEntries = true)
+    @Caching(evict = {
+        @CacheEvict(value = CACHE_METADATA_BY_USER, allEntries = true)
+    })
     public AudioMetadata uploadAndSaveMetadata(MultipartFile file, String title, String description, String userId)
             throws IOException, InvalidAudioFileException, FirestoreInteractionException {
+
         log.info("Starting upload process for file: {}, Title: {}, User: {}",
                 file.getOriginalFilename(), title, userId);
 
@@ -71,74 +73,65 @@ public class AudioProcessingService {
                     userId, file.getSize(), maxBytes);
             throw new InvalidAudioFileException("File size exceeds the maximum allowed limit (" + maxFileSizeValue + ").");
         }
-        if (file.getSize() <= 0) {
-            log.warn("Validation failed for user {}: File size is zero or negative, potentially corrupt.", userId);
-            throw new InvalidAudioFileException("File appears to be empty or corrupt (size is zero or negative).");
-        }
-        log.info("File validation passed for user {}: File: {}, Size: {}",
+        log.info("Initial validation passed for user {}: File: {}, Size: {}",
                 userId, file.getOriginalFilename(), file.getSize());
 
+        String recordingId = UUID.randomUUID().toString();
+        log.info("Generated recordingId: {} for upload by user {}", recordingId, userId);
 
-        String nhostFileId;
-        String storageUrl;
+        AudioMetadata savedMetadata;
         try {
-            nhostFileId = nhostStorageService.uploadFile(file);
-            log.info("File uploaded to Nhost, ID: {}", nhostFileId);
-            storageUrl = nhostStorageService.getPublicUrl(nhostFileId);
-            log.info("Constructed Nhost public URL: {}", storageUrl);
-        } catch (IOException e) {
-            log.error("IOException during Nhost upload for user {}, file {}", userId, file.getOriginalFilename(), e);
-            throw e;
+             savedMetadata = recordingService.uploadAudioFile(file, title, description, userId, recordingId);
+
+             savedMetadata.setStatus(ProcessingStatus.PENDING);
+             firebaseService.updateAudioMetadataStatus(savedMetadata.getId(), ProcessingStatus.PENDING);
+             log.info("RecordingService processed upload. Metadata ID: {}, Recording ID: {}. Updated METADATA status to PENDING.",
+                      savedMetadata.getId(), recordingId);
+
+        } catch (ExecutionException | InterruptedException e) {
+             log.error("Firestore error during recording/metadata creation for user {}: {}", userId, e.getMessage(), e);
+             Thread.currentThread().interrupt();
+             throw new FirestoreInteractionException("Failed to save recording/metadata to database.", e);
+        } catch (IOException | InvalidAudioFileException | IllegalArgumentException e) {
+             log.error("Error during file processing, validation, or saving for user {}: {}", userId, e.getMessage(), e);
+             throw e;
         } catch (RuntimeException e) {
-            log.error("RuntimeException during Nhost upload/URL generation for user {}, file {}", userId, file.getOriginalFilename(), e);
-            throw e;
+             log.error("Unexpected runtime error during recording/metadata creation for user {}: {}", userId, e.getMessage(), e);
+             throw e;
         }
 
+        AudioProcessingMessage message = new AudioProcessingMessage(recordingId, userId, savedMetadata.getId());
 
-        AudioMetadata metadata = new AudioMetadata();
-        metadata.setUserId(userId);
-        metadata.setFileName(file.getOriginalFilename());
-        metadata.setFileSize(file.getSize());
-        metadata.setContentType(file.getContentType());
-        metadata.setTitle(title != null ? title : "");
-        metadata.setDescription(description != null ? description : "");
-        metadata.setNhostFileId(nhostFileId);
-        metadata.setStorageUrl(storageUrl);
-        metadata.setUploadTimestamp(Timestamp.now());
-        metadata.setStatus(ProcessingStatus.UPLOADED);
-
-
-        AudioMetadata savedMetadata = null;
         try {
-            savedMetadata = firebaseService.saveAudioMetadata(metadata);
-            log.info("AudioMetadata saved initially to Firestore with ID: {}", savedMetadata.getId());
-
-            firebaseService.updateAudioMetadataStatus(savedMetadata.getId(), ProcessingStatus.PENDING);
-            log.info("Updated metadata status to PENDING for ID: {}", savedMetadata.getId());
-            savedMetadata.setStatus(ProcessingStatus.PENDING);
-
-            AudioProcessingMessage message = new AudioProcessingMessage(savedMetadata.getId());
+            log.info("Sending message to queue '{}' for recordingId: {}, metadataId: {}", queueName, recordingId, savedMetadata.getId());
             rabbitTemplate.convertAndSend(RabbitMQConfig.EXCHANGE_NAME, RabbitMQConfig.ROUTING_KEY, message);
-            log.info("Successfully enqueued message for audio processing. Metadata ID: {}", savedMetadata.getId());
+            log.info("Successfully sent message for recordingId: {}", recordingId);
 
-            log.info("Evicting cache '{}' (all entries) after processing metadata ID: {}",
-                    CACHE_METADATA_BY_USER, savedMetadata.getId());
 
-            return savedMetadata;
-
-        } catch (FirestoreInteractionException e) {
-            log.error("Firestore interaction failed during metadata save/update for user {}, file {}", userId, file.getOriginalFilename(), e);
-            throw e;
-        } catch (Exception queueEx) {
-            String metadataIdForLog = (savedMetadata != null) ? savedMetadata.getId() : "[unknown ID, save likely failed]";
-            log.error("Failed to enqueue message for metadata ID {} after saving/updating status. Status remains PENDING. Error: {}",
-                    metadataIdForLog, queueEx.getMessage(), queueEx);
-            throw new RuntimeException("Failed to queue audio for processing after saving metadata.", queueEx);
+        } catch (AmqpException e) {
+             log.error("Failed to send message to queue '{}' for recordingId {}: {}", queueName, recordingId, e.getMessage(), e);
+             try {
+                 savedMetadata.setStatus(ProcessingStatus.FAILED);
+                 firebaseService.updateAudioMetadataStatus(savedMetadata.getId(), ProcessingStatus.FAILED);
+                 log.info("Updated metadata {} status to FAILED due to queueing error.", savedMetadata.getId());
+             } catch (Exception updateEx) {
+                 log.error("Failed to update metadata {} status to FAILED after queueing error: {}", savedMetadata.getId(), updateEx.getMessage(), updateEx);
+             }
+             throw new RuntimeException("Failed to queue audio for processing.", e);
+        } catch (Exception e) {
+             log.error("Error during post-queueing operations for metadata {}: {}", savedMetadata.getId(), e.getMessage(), e);
+             if (e instanceof InterruptedException) {
+                 Thread.currentThread().interrupt();
+             }
         }
+
+        return savedMetadata;
     }
 
 
+
     public List<AudioMetadata> getAllAudioMetadataList() {
+        log.warn("getAllAudioMetadataList called - fetching all metadata. Consider pagination/security.");
         return firebaseService.getAllAudioMetadata();
     }
 
@@ -158,7 +151,6 @@ public class AudioProcessingService {
             throw e;
         }
     }
-
 
     @Cacheable(value = CACHE_METADATA_BY_ID, key = "#metadataId", unless="#result == null")
     public AudioMetadata getAudioMetadataById(String metadataId) {
@@ -185,10 +177,9 @@ public class AudioProcessingService {
         @CacheEvict(value = CACHE_METADATA_BY_USER, allEntries = true)
     })
     public boolean deleteAudioMetadata(String metadataId) {
-        log.info("Attempting to delete AudioMetadata with ID: {}", metadataId);
+        log.warn("Attempting to delete ONLY AudioMetadata with ID: {}. Associated Recording/Summary/File NOT deleted by this method.", metadataId);
         try {
             firebaseService.deleteData(firebaseService.getAudioMetadataCollectionName(), metadataId);
-
             log.info("Successfully deleted AudioMetadata from Firestore with ID: {} and evicted related caches.", metadataId);
             return true;
         } catch (FirestoreInteractionException e) {
@@ -201,51 +192,19 @@ public class AudioProcessingService {
     }
 
 
-
     @Deprecated
     public Summary processAndSummarize(byte[] audioData, MultipartFile fileInfo, String userId) throws Exception {
-        log.warn("processAndSummarize called with raw byte array for file: {}. Consider streaming or using saved file.", fileInfo.getOriginalFilename());
-        log.info("Starting processAndSummarize for file: {}, User: {}", fileInfo.getOriginalFilename(), userId);
-
-        AudioMetadata metadata = uploadAndSaveMetadata(fileInfo, fileInfo.getOriginalFilename(), "", userId);
-        log.info("Metadata created with ID: {} for file: {}", metadata.getId(), fileInfo.getOriginalFilename());
-
-        String base64Audio = Base64.getEncoder().encodeToString(audioData);
-        String aiResponse = callGeminiWithAudio(base64Audio, metadata.getFileName());
-
-        Summary summary = createSummaryFromResponse(aiResponse);
-        summary.setRecordingId(metadata.getId());
-
-        log.info("Successfully processed and summarized audio for metadata ID: {}", metadata.getId());
-        return summary;
+        log.warn("DEPRECATED processAndSummarize called. Use async flow via /api/audio/upload.");
+        throw new UnsupportedOperationException("Deprecated method processAndSummarize should not be used.");
     }
 
     @Deprecated
     private String callGeminiWithAudio(String base64Audio, String fileName) {
-        log.info("Calling Gemini for file: {}", fileName);
-        String prompt = "Please analyze this audio and provide a concise summary, identify key topics, and suggest action items.";
-        try {
-            String response = geminiService.callGeminiAPIWithAudio(prompt, base64Audio, fileName);
-            log.info("Received response from Gemini for file: {}", fileName);
-            return response;
-        } catch (Exception e) {
-            log.error("Error calling Gemini API for file: {}", fileName, e);
-            throw new RuntimeException("Failed to get response from Gemini API for file: " + fileName, e);
-        }
+         throw new UnsupportedOperationException("Deprecated method callGeminiWithAudio should not be used.");
     }
 
     @Deprecated
     private Summary createSummaryFromResponse(String aiResponse) throws Exception {
-        log.info("Parsing Gemini response.");
-        System.out.println("Received AI Response (needs parsing): " + aiResponse);
-        log.warn("Parsing logic for Gemini response is not fully implemented in createSummaryFromResponse.");
-
-        Summary summary = new Summary();
-
-        summary.setFullText(aiResponse);
-
-
-        return summary;
+         throw new UnsupportedOperationException("Deprecated method createSummaryFromResponse should not be used.");
     }
-
 }

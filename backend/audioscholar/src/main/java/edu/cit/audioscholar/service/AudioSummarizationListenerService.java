@@ -3,6 +3,7 @@ package edu.cit.audioscholar.service;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import org.slf4j.Logger;
@@ -76,6 +77,7 @@ public class AudioSummarizationListenerService {
                         }
                         log.info("[{}] Found metadata. Current status: {}", metadataId,
                                         metadata.getStatus());
+
                         ProcessingStatus currentStatus = metadata.getStatus();
                         if (currentStatus == ProcessingStatus.COMPLETED
                                         || currentStatus == ProcessingStatus.FAILED) {
@@ -90,7 +92,6 @@ public class AudioSummarizationListenerService {
                                 return;
                         }
 
-
                         log.debug("[{}] Fetching Recording document...", recordingId);
                         recording = recordingService.getRecordingById(recordingId);
                         if (recording == null) {
@@ -101,7 +102,6 @@ public class AudioSummarizationListenerService {
                                 return;
                         }
                         log.info("[{}] Found recording.", recordingId);
-
 
                         if (currentStatus != ProcessingStatus.PROCESSING) {
                                 log.info("[{}] Updating metadata {} status to PROCESSING.",
@@ -120,7 +120,6 @@ public class AudioSummarizationListenerService {
                                                 "Failed to extract Nhost File ID from URL.");
                                 return;
                         }
-
                         log.info("[{}] Downloading audio from Nhost file ID: {}", recordingId,
                                         nhostFileId);
                         String base64Audio = nhostStorageService.downloadFileAsBase64(nhostFileId);
@@ -128,16 +127,15 @@ public class AudioSummarizationListenerService {
                                         recordingId);
 
                         String prompt = createPrompt(recording);
-                        log.debug("[{}] Generated SIMPLIFIED Gemini prompt for JSON mode: '{}'",
-                                        recordingId, prompt);
-
+                        log.debug("[{}] Generated Gemini prompt for JSON mode: '{}'", recordingId,
+                                        prompt);
                         log.info("[{}] Calling Gemini API (JSON Mode) for audio summarization...",
                                         recordingId);
                         String geminiJsonResponse = geminiService.callGeminiAPIWithAudio(prompt,
                                         base64Audio, recording.getFileName());
-
                         log.info("[{}] Received response from GeminiService (JSON Mode). Processing...",
                                         recordingId);
+
                         handleGeminiJsonResponse(recording, metadataId, geminiJsonResponse);
 
                         AudioMetadata finalMetadata =
@@ -204,12 +202,13 @@ public class AudioSummarizationListenerService {
                 if (recording.getTitle() != null && !recording.getTitle().isBlank()) {
                         titleClause = " titled '" + recording.getTitle() + "'";
                 }
-
                 return """
                                 Analyze the following audio content%s.
-                                Generate a concise, well-structured summary using Markdown.
-                                Identify the main key points or action items discussed.
-                                List the 3-5 most important topics or keywords suitable for searching related content.
+                                Generate a concise, well-structured summary using Markdown in the `summaryText` field.
+                                Identify the main key points or action items discussed and list them in the `keyPoints` array.
+                                List the 3-5 most important topics or keywords suitable for searching related content in the `topics` array.
+                                Identify key terms or jargon used in the audio. For each term, provide a concise definition relevant to the audio's context. Structure this as an array of objects in the `glossary` field, where each object has a `term` (string) and a `definition` (string).
+                                Ensure the entire output strictly adheres to the provided JSON schema.
                                 """
                                 .formatted(titleClause);
         }
@@ -226,6 +225,7 @@ public class AudioSummarizationListenerService {
                 String summaryText = null;
                 List<String> keyPoints = Collections.emptyList();
                 List<String> topics = Collections.emptyList();
+                List<Map<String, String>> glossary = Collections.emptyList();
                 boolean processedSuccessfully = false;
 
                 try {
@@ -246,7 +246,7 @@ public class AudioSummarizationListenerService {
                         if (responseNode.hasNonNull("summaryText")) {
                                 summaryText = responseNode.path("summaryText").asText();
                         } else {
-                                log.warn("[{}] Gemini JSON response missing 'summaryText' field. Response: {}",
+                                log.error("[{}] Gemini JSON response missing required 'summaryText' field. Response: {}",
                                                 recordingId, geminiJsonResponse);
                                 updateMetadataStatusToFailed(metadataId,
                                                 "AI response missing required 'summaryText'.");
@@ -259,7 +259,7 @@ public class AudioSummarizationListenerService {
                                                 responseNode.path("keyPoints"),
                                                 new TypeReference<List<String>>() {});
                         } else {
-                                log.warn("[{}] Gemini JSON response missing 'keyPoints' array field. Proceeding with empty list.",
+                                log.warn("[{}] Gemini JSON response missing 'keyPoints' array field or not an array. Proceeding with empty list.",
                                                 recordingId);
                         }
 
@@ -268,14 +268,32 @@ public class AudioSummarizationListenerService {
                                 topics = objectMapper.convertValue(responseNode.path("topics"),
                                                 new TypeReference<List<String>>() {});
                         } else {
-                                log.warn("[{}] Gemini JSON response missing 'topics' array field. Proceeding with empty list.",
+                                log.warn("[{}] Gemini JSON response missing 'topics' array field or not an array. Proceeding with empty list.",
                                                 recordingId);
                         }
 
-                        log.info("[{}] Successfully parsed direct JSON response. Found {} key points and {} topics.",
-                                        recordingId, keyPoints.size(), topics.size());
-                        processedSuccessfully = true;
+                        if (responseNode.hasNonNull("glossary")
+                                        && responseNode.path("glossary").isArray()) {
+                                try {
+                                        glossary = objectMapper.convertValue(
+                                                        responseNode.path("glossary"),
+                                                        new TypeReference<List<Map<String, String>>>() {});
+                                        log.info("[{}] Successfully parsed glossary with {} items.",
+                                                        recordingId, glossary.size());
+                                } catch (IllegalArgumentException e) {
+                                        log.warn("[{}] Failed to parse 'glossary' field, likely due to incorrect item structure. Proceeding with empty glossary. Error: {}",
+                                                        recordingId, e.getMessage());
+                                        glossary = Collections.emptyList();
+                                }
+                        } else {
+                                log.info("[{}] Gemini JSON response missing 'glossary' array field or not an array. Proceeding with empty glossary.",
+                                                recordingId);
+                        }
 
+                        log.info("[{}] Successfully parsed direct JSON response. Found {} key points, {} topics, and {} glossary items.",
+                                        recordingId, keyPoints.size(), topics.size(),
+                                        glossary.size());
+                        processedSuccessfully = true;
 
                         Summary structuredSummary = new Summary();
                         structuredSummary.setSummaryId(UUID.randomUUID().toString());
@@ -284,12 +302,15 @@ public class AudioSummarizationListenerService {
                         structuredSummary.setFormattedSummaryText(summaryText);
                         structuredSummary.setKeyPoints(keyPoints);
                         structuredSummary.setTopics(topics);
+                        structuredSummary.setGlossary(glossary);
                         structuredSummary.setCondensedSummary(null);
 
-                        log.info("[{}] Attempting to save summary (ID: {}) with {} key points and {} topics to Firestore.",
+                        log.info("[{}] Attempting to save summary (ID: {}) with {} key points, {} topics, {} glossary items to Firestore.",
                                         recordingId, structuredSummary.getSummaryId(),
                                         structuredSummary.getKeyPoints().size(),
-                                        structuredSummary.getTopics().size());
+                                        structuredSummary.getTopics().size(),
+                                        structuredSummary.getGlossary().size());
+
                         summaryService.createSummary(structuredSummary);
                         log.info("[{}] Summary (ID: {}) saved successfully and linked to recording.",
                                         recordingId, structuredSummary.getSummaryId());
@@ -297,7 +318,6 @@ public class AudioSummarizationListenerService {
                         log.info("[{}] Updating metadata {} status to COMPLETED.", recordingId,
                                         metadataId);
                         updateMetadataStatus(metadataId, ProcessingStatus.COMPLETED);
-
 
                 } catch (JsonProcessingException e) {
                         log.error("[{}] Failed to parse JSON response received from GeminiService. Error: {}. Response: {}",
@@ -316,6 +336,9 @@ public class AudioSummarizationListenerService {
                                 updateMetadataStatusToFailed(metadataId,
                                                 "Failed during summary processing/saving: "
                                                                 + e.getMessage());
+                        } else {
+                                log.error("[{}] Error occurred *after* successful JSON parsing, possibly during Firestore save or status update. Summary might be partially processed.",
+                                                recordingId);
                         }
                 } catch (Exception e) {
                         log.error("[{}] Unexpected exception during summary processing for metadata {}.",
@@ -327,6 +350,7 @@ public class AudioSummarizationListenerService {
                         }
                 }
         }
+
 
 
         private void updateMetadataStatusToFailed(String metadataId, String reason) {
@@ -398,5 +422,4 @@ public class AudioSummarizationListenerService {
                 log.warn("Could not extract Nhost ID using expected pattern from URL: {}", url);
                 return null;
         }
-
 }

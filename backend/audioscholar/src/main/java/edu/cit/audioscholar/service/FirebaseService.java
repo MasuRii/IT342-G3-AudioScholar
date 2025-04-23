@@ -29,20 +29,21 @@ import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.LearningRecommendation;
 import edu.cit.audioscholar.model.ProcessingStatus;
-import edu.cit.audioscholar.model.Summary;
 
 @Service
 public class FirebaseService {
+
     private static final Logger log = LoggerFactory.getLogger(FirebaseService.class);
+
     private final String audioMetadataCollectionName;
     private final String summariesCollectionName;
     private final String recommendationsCollectionName;
     private static final int DEFAULT_PAGE_SIZE = 20;
+
     private final FirebaseApp firebaseApp;
 
     @Value("${google.oauth.web.client.id}")
     private String webClientIdFromTokenAud;
-
     @Value("${google.oauth.android.client.id}")
     private String androidClientId;
 
@@ -167,18 +168,29 @@ public class FirebaseService {
         }
     }
 
-    public String saveData(String collection, String document, Map<String, Object> data) {
+
+    public String saveData(String collection, String document, Object dataPojo) {
+        if (dataPojo == null) {
+            log.error("Attempted to save null data object to {}/{}", collection, document);
+            throw new IllegalArgumentException("Data object to save cannot be null.");
+        }
         try {
             Firestore firestore = getFirestore();
             ApiFuture<WriteResult> future =
-                    firestore.collection(collection).document(document).set(data);
+                    firestore.collection(collection).document(document).set(dataPojo);
             String updateTime = future.get().getUpdateTime().toString();
-            log.info("Data saved to {}/{} at {}", collection, document, updateTime);
+            log.info("Data of type {} saved to {}/{} at {}", dataPojo.getClass().getSimpleName(),
+                    collection, document, updateTime);
             return updateTime;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Error saving data to {}/{}", collection, document, e);
+            log.error("Error saving data object of type {} to {}/{}",
+                    dataPojo.getClass().getSimpleName(), collection, document, e);
             throw new FirestoreInteractionException("Error saving data to Firestore", e);
+        } catch (Exception e) {
+            log.error("Unexpected error saving data object of type {} to {}/{}",
+                    dataPojo.getClass().getSimpleName(), collection, document, e);
+            throw new FirestoreInteractionException("Unexpected error saving data to Firestore", e);
         }
     }
 
@@ -205,20 +217,52 @@ public class FirebaseService {
         }
     }
 
-    public String updateData(String collection, String document, Map<String, Object> data) {
+    public String updateData(String collection, String document, Object dataPojo) {
+        if (dataPojo == null) {
+            log.error("Attempted to update with null data object for {}/{}", collection, document);
+            throw new IllegalArgumentException("Data object for update cannot be null.");
+        }
+        try {
+            Firestore firestore = getFirestore();
+            ApiFuture<WriteResult> future = firestore.collection(collection).document(document)
+                    .set(dataPojo, SetOptions.merge());
+            String updateTime = future.get().getUpdateTime().toString();
+            log.info("Data of type {} updated (merged) for {}/{} at {}",
+                    dataPojo.getClass().getSimpleName(), collection, document, updateTime);
+            return updateTime;
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Error updating (merging) data object of type {} for {}/{}",
+                    dataPojo.getClass().getSimpleName(), collection, document, e);
+            throw new FirestoreInteractionException("Error updating data in Firestore", e);
+        } catch (Exception e) {
+            log.error("Unexpected error updating (merging) data object of type {} for {}/{}",
+                    dataPojo.getClass().getSimpleName(), collection, document, e);
+            throw new FirestoreInteractionException("Unexpected error updating data in Firestore",
+                    e);
+        }
+    }
+
+    public String updateDataWithMap(String collection, String document, Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            log.warn("Attempted to update data with null or empty map for {}/{}", collection,
+                    document);
+            return "No update performed (empty map)";
+        }
         try {
             Firestore firestore = getFirestore();
             ApiFuture<WriteResult> future =
                     firestore.collection(collection).document(document).update(data);
             String updateTime = future.get().getUpdateTime().toString();
-            log.info("Data updated for {}/{} at {}", collection, document, updateTime);
+            log.info("Data updated via Map for {}/{} at {}", collection, document, updateTime);
             return updateTime;
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Error updating data for {}/{}", collection, document, e);
+            log.error("Error updating data via Map for {}/{}", collection, document, e);
             throw new FirestoreInteractionException("Error updating data in Firestore", e);
         }
     }
+
 
     public String deleteData(String collection, String document) {
         try {
@@ -257,27 +301,7 @@ public class FirebaseService {
         }
     }
 
-    public AudioMetadata saveAudioMetadata(AudioMetadata metadata) {
-        if (metadata == null) {
-            throw new IllegalArgumentException("AudioMetadata cannot be null.");
-        }
-        try {
-            Firestore firestore = getFirestore();
-            CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
-            Map<String, Object> dataMap = convertToMap(metadata);
-            ApiFuture<DocumentReference> futureRef = colRef.add(dataMap);
-            String generatedId = futureRef.get().getId();
-            metadata.setId(generatedId);
-            log.info("Saved AudioMetadata to Firestore collection {} with generated ID: {}",
-                    audioMetadataCollectionName, generatedId);
-            return metadata;
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            String userId = (metadata.getUserId() != null) ? metadata.getUserId() : "unknown";
-            log.error("Error saving AudioMetadata for user {}", userId, e);
-            throw new FirestoreInteractionException("Failed to save AudioMetadata", e);
-        }
-    }
+
 
     public void updateAudioMetadataStatus(String metadataId, ProcessingStatus status)
             throws FirestoreInteractionException {
@@ -350,7 +374,6 @@ public class FirebaseService {
         log.info(
                 "Retrieving AudioMetadata for user ID: {}, page size: {}, starting after document ID: {}",
                 userId, pageSize, lastDocumentId == null ? "N/A" : lastDocumentId);
-
         List<AudioMetadata> userMetadataList = new ArrayList<>();
         try {
             Firestore firestore = getFirestore();
@@ -386,7 +409,6 @@ public class FirebaseService {
                             .limit(pageSize > 0 ? pageSize : DEFAULT_PAGE_SIZE);
                 }
             }
-
 
             ApiFuture<QuerySnapshot> future = query.get();
             List<QueryDocumentSnapshot> documents;
@@ -427,17 +449,14 @@ public class FirebaseService {
                             document.getId(), userId, e.getMessage(), e);
                 }
             }
-
             log.info("Successfully retrieved {} AudioMetadata documents for user ID: {} (page)",
                     userMetadataList.size(), userId);
             return userMetadataList;
-
         } catch (FirestoreInteractionException e) {
             log.error("Firestore interaction failed while retrieving metadata for user ID: {}",
                     userId, e);
             throw e;
         } catch (Exception e) {
-            Thread.currentThread().interrupt();
             log.error("Unexpected error retrieving paginated AudioMetadata for user ID: {}", userId,
                     e);
             throw new FirestoreInteractionException(
@@ -484,37 +503,6 @@ public class FirebaseService {
         }
     }
 
-    public void saveSummary(Summary summary) throws FirestoreInteractionException {
-        if (summary == null || !StringUtils.hasText(summary.getSummaryId())) {
-            log.error("Cannot save summary with null object or blank summaryId.");
-            throw new IllegalArgumentException(
-                    "Summary object and summaryId cannot be null or blank.");
-        }
-        String summaryId = summary.getSummaryId();
-        String recordingId = summary.getRecordingId();
-        log.info("[{}] Attempting to save summary with ID: {} to collection: {}", recordingId,
-                summaryId, summariesCollectionName);
-        try {
-            Firestore firestore = getFirestore();
-            DocumentReference docRef =
-                    firestore.collection(summariesCollectionName).document(summaryId);
-            Map<String, Object> dataMap = summary.toMap();
-            ApiFuture<WriteResult> future = docRef.set(dataMap);
-            future.get();
-            log.info("[{}] Successfully saved summary with ID: {} to Firestore.", recordingId,
-                    summaryId);
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("[{}] Error saving summary with ID: {} to Firestore.", recordingId, summaryId,
-                    e);
-            throw new FirestoreInteractionException("Failed to save summary " + summaryId, e);
-        } catch (Exception e) {
-            log.error("[{}] Unexpected error saving summary with ID: {}", recordingId, summaryId,
-                    e);
-            throw new FirestoreInteractionException("Unexpected error saving summary " + summaryId,
-                    e);
-        }
-    }
 
 
     public void saveLearningRecommendations(List<LearningRecommendation> recommendations)
@@ -523,10 +511,11 @@ public class FirebaseService {
             log.warn("Attempted to save an empty or null list of recommendations.");
             return;
         }
-        String recordingId = recommendations.get(0).getRecordingId();
-        log.info("[{}] Attempting to save {} recommendations to collection: {}",
-                recordingId != null ? recordingId : "UNKNOWN", recommendations.size(),
-                recommendationsCollectionName);
+        String recordingId = recommendations.stream().map(LearningRecommendation::getRecordingId)
+                .filter(Objects::nonNull).findFirst().orElse("UNKNOWN");
+
+        log.info("[{}] Attempting to save {} recommendations to collection: {}", recordingId,
+                recommendations.size(), recommendationsCollectionName);
         try {
             Firestore firestore = getFirestore();
             WriteBatch batch = firestore.batch();
@@ -539,23 +528,18 @@ public class FirebaseService {
 
             ApiFuture<List<WriteResult>> future = batch.commit();
             future.get();
-            log.info("[{}] Successfully saved {} recommendations to Firestore.",
-                    recordingId != null ? recordingId : "UNKNOWN", recommendations.size());
+
+            log.info("[{}] Successfully saved {} recommendations to Firestore.", recordingId,
+                    recommendations.size());
         } catch (ExecutionException | InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("[{}] Error saving batch of recommendations to Firestore.",
-                    recordingId != null ? recordingId : "UNKNOWN", e);
+            log.error("[{}] Error saving batch of recommendations to Firestore.", recordingId, e);
             throw new FirestoreInteractionException(
-                    "Failed to save batch of recommendations for recording "
-                            + (recordingId != null ? recordingId : "UNKNOWN"),
-                    e);
+                    "Failed to save batch of recommendations for recording " + recordingId, e);
         } catch (Exception e) {
-            log.error("[{}] Unexpected error saving batch of recommendations.",
-                    recordingId != null ? recordingId : "UNKNOWN", e);
+            log.error("[{}] Unexpected error saving batch of recommendations.", recordingId, e);
             throw new FirestoreInteractionException(
-                    "Unexpected error saving recommendations for recording "
-                            + (recordingId != null ? recordingId : "UNKNOWN"),
-                    e);
+                    "Unexpected error saving recommendations for recording " + recordingId, e);
         }
     }
 
@@ -606,6 +590,7 @@ public class FirebaseService {
     }
 
 
+
     private Map<String, Object> convertToMap(AudioMetadata metadata) {
         Map<String, Object> map = new HashMap<>();
         map.put("userId", metadata.getUserId());
@@ -631,7 +616,6 @@ public class FirebaseService {
         }
         AudioMetadata metadata = new AudioMetadata();
         metadata.setId(document.getId());
-
         try {
             Map<String, Object> data = document.getData();
             if (data == null) {
@@ -652,7 +636,7 @@ public class FirebaseService {
             String statusStr = getString(data, "status", document.getId());
             if (StringUtils.hasText(statusStr)) {
                 try {
-                    metadata.setStatus(ProcessingStatus.valueOf(statusStr));
+                    metadata.setStatus(ProcessingStatus.valueOf(statusStr.toUpperCase()));
                 } catch (IllegalArgumentException e) {
                     log.warn(
                             "Invalid status value '{}' found in Firestore for document ID: {}. Setting status to UPLOADED.",
@@ -667,7 +651,6 @@ public class FirebaseService {
             }
 
             return metadata;
-
         } catch (Exception e) {
             log.error(
                     "Critical error mapping Firestore document data to AudioMetadata for ID: {}. Error: {}",
@@ -675,7 +658,6 @@ public class FirebaseService {
             return null;
         }
     }
-
 
     private String getString(Map<String, Object> data, String key, String docId) {
         Object value = data.get(key);
@@ -712,5 +694,4 @@ public class FirebaseService {
         }
         return null;
     }
-
 }

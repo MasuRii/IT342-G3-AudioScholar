@@ -28,6 +28,9 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.Date
 
 data class RecordingUiState(
     val isRecording: Boolean = false,
@@ -312,11 +315,17 @@ class RecordingViewModel @Inject constructor(
 
         val savedFileName = savedFile.name
         val timestamp = System.currentTimeMillis()
+        
+        // Generate default title if none provided
+        val finalTitle = title ?: run {
+            val dateFormat = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
+            "Recording ${dateFormat.format(Date(timestamp))}"
+        }
 
         val metadata = RecordingMetadata(
             filePath = savedFilePath,
             fileName = savedFileName,
-            title = title?.takeIf { it.isNotBlank() },
+            title = finalTitle,  // Always use a title (either provided or generated)
             timestampMillis = timestamp,
             durationMillis = finishedRecordingDuration
         )

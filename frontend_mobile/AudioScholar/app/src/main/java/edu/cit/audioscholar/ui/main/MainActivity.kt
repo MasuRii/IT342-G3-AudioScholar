@@ -103,7 +103,10 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Profile : Screen("profile", R.string.nav_profile, Icons.Filled.AccountCircle)
     object EditProfile : Screen("edit_profile", R.string.nav_edit_profile, Icons.Filled.Edit)
     object About : Screen("about", R.string.nav_about, Icons.Filled.Info)
-    object Login : Screen("login", R.string.nav_login, Icons.AutoMirrored.Filled.Login)
+    object Login : Screen("login?fromLogout={fromLogout}&isFirstLogin={isFirstLogin}", R.string.nav_login, Icons.AutoMirrored.Filled.Login) {
+        fun createRoute(fromLogout: Boolean = false, isFirstLogin: Boolean = false) =
+            "login?fromLogout=$fromLogout&isFirstLogin=$isFirstLogin"
+    }
     object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
 
@@ -135,16 +138,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
-        with(prefs.edit()) {
-            putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true)
-            apply()
-        }
         if (::navController.isInitialized) {
-            navController.navigate(Screen.Login.route) {
+            navController.navigate(Screen.Login.createRoute(isFirstLogin = true)) {
                 popUpTo(Screen.Onboarding.route) { inclusive = true }
                 launchSingleTop = true
             }
-            Log.d("MainActivity", "Onboarding complete. Navigating to Login screen.")
+            Log.d("MainActivity", "Onboarding complete. Navigating to Login screen (isFirstLogin=true).")
         } else {
             Log.e("MainActivity", "Onboarding complete called but NavController not ready.")
         }
@@ -343,8 +342,8 @@ fun MainAppScreen(
 
     LaunchedEffect(Unit) {
         mainViewModel.logoutCompleteEventFlow.collectLatest {
-            Log.d("MainAppScreen", "Logout complete event received. Navigating to Login.")
-            navController.navigate(Screen.Login.route) {
+            Log.d("MainAppScreen", "Logout complete event received. Navigating to Login with fromLogout=true.")
+            navController.navigate(Screen.Login.createRoute(fromLogout = true, isFirstLogin = false)) {
                 popUpTo(navController.graph.id) { inclusive = true }
                 launchSingleTop = true
             }
@@ -377,8 +376,9 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != Screen.Profile.route) {
                                     navController.navigate(Screen.Profile.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true; restoreState = true
+                                        popUpTo(navController.graph.id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             }
@@ -427,8 +427,9 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != screen.route) {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true; restoreState = true
+                                        popUpTo(navController.graph.id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             },
@@ -509,7 +510,19 @@ fun MainAppScreen(
                     scope = scope
                 )
             }
-            composable(Screen.Login.route) {
+            composable(
+                route = Screen.Login.route,
+                arguments = listOf(
+                    navArgument("fromLogout") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
+                    navArgument("isFirstLogin") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    }
+                )
+            ) {
                 LoginScreen(navController = navController)
             }
             composable(Screen.Registration.route) {

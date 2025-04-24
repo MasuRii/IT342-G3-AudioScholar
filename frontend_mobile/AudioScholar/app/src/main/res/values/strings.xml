@@ -21,8 +21,8 @@
     <string name="stop_recording_before_leaving">Please stop recording before leaving the screen.</string>
     <string name="stop_recording_before_navigating">Please stop recording before navigating.</string>
     <string name="dialog_title_prompt_title">Save Recording</string>
-    <string name="dialog_title_prompt_label">Optional Title</string>
-    <string name="dialog_title_prompt_placeholder">e.g., Lecture Week 1</string>
+    <string name="dialog_title_prompt_label">Title</string>
+    <string name="dialog_title_prompt_placeholder">Enter title (optional)</string>
     <string name="dialog_action_save">Save</string>
     <string name="dialog_action_skip">Skip Title</string>
     <string name="status_paused">Paused</string>
@@ -313,5 +313,8 @@
     <string name="onboarding_image_desc_2">Illustration showing how to record audio.</string>
     <string name="onboarding_image_desc_3">Illustration showing transcription feature.</string>
     <string name="onboarding_image_desc_4">Illustration related to microphone permission.</string>
+
+    <string name="login_welcome_new">Log in to your account</string>
+    <string name="login_welcome_returning">Welcome back!</string>
 
 </resources>

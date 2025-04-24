@@ -11,7 +11,7 @@ interface LocalAudioRepository {
     suspend fun deleteLocalRecordings(filePaths: List<String>): Boolean
     suspend fun updateRecordingTitle(filePath: String, newTitle: String): Boolean
     suspend fun updateRemoteRecordingId(localFilePath: String, remoteId: String): Boolean
-    suspend fun importAudioFile(sourceUri: Uri, title: String?, description: String?): Result<RecordingMetadata>
+    suspend fun importAudioFile(sourceUri: Uri, originalFileName: String, title: String?, description: String?): Result<RecordingMetadata>
 
     suspend fun saveMetadata(metadata: RecordingMetadata): Boolean
 }

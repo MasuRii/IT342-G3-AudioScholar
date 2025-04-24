@@ -37,7 +37,7 @@ class RecordingFileHandler @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
 
-    private fun getRecordingsDirectory(): Result<File> {
+    fun getRecordingsDirectory(): Result<File> {
         return try {
             val baseDir = context.getExternalFilesDir(null)
                 ?: return Result.failure(IOException("Cannot access app-specific external storage."))

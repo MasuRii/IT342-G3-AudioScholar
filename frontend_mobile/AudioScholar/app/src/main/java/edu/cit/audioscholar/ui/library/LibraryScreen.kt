@@ -61,7 +61,10 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -89,6 +92,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import androidx.activity.result.ActivityResultLauncher
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 
 private fun formatTimestampMillis(timestampMillis: Long): String {
     if (timestampMillis <= 0) return "Unknown date"
@@ -170,11 +177,11 @@ fun LibraryScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val audioPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri: Uri? ->
-            Log.d("LibraryScreen", "Audio picker result: $uri")
-            viewModel.onAudioFileSelected(uri)
+    val audioPickerLauncher: ActivityResultLauncher<Array<String>> = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        onResult = { uris: List<Uri?> ->
+            Log.d("LibraryScreen", "Audio picker result (multiple): ${uris.size} items")
+            viewModel.onAudioFilesSelected(uris)
         }
     )
 
@@ -230,16 +237,15 @@ fun LibraryScreen(
     LaunchedEffect(Unit) {
         viewModel.eventFlow.collectLatest { event ->
             when (event) {
-                is LibraryViewEvent.LaunchFilePicker -> {
-                    Log.d("LibraryScreen", "Received LaunchFilePicker event, launching picker...")
+                is LibraryViewEvent.LaunchMultiFilePicker -> {
+                    Log.d("LibraryScreen", "Received LaunchMultiFilePicker event, launching picker...")
                     try {
-                        audioPickerLauncher.launch("audio/*")
+                        audioPickerLauncher.launch(arrayOf("audio/*"))
                     } catch (e: ActivityNotFoundException) {
                         Log.e("LibraryScreen", "No activity found to handle picking audio files.", e)
                         scope.launch { showSnackbar("Cannot open file picker. No suitable app found.") }
                     }
                 }
-
                 is LibraryViewEvent.ShowSnackbar -> {
                     scope.launch {
                         snackbarHostState.showSnackbar(
@@ -253,23 +259,42 @@ fun LibraryScreen(
     }
 
     if (uiState.showMultiDeleteConfirmation) {
-        MultiDeleteConfirmationDialog(
-            count = uiState.selectedRecordingIds.size,
-            onConfirm = viewModel::confirmMultiDelete,
-            onDismiss = viewModel::cancelMultiDelete,
+        AlertDialog(
+            onDismissRequest = viewModel::cancelMultiDelete,
+            title = { Text(stringResource(R.string.dialog_multi_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.dialog_multi_delete_message,
+                        uiState.selectedRecordingIds.size
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmMultiDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.dialog_action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelMultiDelete) {
+                    Text(stringResource(R.string.dialog_action_cancel))
+                }
+            }
         )
     }
 
-    uiState.importDialogState?.let { importState ->
-        ImportDetailsDialog(
-            state = importState,
-            onDismiss = viewModel::onImportDialogDismiss,
-            onConfirm = viewModel::onImportDetailsConfirm,
-            onTitleChange = viewModel::onImportTitleChange,
-            onDescriptionChange = viewModel::onImportDescriptionChange
+    uiState.importDialogState?.let { dialogState ->
+        ImportAudioDialog(
+            dialogState = dialogState,
+            onDismiss = viewModel::cancelImportDialog,
+            onConfirm = { title, description ->
+                viewModel.importFiles(listOf(dialogState.fileUri), title, description)
+            }
         )
     }
-
 
     Scaffold(
         modifier = modifier,
@@ -296,7 +321,7 @@ fun LibraryScreen(
                         }
                     },
                     actions = {
-                        if (pagerState.currentPage == 0) {
+                        if (pagerState.currentPage == 0 && !uiState.isMultiSelectActive) {
                             IconButton(onClick = {
                                 Log.d("LibraryScreen", "Upload/Import Icon Clicked - Calling ViewModel")
                                 viewModel.onImportAudioClicked()
@@ -312,48 +337,51 @@ fun LibraryScreen(
             }
         },
     ) { paddingValues ->
-        Column(modifier = Modifier
-            .padding(paddingValues)
-            .fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (uiState.isImporting) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
             PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                 tabTitles.forEachIndexed { index, title ->
                     Tab(
                         selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = { Text(title) },
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
+                        text = { Text(text = title) }
                     )
                 }
-            }
-            val showLocalLoading = (uiState.isLoadingLocal || uiState.isImporting) && pagerState.currentPage == 0
-            val showCloudLoading = uiState.isLoadingCloud && pagerState.currentPage == 1
-            if (showLocalLoading || showCloudLoading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.Top
             ) { page ->
                 when (page) {
-                    0 ->
-                        LocalRecordingsTabPage(
-                            uiState = uiState,
-                            navController = navController,
-                            selectedIds = uiState.selectedRecordingIds,
-                            isMultiSelectActive = uiState.isMultiSelectActive,
-                            onItemLongClick = viewModel::enterMultiSelectMode,
-                            onItemClick = viewModel::toggleSelection,
-                        )
-
-                    1 ->
-                        CloudRecordingsTabPage(
-                            uiState = uiState,
-                            context = context,
-                            scope = scope,
-                            showSnackbar = showSnackbar,
-                        )
+                    0 -> LocalRecordingsTabPage(
+                        uiState = uiState,
+                        navController = navController,
+                        selectedIds = uiState.selectedRecordingIds,
+                        isMultiSelectActive = uiState.isMultiSelectActive,
+                        onItemLongClick = viewModel::enterMultiSelectMode,
+                        onItemClick = viewModel::toggleSelection,
+                        isLoading = uiState.isLoadingLocal && !uiState.isImporting,
+                    )
+                    1 -> CloudRecordingsTabPage(
+                        uiState = uiState,
+                        context = context,
+                        scope = scope,
+                        showSnackbar = showSnackbar,
+                        isLoading = uiState.isLoadingCloud,
+                    )
                 }
             }
         }
@@ -421,7 +449,6 @@ fun MultiSelectTopAppBar(
     )
 }
 
-
 @Composable
 fun LocalRecordingsTabPage(
     uiState: LibraryUiState,
@@ -430,10 +457,11 @@ fun LocalRecordingsTabPage(
     isMultiSelectActive: Boolean,
     onItemLongClick: (String) -> Unit,
     onItemClick: (String) -> Unit,
+    isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
-        if (!uiState.isLoadingLocal && uiState.localRecordings.isEmpty()) {
+        if (!isLoading && uiState.localRecordings.isEmpty()) {
             Text(
                 text = stringResource(R.string.library_empty_state_local),
                 style = MaterialTheme.typography.bodyLarge,
@@ -477,17 +505,17 @@ fun LocalRecordingsTabPage(
     }
 }
 
-
 @Composable
 fun CloudRecordingsTabPage(
     uiState: LibraryUiState,
     context: Context,
     scope: CoroutineScope,
     showSnackbar: suspend (String) -> Unit,
+    isLoading: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
-        if (!uiState.isLoadingCloud && uiState.cloudRecordings.isEmpty() && uiState.hasAttemptedCloudLoad) {
+        if (!isLoading && uiState.cloudRecordings.isEmpty() && uiState.hasAttemptedCloudLoad) {
             Text(
                 text = stringResource(R.string.library_empty_state_cloud),
                 style = MaterialTheme.typography.bodyLarge,
@@ -515,7 +543,6 @@ fun CloudRecordingsTabPage(
         }
     }
 }
-
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -603,7 +630,6 @@ fun LocalRecordingListItem(
     }
 }
 
-
 @Composable
 fun CloudRecordingListItem(
     metadata: AudioMetadataDto,
@@ -672,82 +698,46 @@ fun CloudRecordingListItem(
     }
 }
 
-
 @Composable
-fun MultiDeleteConfirmationDialog(
-    count: Int,
-    onConfirm: () -> Unit,
+fun ImportAudioDialog(
+    dialogState: ImportDialogState,
     onDismiss: () -> Unit,
+    onConfirm: (title: String, description: String) -> Unit,
 ) {
-    if (count <= 0) return
+    var title by rememberSaveable(dialogState.fileUri) { mutableStateOf("") }
+    var description by rememberSaveable(dialogState.fileUri) { mutableStateOf("") }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_multi_delete_title)) },
-        text = {
-            Text(
-                stringResource(
-                    R.string.dialog_multi_delete_message,
-                    count,
-                ),
-            )
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) {
-                Text(stringResource(R.string.dialog_action_delete))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.dialog_action_cancel))
-            }
-        },
-    )
-}
-
-@Composable
-fun ImportDetailsDialog(
-    state: ImportDialogState,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-    onTitleChange: (String) -> Unit,
-    onDescriptionChange: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    AlertDialog(
-        modifier = modifier,
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.dialog_import_details_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(R.string.dialog_import_selected_file, dialogState.originalFileName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
                 OutlinedTextField(
-                    value = state.title,
-                    onValueChange = onTitleChange,
+                    value = title,
+                    onValueChange = { title = it },
                     label = { Text(stringResource(R.string.dialog_import_field_title)) },
                     placeholder = { Text(stringResource(R.string.dialog_import_field_title_placeholder)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = state.description,
-                    onValueChange = onDescriptionChange,
+                    value = description,
+                    onValueChange = { description = it },
                     label = { Text(stringResource(R.string.dialog_import_field_description)) },
                     placeholder = { Text(stringResource(R.string.dialog_import_field_description_placeholder)) },
-                    modifier = Modifier.fillMaxWidth().height(100.dp)
-                )
-                Text(
-                    text = stringResource(R.string.dialog_import_selected_file, state.fileUri.lastPathSegment ?: state.fileUri.toString()),
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
                 )
             }
         },
         confirmButton = {
-            Button(onClick = onConfirm) {
+            Button(onClick = { onConfirm(title.trim(), description.trim()) }) {
                 Text(stringResource(R.string.dialog_action_import))
             }
         },

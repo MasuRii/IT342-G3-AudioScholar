@@ -8,6 +8,7 @@ data class RecordingMetadata(
     val filePath: String,
     val fileName: String,
     val title: String?,
+    val description: String? = null,
     val timestampMillis: Long,
     val durationMillis: Long,
     val remoteRecordingId: String? = null,

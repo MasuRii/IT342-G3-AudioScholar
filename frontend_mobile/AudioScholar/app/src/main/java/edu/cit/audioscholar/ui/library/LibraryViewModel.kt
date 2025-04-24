@@ -25,12 +25,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.core.net.toFile
+import edu.cit.audioscholar.util.FileUtils
 
 @Immutable
 data class ImportDialogState(
     val fileUri: Uri,
-    val title: String = "",
-    val description: String = ""
+    val originalFileName: String,
+    var title: String = "",
+    var description: String = ""
 )
 
 data class LibraryUiState(
@@ -52,7 +58,8 @@ data class LibraryUiState(
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val localAudioRepository: LocalAudioRepository,
-    private val remoteAudioRepository: RemoteAudioRepository
+    private val remoteAudioRepository: RemoteAudioRepository,
+    private val fileUtils: FileUtils
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -85,10 +92,11 @@ class LibraryViewModel @Inject constructor(
             localAudioRepository.getLocalRecordings()
                 .onStart {
                     if (!_uiState.value.isImporting) {
-                        Log.d("LibraryViewModel", "Starting local recordings load")
+                        Log.d("LibraryViewModel", "Starting local recordings load (isLoadingLocal=true)")
                         _uiState.update { it.copy(isLoadingLocal = true, error = null) }
                     } else {
-                        Log.d("LibraryViewModel", "Skipping loading indicator update during import.")
+                        Log.d("LibraryViewModel", "loadLocalRecordings called during import, keeping isLoadingLocal=true")
+                        _uiState.update { it.copy(isLoadingLocal = true, error = null) }
                     }
                 }
                 .catch { throwable ->
@@ -105,8 +113,9 @@ class LibraryViewModel @Inject constructor(
                     Log.d("LibraryViewModel", "Collected ${recordingsList.size} local recordings")
                     _uiState.update {
                         it.copy(
-                            isLoadingLocal = it.isImporting,
-                            localRecordings = recordingsList
+                            isLoadingLocal = false,
+                            localRecordings = recordingsList,
+                            isImporting = if(it.isImporting) false else it.isImporting
                         )
                     }
                 }
@@ -264,74 +273,107 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun onImportAudioClicked() {
-        Log.d("LibraryViewModel", "onImportAudioClicked called")
+        Log.d("LibraryViewModel", "Import audio clicked, sending LaunchMultiFilePicker event.")
         viewModelScope.launch {
-            _eventChannel.send(LibraryViewEvent.LaunchFilePicker)
+            _eventChannel.send(LibraryViewEvent.LaunchMultiFilePicker)
         }
     }
 
-    fun onAudioFileSelected(uri: Uri?) {
-        if (uri != null) {
-            Log.i("LibraryViewModel", "Audio file selected: $uri. Showing import dialog.")
-            _uiState.update { it.copy(importDialogState = ImportDialogState(fileUri = uri)) }
-        } else {
-            Log.i("LibraryViewModel", "Audio file selection cancelled by user.")
-        }
-    }
+    fun onAudioFilesSelected(uris: List<Uri?>) {
+        val validUris = uris.filterNotNull()
+        Log.d("LibraryViewModel", "Received ${validUris.size} valid URIs from picker.")
 
-    fun onImportTitleChange(title: String) {
-        _uiState.update { currentState ->
-            currentState.importDialogState?.let { dialogState ->
-                currentState.copy(importDialogState = dialogState.copy(title = title))
-            } ?: currentState
-        }
-    }
-
-    fun onImportDescriptionChange(description: String) {
-        _uiState.update { currentState ->
-            currentState.importDialogState?.let { dialogState ->
-                currentState.copy(importDialogState = dialogState.copy(description = description))
-            } ?: currentState
-        }
-    }
-
-    fun onImportDialogDismiss() {
-        Log.d("LibraryViewModel", "Import dialog dismissed.")
-        _uiState.update { it.copy(importDialogState = null) }
-    }
-
-    fun onImportDetailsConfirm() {
-        val currentImportState = _uiState.value.importDialogState
-        if (currentImportState == null || _uiState.value.isImporting) {
-            Log.w("LibraryViewModel", "onImportDetailsConfirm called but state is null or import already in progress.")
+        if (validUris.isEmpty()) {
+            Log.w("LibraryViewModel", "No valid URIs selected.")
             return
         }
 
-        val uri = currentImportState.fileUri
-        val title = currentImportState.title.trim()
-        val description = currentImportState.description.trim()
+        if (validUris.size == 1) {
+            val uri = validUris.first()
+            val originalFileName = fileUtils.getFileName(uri) ?: "Unknown File"
+            Log.d("LibraryViewModel", "Single file selected: $uri, name: $originalFileName. Showing import dialog.")
+            _uiState.update {
+                it.copy(importDialogState = ImportDialogState(fileUri = uri, originalFileName = originalFileName))
+            }
+        } else {
+            Log.d("LibraryViewModel", "Multiple files selected (${validUris.size}). Importing directly.")
+            importFiles(validUris)
+        }
+    }
 
-        Log.i("LibraryViewModel", "Import confirmed for URI: $uri, Title: '$title'. Starting import process.")
-        _uiState.update { it.copy(importDialogState = null, isImporting = true, isLoadingLocal = true, error = null) }
+    fun cancelImportDialog() {
+        Log.d("LibraryViewModel", "Import dialog cancelled.")
+        _uiState.update { it.copy(importDialogState = null) }
+    }
+
+    fun importFiles(uris: List<Uri>, title: String? = null, description: String? = null) {
+        if (uris.isEmpty()) return
+
+        _uiState.update { it.copy(isImporting = true, isLoadingLocal = true, importDialogState = null, error = null) }
+        Log.d("LibraryViewModel", "Starting import for ${uris.size} files. Title: $title, Desc: $description")
 
         viewModelScope.launch {
-            val result = localAudioRepository.importAudioFile(uri, title, description)
+            var successfulImports = 0
+            val totalFiles = uris.size
+            val failedFiles = mutableListOf<String>()
 
-            _uiState.update { it.copy(isImporting = false, isLoadingLocal = false) }
+            for (uri in uris) {
+                val originalFileName = fileUtils.getFileName(uri) ?: "file_${System.currentTimeMillis()}"
+                try {
+                    val fileTitle = if (totalFiles == 1) {
+                        title?.takeIf { it.isNotBlank() } ?: fileUtils.getFileNameWithoutExtension(originalFileName)
+                    } else {
+                        fileUtils.getFileNameWithoutExtension(originalFileName)
+                    }
 
-            result.onSuccess { newMetadata ->
-                Log.i("LibraryViewModel", "Import successful for ${newMetadata.fileName}")
-                viewModelScope.launch { _eventChannel.send(LibraryViewEvent.ShowSnackbar("Import successful: ${newMetadata.fileName}")) }
-                loadLocalRecordings()
-            }.onFailure { exception ->
-                Log.e("LibraryViewModel", "Import failed", exception)
-                val errorMessage = when (exception) {
-                    is InsufficientStorageException -> "Import failed: Not enough storage space."
-                    is SecurityException -> "Import failed: Permission denied accessing the file."
-                    is IOException -> "Import failed: Could not read or save the file. (${exception.message})"
-                    else -> "Import failed: An unexpected error occurred."
+                    Log.d("LibraryViewModel", "Importing file: $originalFileName with calculated title: '$fileTitle'")
+
+                    val result = localAudioRepository.importAudioFile(
+                        sourceUri = uri,
+                        originalFileName = originalFileName,
+                        title = fileTitle,
+                        description = if (totalFiles == 1) description else null
+                    )
+
+                    if (result.isSuccess) {
+                        successfulImports++
+                        Log.i("LibraryViewModel", "Successfully imported: $originalFileName")
+                    } else {
+                        val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                        Log.e("LibraryViewModel", "Failed to import $originalFileName: $error")
+                        failedFiles.add(originalFileName)
+                    }
+                } catch (e: Exception) {
+                    Log.e("LibraryViewModel", "Exception during import of $originalFileName", e)
+                    failedFiles.add(originalFileName)
+                    val errorMsg = when(e) {
+                        is InsufficientStorageException -> "Import failed for $originalFileName: Insufficient storage space."
+                        is IOException -> "Import failed for $originalFileName: Could not read or write file."
+                        is SecurityException -> "Import failed for $originalFileName: Permission denied."
+                        else -> "Import failed for $originalFileName: ${e.message ?: "Unexpected error"}"
+                    }
+                    _eventChannel.send(LibraryViewEvent.ShowSnackbar(errorMsg))
                 }
-                _uiState.update { it.copy(error = errorMessage) }
+            }
+
+            val snackbarMessage = when {
+                successfulImports == totalFiles && totalFiles > 0 -> "Successfully imported $successfulImports file(s)."
+                successfulImports > 0 -> "Imported $successfulImports of $totalFiles files. Failures: ${failedFiles.joinToString()}."
+                totalFiles > 0 -> "Import failed for all $totalFiles files. ${failedFiles.joinToString()}"
+                else -> "No files were imported."
+            }
+            if (totalFiles > 0) {
+                _eventChannel.send(LibraryViewEvent.ShowSnackbar(snackbarMessage))
+            }
+
+            Log.d("LibraryViewModel", "Import process finished. Success: $successfulImports, Failed: ${failedFiles.size}")
+
+            if (successfulImports > 0) {
+                Log.d("LibraryViewModel", "Successful imports detected ($successfulImports). Reloading local recordings list.")
+                loadLocalRecordings()
+            } else {
+                Log.d("LibraryViewModel", "No successful imports. Resetting loading/importing state.")
+                _uiState.update { it.copy(isLoadingLocal = false, isImporting = false) }
             }
         }
     }
@@ -342,6 +384,6 @@ class LibraryViewModel @Inject constructor(
 }
 
 sealed class LibraryViewEvent {
-    object LaunchFilePicker : LibraryViewEvent()
+    object LaunchMultiFilePicker : LibraryViewEvent()
     data class ShowSnackbar(val message: String) : LibraryViewEvent()
 }

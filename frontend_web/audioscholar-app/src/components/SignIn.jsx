@@ -40,7 +40,7 @@ const SignIn = () => {
 
             // --- Handle successful backend verification ---
             // Store the API JWT returned by *your* backend (most important step)
-            localStorage.setItem('apiAuthToken', backendResponse.token); // Or use secure storage
+            localStorage.setItem('AuthToken', backendResponse.token); // Or use secure storage
             localStorage.setItem('userId', backendResponse.userId); // Store user ID if needed
 
             // Redirect to the dashboard or desired page

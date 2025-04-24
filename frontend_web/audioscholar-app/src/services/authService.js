@@ -2,7 +2,7 @@
 
 // Base URL of your backend API (ensure this is correct and accessible)
 // You had two lines, I will keep the first active one and add the export
-export const API_BASE_URL = 'https://actively-guided-mackerel.ngrok-free.app/'; // <--- Added 'export'!
+export const API_BASE_URL = 'https://it342-g3-audioscholar-onrender-com.onrender.com/'; // <--- Added 'export'!
 
 //const API_BASE_URL = 'https://mastodon-balanced-randomly.ngrok-free.app/'; // This line remains commented out
 

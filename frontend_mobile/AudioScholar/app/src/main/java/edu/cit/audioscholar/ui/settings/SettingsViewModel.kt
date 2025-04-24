@@ -9,6 +9,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
+import javax.inject.Named
+import edu.cit.audioscholar.di.PreferencesModule
+import edu.cit.audioscholar.domain.model.QualitySetting
 
 enum class ThemeSetting(@StringRes val labelResId: Int) {
     Light(R.string.settings_theme_light),
@@ -16,20 +19,13 @@ enum class ThemeSetting(@StringRes val labelResId: Int) {
     System(R.string.settings_theme_system)
 }
 
-enum class QualitySetting(@StringRes val labelResId: Int) {
-    Low(R.string.settings_quality_low),
-    Medium(R.string.settings_quality_medium),
-    High(R.string.settings_quality_high)
-}
-
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val prefs: SharedPreferences
+    @Named(PreferencesModule.SETTINGS_PREFERENCES) private val prefs: SharedPreferences
 ) : ViewModel() {
 
     companion object {
         const val PREF_KEY_THEME = "pref_theme"
-        const val PREF_KEY_QUALITY = "pref_quality"
     }
 
     private val _selectedTheme = MutableStateFlow(ThemeSetting.System)
@@ -48,7 +44,7 @@ class SettingsViewModel @Inject constructor(
         _selectedTheme.value = ThemeSetting.values().firstOrNull { it.name == savedThemeName }
             ?: ThemeSetting.System
 
-        val savedQualityName = prefs.getString(PREF_KEY_QUALITY, QualitySetting.Medium.name)
+        val savedQualityName = prefs.getString(QualitySetting.PREF_KEY, QualitySetting.DEFAULT)
         _selectedQuality.value = QualitySetting.values().firstOrNull { it.name == savedQualityName }
             ?: QualitySetting.Medium
     }
@@ -64,7 +60,7 @@ class SettingsViewModel @Inject constructor(
     fun updateQuality(quality: QualitySetting) {
         _selectedQuality.value = quality
         with(prefs.edit()) {
-            putString(PREF_KEY_QUALITY, quality.name)
+            putString(QualitySetting.PREF_KEY, quality.name)
             apply()
         }
     }

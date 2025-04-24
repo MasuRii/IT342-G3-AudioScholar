@@ -29,8 +29,10 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val PRIMARY_BASE_URL = "https://mastodon-balanced-randomly.ngrok-free.app/"
-    private const val FALLBACK_BASE_URL = "http://192.168.254.104:8080/"
+    private const val PRIMARY_BASE_URL = "https://it342-g3-audioscholar-onrender-com.onrender.com/"
+    private const val FALLBACK_URL_1 = "https://mastodon-balanced-randomly.ngrok-free.app/"
+    private const val FALLBACK_URL_2 = "http://192.168.254.104:8080/"
+
     private const val PREFS_NAME = "AudioScholarPrefs"
     private const val TAG = "NetworkModule"
 
@@ -67,81 +69,124 @@ object NetworkModule {
     @Singleton
     fun provideFallbackInterceptor(): Interceptor {
         val primaryHttpUrl = PRIMARY_BASE_URL.toHttpUrlOrNull()
-        val fallbackHttpUrl = FALLBACK_BASE_URL.toHttpUrlOrNull()
+        val fallback1HttpUrl = FALLBACK_URL_1.toHttpUrlOrNull()
+        val fallback2HttpUrl = FALLBACK_URL_2.toHttpUrlOrNull()
 
         if (primaryHttpUrl == null) {
             Log.e(TAG, "FATAL: Could not parse PRIMARY_BASE_URL: $PRIMARY_BASE_URL")
         }
-        if (fallbackHttpUrl == null) {
-            Log.e(TAG, "ERROR: Could not parse FALLBACK_BASE_URL: $FALLBACK_BASE_URL. Fallback will not work.")
+        if (fallback1HttpUrl == null) {
+            Log.w(TAG, "WARNING: Could not parse FALLBACK_URL_1: $FALLBACK_URL_1. First fallback will not work.")
+        }
+        if (fallback2HttpUrl == null) {
+            Log.w(TAG, "WARNING: Could not parse FALLBACK_URL_2: $FALLBACK_URL_2. Second fallback will not work.")
         }
 
         return Interceptor { chain ->
             val originalRequest: Request = chain.request()
-            var primaryResponse: Response? = null
-            var attemptFallback = false
-            var primaryException: IOException? = null
-            var primaryResponseCode = -1
+            var lastException: IOException? = null
+            var lastResponseCode: Int = -1
 
-            if (primaryHttpUrl != null && originalRequest.url.host == primaryHttpUrl.host) {
+            if (primaryHttpUrl != null) {
+                val primaryUrl = originalRequest.url.newBuilder()
+                    .scheme(primaryHttpUrl.scheme)
+                    .host(primaryHttpUrl.host)
+                    .port(primaryHttpUrl.port)
+                    .build()
+                val primaryRequest = originalRequest.newBuilder().url(primaryUrl).build()
+
+                Log.d(TAG, "Attempting request to primary URL: ${primaryRequest.url}")
                 try {
-                    Log.d(TAG, "Attempting request to primary URL: ${originalRequest.url}")
-                    primaryResponse = chain.proceed(originalRequest)
-                    primaryResponseCode = primaryResponse.code
-
-                    if (primaryResponseCode >= 500) {
-                        Log.w(TAG, "Primary URL request returned server error code: $primaryResponseCode. Will attempt fallback.")
-                        attemptFallback = true
-                        primaryResponse.close()
-                        primaryResponse = null
+                    val response = chain.proceed(primaryRequest)
+                    lastResponseCode = response.code
+                    if (response.isSuccessful || response.code < 500) {
+                        Log.d(TAG, "Primary URL request successful (code: ${response.code}).")
+                        return@Interceptor response
                     } else {
-                        Log.d(TAG, "Primary URL request returned code: $primaryResponseCode. Not falling back.")
-                        return@Interceptor primaryResponse
+                        Log.w(TAG, "Primary URL request failed with server error code: ${response.code}. Attempting fallback 1.")
+                        response.close()
                     }
-
                 } catch (e: IOException) {
-                    Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback.")
-                    primaryException = e
-                    attemptFallback = true
-                    primaryResponse?.close()
-                    primaryResponse = null
+                    Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback 1.")
+                    lastException = e
                 }
             } else {
-                val reason = if (primaryHttpUrl == null) "primary URL invalid" else "host mismatch (${originalRequest.url.host} != ${primaryHttpUrl.host})"
-                Log.d(TAG, "Request URL does not match primary host or primary URL invalid ($reason). Proceeding without fallback interceptor logic.")
-                return@Interceptor chain.proceed(originalRequest)
+                Log.e(TAG, "Primary URL is invalid. Skipping primary attempt.")
+                lastException = IOException("Primary Base URL '$PRIMARY_BASE_URL' is invalid.")
             }
 
-            if (attemptFallback && fallbackHttpUrl != null) {
-                val fallbackUrl = originalRequest.url.newBuilder()
-                    .scheme(fallbackHttpUrl.scheme)
-                    .host(fallbackHttpUrl.host)
-                    .port(fallbackHttpUrl.port)
-                    .build()
-                val fallbackRequest = originalRequest.newBuilder()
-                    .url(fallbackUrl)
-                    .build()
 
-                Log.w(TAG, "Attempting fallback request to: $fallbackUrl")
+            if (fallback1HttpUrl != null) {
+                val fallback1Url = originalRequest.url.newBuilder()
+                    .scheme(fallback1HttpUrl.scheme)
+                    .host(fallback1HttpUrl.host)
+                    .port(fallback1HttpUrl.port)
+                    .build()
+                val fallback1Request = originalRequest.newBuilder().url(fallback1Url).build()
+
+                Log.w(TAG, "Attempting fallback request 1 to: $fallback1Url")
                 try {
-                    val fallbackResponse = chain.proceed(fallbackRequest)
-                    Log.d(TAG, "Fallback URL request finished (code: ${fallbackResponse.code})")
-                    return@Interceptor fallbackResponse
-                } catch (fallbackException: IOException) {
-                    Log.e(TAG, "Fallback URL request also failed with IOException (${fallbackException::class.java.simpleName}): ${fallbackException.message}")
-                    val combinedMessage = "Primary request failed${if (primaryException != null) " (IOException: ${primaryException.message})" else " (HTTP code: $primaryResponseCode)"}, and fallback attempt also failed: ${fallbackException.message}"
-                    throw IOException(combinedMessage, fallbackException)
+                    val response = chain.proceed(fallback1Request)
+                    lastResponseCode = response.code
+                    lastException = null
+                    if (response.isSuccessful || response.code < 500) {
+                        Log.d(TAG, "Fallback URL 1 request successful (code: ${response.code}).")
+                        return@Interceptor response
+                    } else {
+                        Log.w(TAG, "Fallback URL 1 request failed with server error code: ${response.code}. Attempting fallback 2.")
+                        response.close()
+                    }
+                } catch (e: IOException) {
+                    Log.e(TAG, "Fallback URL 1 request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback 2.")
+                    lastException = e
                 }
-            } else if (attemptFallback) {
-                Log.e(TAG, "Primary request failed${if (primaryException != null) "" else " (HTTP code: $primaryResponseCode)"}, but fallback URL is not configured or invalid. Cannot fallback.")
-                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (HTTP code: $primaryResponseCode), but no valid fallback URL configured.")
             } else {
-                Log.e(TAG, "Fallback logic reached unexpectedly. Should have returned or thrown earlier. Primary Code: $primaryResponseCode")
-                throw IOException("Unexpected state in fallback interceptor.")
+                Log.w(TAG, "Fallback URL 1 is invalid. Skipping fallback 1 attempt.")
+                if (lastException == null && lastResponseCode >= 500) {
+                    lastException = IOException("Primary request failed (HTTP $lastResponseCode) and Fallback URL 1 '$FALLBACK_URL_1' is invalid.")
+                } else if (lastException == null) {
+                    lastException = IOException("Primary and Fallback URL 1 are invalid.")
+                }
             }
+
+            if (fallback2HttpUrl != null) {
+                val fallback2Url = originalRequest.url.newBuilder()
+                    .scheme(fallback2HttpUrl.scheme)
+                    .host(fallback2HttpUrl.host)
+                    .port(fallback2HttpUrl.port)
+                    .build()
+                val fallback2Request = originalRequest.newBuilder().url(fallback2Url).build()
+
+                Log.w(TAG, "Attempting fallback request 2 to: $fallback2Url")
+                try {
+                    val response = chain.proceed(fallback2Request)
+                    lastResponseCode = response.code
+                    lastException = null
+                    if (response.isSuccessful || response.code < 500) {
+                        Log.d(TAG, "Fallback URL 2 request successful (code: ${response.code}).")
+                        return@Interceptor response
+                    } else {
+                        Log.w(TAG, "Fallback URL 2 request also failed with server error code: ${response.code}. All attempts failed.")
+                        response.close()
+                        throw IOException("All attempts failed. Last attempt (Fallback 2) resulted in HTTP code: $lastResponseCode")
+                    }
+                } catch (e: IOException) {
+                    Log.e(TAG, "Fallback URL 2 request also failed with IOException (${e::class.java.simpleName}): ${e.message}. All attempts failed.")
+                    lastException = e
+                }
+            } else {
+                Log.w(TAG, "Fallback URL 2 is invalid. Skipping fallback 2 attempt.")
+                if (lastException == null && lastResponseCode >= 500) {
+                    lastException = IOException("Previous attempts failed (last code: $lastResponseCode) and Fallback URL 2 '$FALLBACK_URL_2' is invalid.")
+                } else if (lastException == null) {
+                    lastException = IOException("All Base URLs (Primary, Fallback 1, Fallback 2) are invalid.")
+                }
+            }
+
+            Log.e(TAG, "All URL attempts (Primary, Fallback 1, Fallback 2) failed.")
+            throw lastException ?: IOException("All attempts failed. Last attempt resulted in HTTP code: $lastResponseCode")
         }
     }
-
 
     @Provides
     @Singleton

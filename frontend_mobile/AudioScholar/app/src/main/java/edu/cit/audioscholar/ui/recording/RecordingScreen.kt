@@ -239,7 +239,7 @@ fun RecordingScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 16.dp),
+                    .padding(vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -353,10 +353,10 @@ fun AudioWaveformVisualizer(
     amplitude: Float,
     isPaused: Boolean,
     modifier: Modifier = Modifier,
-    barCount: Int = 50,
-    barWidth: Dp = 3.dp,
-    barGap: Dp = 2.dp,
-    minBarHeight: Dp = 4.dp,
+    barCount: Int = 80,
+    barWidth: Dp = 1.5.dp,
+    barGap: Dp = 1.dp,
+    minBarHeight: Dp = 2.dp,
     lowAmplitudeColor: Color = Color.Unspecified,
     highAmplitudeColor: Color = Color.Unspecified,
     barAlpha: Float = 0.4f,
@@ -391,9 +391,12 @@ fun AudioWaveformVisualizer(
         val canvasHeight = size.height
         val totalBarWidthPx = barWidth.toPx()
         val totalGapWidthPx = barGap.toPx()
-        val segmentWidth = totalBarWidthPx + totalGapWidthPx
-        val totalRequiredWidth = (segmentWidth * barCount) - totalGapWidthPx
-        val startOffset = (canvasWidth - totalRequiredWidth) / 2f
+        
+        // Calculate the available width for bars and gaps
+        val availableWidth = canvasWidth
+        
+        // Calculate the actual bar width and gap to fill the entire width
+        val actualBarWidth = (availableWidth - (totalGapWidthPx * (barCount - 1))) / barCount
         val minHeightPx = minBarHeight.toPx()
 
         drawContext.canvas.save()
@@ -407,14 +410,15 @@ fun AudioWaveformVisualizer(
 
             val barColor = lerp(actualLowColor, actualHighColor, visuallyScaledAmplitude)
 
-            val barX = startOffset + i * segmentWidth
+            // Calculate bar position using the full width
+            val barX = i * (actualBarWidth + totalGapWidthPx)
             val barY = (canvasHeight - barHeight) / 2f
 
             drawRoundRect(
                 color = barColor.copy(alpha = barAlpha),
                 topLeft = Offset(barX, barY),
-                size = Size(totalBarWidthPx, barHeight),
-                cornerRadius = CornerRadius(x = totalBarWidthPx / 2, y = totalBarWidthPx / 2)
+                size = Size(actualBarWidth, barHeight),
+                cornerRadius = CornerRadius(x = actualBarWidth / 2, y = actualBarWidth / 2)
             )
         }
         drawContext.canvas.restore()
@@ -445,14 +449,9 @@ fun RecordingTitleDialog(
         },
         confirmButton = {
             Button(onClick = {
-                onConfirm(title.trim().takeIf { it.isNotEmpty() })
+                onConfirm(title.trim().ifEmpty { null })
             }) {
                 Text(stringResource(R.string.dialog_action_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.dialog_action_skip))
             }
         }
     )

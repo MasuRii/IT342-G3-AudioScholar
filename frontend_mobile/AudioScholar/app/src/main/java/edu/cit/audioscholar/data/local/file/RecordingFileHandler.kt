@@ -1,6 +1,7 @@
 package edu.cit.audioscholar.data.local.file
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.StatFs
@@ -8,13 +9,14 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
+import edu.cit.audioscholar.di.PreferencesModule
+import edu.cit.audioscholar.domain.model.QualitySetting
+import java.io.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
+import javax.inject.Named
 
 private const val RECORDINGS_DIRECTORY_NAME = "Recordings"
 private const val FILENAME_DATE_FORMAT = "yyyy-MM-dd_HH-mm-ss"
@@ -34,7 +36,8 @@ private const val TAG = "RecordingFileHandler"
 class InsufficientStorageException(message: String) : IOException(message)
 
 class RecordingFileHandler @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    @Named(PreferencesModule.SETTINGS_PREFERENCES) private val prefs: SharedPreferences
 ) {
 
     fun getRecordingsDirectory(): Result<File> {
@@ -173,29 +176,55 @@ class RecordingFileHandler @Inject constructor(
 
 
     fun setupMediaRecorderOutputFile(mediaRecorder: MediaRecorder): Result<File> {
-        val recordingsDirResult = getRecordingsDirectory()
-        if (recordingsDirResult.isFailure) {
-            return Result.failure(recordingsDirResult.exceptionOrNull() ?: IOException("Failed to get recordings directory"))
-        }
-        val recordingsDir = recordingsDirResult.getOrThrow()
-
-        if (!hasSufficientStorage(recordingsDir)) {
-            Log.e(TAG, "Insufficient storage space available for new recording.")
-            return Result.failure(InsufficientStorageException("Not enough storage space to start recording."))
-        }
-
         return try {
+            val quality = QualitySetting.valueOf(
+                prefs.getString(QualitySetting.PREF_KEY, QualitySetting.DEFAULT)
+                    ?: QualitySetting.DEFAULT
+            )
+            
+            val channels = when (quality) {
+                QualitySetting.Low -> 1
+                QualitySetting.Medium -> 1
+                QualitySetting.High -> 2
+            }
+            
+            val bitrate = when (quality) {
+                QualitySetting.Low -> 64000
+                QualitySetting.Medium -> 128000
+                QualitySetting.High -> 256000
+            }
+            
+            Log.d("RecordingQuality", "Quality Setting: $quality")
+            Log.d("RecordingQuality", "Audio Configuration: Channels=$channels (${if(channels==1) "Mono" else "Stereo"}), " +
+                    "Bitrate=${bitrate/1000}kbps, SampleRate=${AUDIO_SAMPLING_RATE/1000}kHz")
+
+            mediaRecorder.apply {
+                setAudioSource(AUDIO_SOURCE)
+                setOutputFormat(OUTPUT_FORMAT)
+                setAudioEncoder(AUDIO_ENCODER)
+                setAudioChannels(channels)
+                setAudioEncodingBitRate(bitrate)
+                setAudioSamplingRate(AUDIO_SAMPLING_RATE)
+                
+                Log.d("RecordingQuality", "MediaRecorder configured with quality settings: $quality")
+            }
+
+            val recordingsDirResult = getRecordingsDirectory()
+            if (recordingsDirResult.isFailure) {
+                return Result.failure(recordingsDirResult.exceptionOrNull() ?: IOException("Failed to get recordings directory"))
+            }
+            val recordingsDir = recordingsDirResult.getOrThrow()
+
+            if (!hasSufficientStorage(recordingsDir)) {
+                Log.e(TAG, "Insufficient storage space available for new recording.")
+                return Result.failure(InsufficientStorageException("Not enough storage space to start recording."))
+            }
+
             val timestamp = SimpleDateFormat(FILENAME_DATE_FORMAT, Locale.US).format(Date())
             val filename = "$FILENAME_PREFIX$timestamp.m4a"
             val outputFile = File(recordingsDir, filename)
             Log.d(TAG, "Generated output file path for recording: ${outputFile.absolutePath}")
 
-            mediaRecorder.setAudioSource(AUDIO_SOURCE)
-            mediaRecorder.setOutputFormat(OUTPUT_FORMAT)
-            mediaRecorder.setAudioEncoder(AUDIO_ENCODER)
-            mediaRecorder.setAudioChannels(AUDIO_CHANNELS)
-            mediaRecorder.setAudioEncodingBitRate(AUDIO_ENCODING_BIT_RATE)
-            mediaRecorder.setAudioSamplingRate(AUDIO_SAMPLING_RATE)
             mediaRecorder.setOutputFile(outputFile.absolutePath)
 
             Log.i(TAG, "MediaRecorder configured successfully for output.")
@@ -215,7 +244,7 @@ class RecordingFileHandler @Inject constructor(
             Log.e(TAG, "IllegalStateException during MediaRecorder configuration", e)
             Result.failure(IllegalStateException("Recorder setup failed (invalid state): ${e.localizedMessage}", e))
         } catch (e: Exception) {
-            Log.e(TAG, "Unexpected error during MediaRecorder setup", e)
+            Log.e("RecordingQuality", "Failed to configure quality settings: ${e.message}")
             Result.failure(IOException("An unexpected error occurred during recorder setup: ${e.localizedMessage}", e))
         }
     }

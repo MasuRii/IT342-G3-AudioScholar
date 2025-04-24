@@ -46,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import edu.cit.audioscholar.BuildConfig
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.domain.model.QualitySetting
 import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -106,18 +107,6 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 16.dp)
         ) {
-            SettingsSectionHeader(title = stringResource(R.string.settings_section_account))
-            SettingsItemRow(
-                title = stringResource(R.string.settings_item_edit_profile),
-                onClick = { navController.navigate(Screen.EditProfile.route) }
-            )
-            SettingsItemRow(
-                title = stringResource(R.string.settings_item_change_password),
-                onClick = { navController.navigate(Screen.ChangePassword.route) }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
-
             SettingsSectionHeader(title = stringResource(R.string.settings_section_cloud_sync))
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_sync_mode),

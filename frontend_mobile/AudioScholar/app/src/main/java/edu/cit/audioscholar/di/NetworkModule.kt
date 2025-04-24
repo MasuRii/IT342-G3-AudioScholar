@@ -23,6 +23,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -240,8 +241,11 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRecordingFileHandler(@ApplicationContext context: Context): RecordingFileHandler {
-        return RecordingFileHandler(context)
+    fun provideRecordingFileHandler(
+        @ApplicationContext context: Context,
+        @Named(PreferencesModule.SETTINGS_PREFERENCES) prefs: SharedPreferences
+    ): RecordingFileHandler {
+        return RecordingFileHandler(context, prefs)
     }
 
     @Provides

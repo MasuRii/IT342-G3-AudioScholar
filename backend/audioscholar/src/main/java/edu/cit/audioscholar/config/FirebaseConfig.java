@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -16,49 +15,19 @@ import com.google.firebase.FirebaseOptions;
 @Configuration
 public class FirebaseConfig {
 
-    @Value("${FIREBASE_CREDENTIALS_PATH:#{null}}")
-    private String firebaseCredentialsPath;
-
     private static final Logger logger = LoggerFactory.getLogger(FirebaseConfig.class);
+
+    private static final String GAC_ENV_VAR = "GOOGLE_APPLICATION_CREDENTIALS";
 
     @Bean
     FirebaseApp firebaseApp() throws IOException {
         if (FirebaseApp.getApps().isEmpty()) {
-            InputStream serviceAccountStream = null;
-            String credentialsSource;
-
-            if (firebaseCredentialsPath != null && !firebaseCredentialsPath.isEmpty()) {
-                try {
-                    logger.info("Loading Firebase credentials from path: {}",
-                            firebaseCredentialsPath);
-                    serviceAccountStream = new FileInputStream(firebaseCredentialsPath);
-                    credentialsSource = "file path environment variable";
-                } catch (IOException e) {
-                    logger.error("Failed to load Firebase credentials from path: {}",
-                            firebaseCredentialsPath, e);
-                    throw e;
-                }
-            } else {
-                String classpathResource = "firebase-service-account.json";
-                logger.info(
-                        "Firebase credentials path environment variable not set. Loading from classpath: {}",
-                        classpathResource);
-                try {
-                    serviceAccountStream =
-                            new ClassPathResource(classpathResource).getInputStream();
-                    credentialsSource = "classpath";
-                } catch (IOException e) {
-                    logger.error("Failed to load Firebase credentials from classpath: {}",
-                            classpathResource, e);
-                    throw new IOException(
-                            "Failed to load Firebase credentials from classpath. Ensure '"
-                                    + classpathResource + "' is in src/main/resources.",
-                            e);
-                }
-            }
+            InputStream serviceAccountStream = getCredentialsStream();
 
             if (serviceAccountStream == null) {
-                throw new IOException("Could not initialize Firebase service account stream.");
+                throw new IOException("Could not find Firebase service account credentials via "
+                        + GAC_ENV_VAR
+                        + " environment variable or classpath:firebase-service-account.json");
             }
 
             FirebaseOptions options;
@@ -67,18 +36,50 @@ public class FirebaseConfig {
                         .setCredentials(GoogleCredentials.fromStream(stream))
                         .setDatabaseUrl("https://audioscholar-39b22-default-rtdb.firebaseio.com")
                         .build();
-                logger.info("Successfully loaded Firebase credentials from {}", credentialsSource);
+                logger.info("Successfully configured FirebaseApp.");
             } catch (IOException e) {
-                logger.error("Error processing Firebase credentials stream from {}",
-                        credentialsSource, e);
+                logger.error("Error processing Firebase credentials stream.", e);
                 throw e;
             }
-
 
             return FirebaseApp.initializeApp(options);
         } else {
             logger.info("FirebaseApp already initialized. Returning existing instance.");
             return FirebaseApp.getInstance();
         }
+    }
+
+    private InputStream getCredentialsStream() throws IOException {
+        String credentialsPath = System.getenv(GAC_ENV_VAR);
+        String source;
+
+        if (credentialsPath != null && !credentialsPath.isEmpty()) {
+            source = "environment variable " + GAC_ENV_VAR + " (" + credentialsPath + ")";
+            try {
+                logger.info("Attempting to load Firebase credentials from {}", source);
+                return new FileInputStream(credentialsPath);
+            } catch (IOException e) {
+                logger.warn("Failed to load credentials from {}: {}", source, e.getMessage());
+            }
+        }
+
+        String classpathResource = "firebase-service-account.json";
+        source = "classpath:" + classpathResource;
+        try {
+            logger.info("Attempting to load Firebase credentials from {}", source);
+            InputStream stream = new ClassPathResource(classpathResource).getInputStream();
+            if (stream != null) {
+                logger.info("Successfully found credentials in {}", source);
+                return stream;
+            } else {
+                logger.warn("Credentials not found in {}", source);
+            }
+        } catch (IOException e) {
+            logger.warn("Failed to load credentials from {}: {}", source, e.getMessage());
+        }
+
+        logger.error(
+                "Could not locate Firebase credentials via environment variable or classpath.");
+        return null;
     }
 }

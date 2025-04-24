@@ -1,23 +1,10 @@
 package edu.cit.audioscholar.data.remote.service
 
-import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
-import edu.cit.audioscholar.data.remote.dto.AuthResponse
-import edu.cit.audioscholar.data.remote.dto.ChangePasswordRequest
-import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
-import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
-import edu.cit.audioscholar.data.remote.dto.LoginRequest
-import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
-import edu.cit.audioscholar.data.remote.dto.UpdateUserProfileRequest
-import edu.cit.audioscholar.data.remote.dto.UserProfileDto
+import edu.cit.audioscholar.data.remote.dto.*
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.Response
-import retrofit2.http.Body
-import retrofit2.http.GET
-import retrofit2.http.Multipart
-import retrofit2.http.POST
-import retrofit2.http.PUT
-import retrofit2.http.Part
+import retrofit2.http.*
 
 interface ApiService {
 
@@ -78,4 +65,14 @@ interface ApiService {
 
     @POST("/api/auth/logout")
     suspend fun logout(): Response<Unit>
+
+    @GET("/api/recordings/{recordingId}/summary")
+    suspend fun getRecordingSummary(
+        @Path("recordingId") recordingId: String
+    ): Response<SummaryResponseDto>
+
+    @GET("/api/v1/recommendations/recording/{recordingId}")
+    suspend fun getRecordingRecommendations(
+        @Path("recordingId") recordingId: String
+    ): Response<List<RecommendationDto>>
 }

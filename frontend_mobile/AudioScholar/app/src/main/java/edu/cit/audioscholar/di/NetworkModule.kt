@@ -14,17 +14,9 @@ import dagger.hilt.components.SingletonComponent
 import edu.cit.audioscholar.data.local.UserDataStore
 import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import edu.cit.audioscholar.data.remote.service.ApiService
-import edu.cit.audioscholar.domain.repository.AuthRepository
-import edu.cit.audioscholar.domain.repository.AuthRepositoryImpl
-import edu.cit.audioscholar.domain.repository.LocalAudioRepository
-import edu.cit.audioscholar.domain.repository.LocalAudioRepositoryImpl
-import edu.cit.audioscholar.domain.repository.RemoteAudioRepository
-import edu.cit.audioscholar.domain.repository.RemoteAudioRepositoryImpl
+import edu.cit.audioscholar.domain.repository.*
+import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.Interceptor
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -88,6 +80,7 @@ object NetworkModule {
             val originalRequest: Request = chain.request()
             var primaryResponse: Response? = null
             var attemptFallback = false
+            var primaryException: IOException? = null
             var primaryResponseCode = -1
 
             if (primaryHttpUrl != null && originalRequest.url.host == primaryHttpUrl.host) {
@@ -96,8 +89,8 @@ object NetworkModule {
                     primaryResponse = chain.proceed(originalRequest)
                     primaryResponseCode = primaryResponse.code
 
-                    if (primaryResponseCode >= 500 || primaryResponseCode == 404) {
-                        Log.w(TAG, "Primary URL request returned code: $primaryResponseCode. Will attempt fallback.")
+                    if (primaryResponseCode >= 500) {
+                        Log.w(TAG, "Primary URL request returned server error code: $primaryResponseCode. Will attempt fallback.")
                         attemptFallback = true
                         primaryResponse.close()
                         primaryResponse = null
@@ -108,6 +101,7 @@ object NetworkModule {
 
                 } catch (e: IOException) {
                     Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback.")
+                    primaryException = e
                     attemptFallback = true
                     primaryResponse?.close()
                     primaryResponse = null
@@ -135,13 +129,14 @@ object NetworkModule {
                     return@Interceptor fallbackResponse
                 } catch (fallbackException: IOException) {
                     Log.e(TAG, "Fallback URL request also failed with IOException (${fallbackException::class.java.simpleName}): ${fallbackException.message}")
-                    throw IOException("Primary request failed (or returned $primaryResponseCode), and fallback attempt also failed: ${fallbackException.message}", fallbackException)
+                    val combinedMessage = "Primary request failed${if (primaryException != null) " (IOException: ${primaryException.message})" else " (HTTP code: $primaryResponseCode)"}, and fallback attempt also failed: ${fallbackException.message}"
+                    throw IOException(combinedMessage, fallbackException)
                 }
             } else if (attemptFallback) {
-                Log.e(TAG, "Primary request failed (or returned $primaryResponseCode), but fallback URL is not configured or invalid. Cannot fallback.")
-                throw IOException("Primary request to ${originalRequest.url} failed (or returned $primaryResponseCode), but no valid fallback URL configured.")
+                Log.e(TAG, "Primary request failed${if (primaryException != null) "" else " (HTTP code: $primaryResponseCode)"}, but fallback URL is not configured or invalid. Cannot fallback.")
+                throw primaryException ?: IOException("Primary request to ${originalRequest.url} failed (HTTP code: $primaryResponseCode), but no valid fallback URL configured.")
             } else {
-                Log.e(TAG, "Fallback logic reached unexpectedly. Should have returned or thrown earlier. Code: $primaryResponseCode")
+                Log.e(TAG, "Fallback logic reached unexpectedly. Should have returned or thrown earlier. Primary Code: $primaryResponseCode")
                 throw IOException("Unexpected state in fallback interceptor.")
             }
         }

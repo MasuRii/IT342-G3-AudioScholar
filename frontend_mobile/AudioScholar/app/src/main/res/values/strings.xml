@@ -41,6 +41,23 @@
     <string name="error_unexpected_saving">An unexpected error occurred while saving.</string>
     <string name="error_service_start">Could not start recording service.</string>
 
+    <string name="details_process_recording_button">Process Recording</string>
+    <string name="details_processing_data">Processing data…</string>
+    <string name="details_summary_placeholder">Summary will appear here once processed.</string>
+    <string name="details_error_loading">Could not load recording details.</string>
+    <string name="details_copy_success_message">Copied to clipboard</string>
+
+    <string name="error_network_connection_generic">Could not connect. Please check your internet connection.</string>
+    <string name="error_server_generic">Could not reach the server. Please try again later.</string>
+    <string name="error_processing_timeout">Processing took too long. Please try again later.</string>
+    <string name="error_summary_fetch_failed">Failed to get summary. Please try again.</string>
+    <string name="error_recommendations_fetch_failed">Failed to get recommendations. Please try again.</string>
+    <string name="error_upload_failed_generic">Upload failed. Please try again.</string>
+    <string name="error_upload_failed_detailed">Upload failed: %1$s</string>
+    <string name="error_local_storage_issue">Cannot process: File not found or unreadable.</string>
+    <string name="error_metadata_update_failed">Failed to update local recording details.</string>
+    <string name="error_unexpected_details_view">An unexpected error occurred.</string>
+
     <string name="edit_profile_displayname_label">Display Name</string>
     <string name="edit_profile_displayname_placeholder">How your name appears publicly</string>
     <string name="button_save">Save Changes</string>
@@ -90,9 +107,6 @@
 
     <string name="details_summary_copy_button">Copy Summary &amp; Notes</string>
     <string name="details_ai_notes_title">AI Notes</string>
-    <string name="details_copy_success_message">Copied to clipboard</string>
-    <string name="details_summary_placeholder">Summary will appear here when ready.</string>
-    <string name="details_error_loading">Could not load recording details.</string>
     <string name="cd_copy_summary_notes">Copy summary and notes</string>
     <string name="cd_ai_notes_section">AI generated notes section</string>
     <string name="cd_powerpoint_section">PowerPoint attachment section</string>

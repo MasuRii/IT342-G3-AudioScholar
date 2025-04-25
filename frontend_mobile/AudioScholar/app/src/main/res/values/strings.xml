@@ -318,5 +318,7 @@
     <string name="login_welcome_returning">Welcome back!</string>
 
     <string name="details_notes_title">AI Notes</string>
+    <string name="details_notes_placeholder">No notes available yet.</string>
+    <string name="details_notes_failed">Failed to generate notes.</string>
 
 </resources>

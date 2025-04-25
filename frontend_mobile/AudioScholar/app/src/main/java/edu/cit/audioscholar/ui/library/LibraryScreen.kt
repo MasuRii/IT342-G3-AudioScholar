@@ -98,6 +98,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import androidx.compose.runtime.rememberCoroutineScope
 
 private fun formatTimestampMillis(timestampMillis: Long): String {
     if (timestampMillis <= 0) return "Unknown date"
@@ -171,13 +172,13 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
     navController: NavHostController,
     drawerState: DrawerState,
-    scope: CoroutineScope,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val areAllSelected by viewModel.areAllLocalRecordingsSelected.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
     val audioPickerLauncher: ActivityResultLauncher<Array<String>> = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
@@ -218,21 +219,6 @@ fun LibraryScreen(
                 showSnackbar(errorMsg)
             }
             viewModel.consumeError()
-        }
-    }
-
-    LaunchedEffect(pagerState.currentPage, uiState.hasAttemptedCloudLoad) {
-        if (pagerState.currentPage == 1 && !uiState.hasAttemptedCloudLoad) {
-            Log.d(
-                "LibraryScreen",
-                "Cloud tab selected (page 1) and cloud load not attempted yet. Triggering initial load."
-            )
-            viewModel.triggerCloudLoadIfNeeded()
-        } else {
-            Log.d(
-                "LibraryScreen",
-                "Pager changed to ${pagerState.currentPage} or cloud load already attempted (${uiState.hasAttemptedCloudLoad}). Skipping initial trigger.",
-            )
         }
     }
 
@@ -373,6 +359,10 @@ fun LibraryScreen(
                         onClick = {
                             scope.launch {
                                 pagerState.animateScrollToPage(index)
+                                if (index == 1) {
+                                    Log.d("LibraryScreen", "Cloud tab clicked, forcing refresh.")
+                                    viewModel.forceRefreshCloudRecordings()
+                                }
                             }
                         },
                         text = { Text(text = title) }

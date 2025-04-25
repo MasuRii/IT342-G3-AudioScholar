@@ -520,7 +520,6 @@ fun MainAppScreen(
                 LibraryScreen(
                     navController = navController,
                     drawerState = drawerState,
-                    scope = scope
                 )
             }
             composable(Screen.Settings.route) {

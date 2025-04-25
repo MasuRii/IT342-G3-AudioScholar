@@ -13,6 +13,7 @@ import Dashboard from './components/dashboard';
 import RecordingList from './components/RecordingList';
 import UserProfile from './components/UserProfile';
 import RecordingData from './components/RecordingData';
+import GithubAuthCallback from './components/GithubAuthCallback';
 
 function App() {
   return (
@@ -58,6 +59,9 @@ function App() {
 
           {/* User Profile route */}
           <Route path="/profile" element={<UserProfile />} />
+
+          {/* GitHub Auth Callback Route */}
+          <Route path="/auth/github/callback" element={<GithubAuthCallback />} />
         </Routes>
       </div>
     </Router>

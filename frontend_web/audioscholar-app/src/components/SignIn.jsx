@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'firebase/auth'; // Import Firebase Auth functions
+import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, GithubAuthProvider, signInWithPopup, onAuthStateChanged } from 'firebase/auth'; // Import Firebase Auth functions
 import { FcGoogle } from 'react-icons/fc'; // Using react-icons for Google icon
+import { FaGithub } from 'react-icons/fa'; // Import GitHub icon
 // Import your Firebase app configuration (ensure this file exists and is configured)
 import { firebaseApp } from '../config/firebaseConfig'; // Adjust path if necessary
 // Import the service function to call your backend
@@ -149,14 +150,24 @@ const SignIn = () => {
          // setLoading(false) is handled within handleBackendVerification for success/backend error cases
     };
 
-    // --- GitHub Sign In (Placeholder - implement similarly if needed) ---
+    // --- GitHub Sign In (Manual OAuth Flow - Step 1: Redirect) ---
     const handleGithubSignIn = () => {
-        setError('GitHub Sign-In is not implemented yet.');
-        // Implementation would be similar to Google:
-        // 1. Create GithubAuthProvider
-        // 2. Call signInWithPopup(auth, githubProvider)
-        // 3. Get idToken
-        // 4. Call handleBackendVerification(idToken)
+        const githubClientId = 'Iv23liMzUNGL8JuXu40i'; // Use provided Client ID
+
+        // **IMPORTANT:** This MUST match the callback URL configured in your GitHub OAuth App
+        // Assuming standard localhost for Vite dev server. Change if different!
+        const redirectUri = `${window.location.origin}auth/github/callback`;
+
+        // Optional: Add scopes if needed (e.g., 'user:email' if backend requires it)
+        const scope = 'read:user user:email'; // Request email scope as backend seems to need it
+
+        // Construct the GitHub authorization URL
+        const authUrl = `https://github.com/login/oauth/authorize?client_id=${githubClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
+
+        console.log('Redirecting to GitHub for authorization...');
+        console.log('Constructed Auth URL:', authUrl); // <-- Log the full URL
+        // Redirect the user's browser to GitHub
+        window.location.href = authUrl;
     };
 
     return (
@@ -198,11 +209,11 @@ const SignIn = () => {
                                 <span className="text-sm font-medium text-gray-700">Sign in with Google</span>
                             </button>
                             <button
-                                onClick={handleGithubSignIn} // Placeholder handler
+                                onClick={handleGithubSignIn} // Use actual GitHub handler
                                 className="flex-1 flex items-center justify-center gap-2 py-2 px-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
                                 disabled={loading} // Disable during any loading
                             >
-                                {/* <FaGithub className="w-5 h-5" /> */}
+                                <FaGithub className="w-5 h-5" />
                                 <span className="text-sm font-medium text-gray-700">Sign in with Github</span>
                             </button>
                         </div>

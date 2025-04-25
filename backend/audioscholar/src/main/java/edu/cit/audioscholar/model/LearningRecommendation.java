@@ -1,31 +1,27 @@
 package edu.cit.audioscholar.model;
 
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
 import com.google.cloud.firestore.annotation.ServerTimestamp;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-
 public class LearningRecommendation {
-
     @DocumentId
     private String recommendationId;
-
     private String videoId;
     private String title;
     private String descriptionSnippet;
     private String thumbnailUrl;
     private String recordingId;
-
     @ServerTimestamp
     private Date createdAt;
 
-    public LearningRecommendation() {
-    }
+    public LearningRecommendation() {}
 
-    public LearningRecommendation(String videoId, String title, String descriptionSnippet, String thumbnailUrl, String recordingId) {
+    public LearningRecommendation(String videoId, String title, String descriptionSnippet,
+            String thumbnailUrl, String recordingId) {
         this.videoId = videoId;
         this.title = title;
         this.descriptionSnippet = descriptionSnippet;
@@ -116,17 +112,12 @@ public class LearningRecommendation {
         return recommendation;
     }
 
-
     @Override
     public String toString() {
-        return "LearningRecommendation{" +
-                "recommendationId='" + recommendationId + '\'' +
-                ", videoId='" + videoId + '\'' +
-                ", title='" + title + '\'' +
-                ", descriptionSnippet='" + descriptionSnippet + '\'' +
-                ", thumbnailUrl='" + thumbnailUrl + '\'' +
-                ", recordingId='" + recordingId + '\'' +
-                ", createdAt=" + createdAt +
-                '}';
+        return "LearningRecommendation{" + "recommendationId='" + recommendationId + '\''
+                + ", videoId='" + videoId + '\'' + ", title='" + title + '\''
+                + ", descriptionSnippet='" + descriptionSnippet + '\'' + ", thumbnailUrl='"
+                + thumbnailUrl + '\'' + ", recordingId='" + recordingId + '\'' + ", createdAt="
+                + createdAt + '}';
     }
 }

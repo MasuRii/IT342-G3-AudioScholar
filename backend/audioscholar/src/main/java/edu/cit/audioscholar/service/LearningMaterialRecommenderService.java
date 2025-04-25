@@ -17,15 +17,12 @@ import edu.cit.audioscholar.model.Recording;
 
 @Service
 public class LearningMaterialRecommenderService {
-
     private static final Logger log =
             LoggerFactory.getLogger(LearningMaterialRecommenderService.class);
-
     private final LectureContentAnalyzerService lectureContentAnalyzerService;
     private final YouTubeAPIClient youTubeAPIClient;
     private final Firestore firestore;
     private final RecordingService recordingService;
-
     private final String recommendationsCollectionName = "learningRecommendations";
     private static final int MAX_RECOMMENDATIONS_TO_FETCH = 10;
 
@@ -42,7 +39,6 @@ public class LearningMaterialRecommenderService {
     public List<LearningRecommendation> generateAndSaveRecommendations(String recordingId) {
         log.info("Starting recommendation generation and storage for recording ID: {}",
                 recordingId);
-
         AnalysisResults analysisResults =
                 lectureContentAnalyzerService.analyzeLectureContent(recordingId);
         if (!analysisResults.isSuccess()) {
@@ -57,7 +53,6 @@ public class LearningMaterialRecommenderService {
             return Collections.emptyList();
         }
         log.debug("Keywords extracted for recording ID {}: {}", recordingId, keywords);
-
         try {
             List<SearchResult> youtubeResults =
                     youTubeAPIClient.searchVideos(keywords, MAX_RECOMMENDATIONS_TO_FETCH);
@@ -69,7 +64,6 @@ public class LearningMaterialRecommenderService {
             }
             log.info("Retrieved {} potential recommendations from YouTube for recording ID: {}",
                     youtubeResults.size(), recordingId);
-
             List<LearningRecommendation> recommendations =
                     processYouTubeResults(youtubeResults, recordingId);
             if (recommendations.isEmpty()) {
@@ -78,10 +72,8 @@ public class LearningMaterialRecommenderService {
             }
             log.info("Successfully processed {} unique recommendations for recording ID: {}",
                     recommendations.size(), recordingId);
-
             List<LearningRecommendation> savedRecommendationsWithIds =
                     saveRecommendationsBatch(recommendations);
-
             if (!savedRecommendationsWithIds.isEmpty()) {
                 linkRecommendationsToRecording(recordingId, savedRecommendationsWithIds);
             } else {
@@ -89,9 +81,7 @@ public class LearningMaterialRecommenderService {
                         "No recommendations were successfully saved for recording ID: {}. Skipping linking step.",
                         recordingId);
             }
-
             return savedRecommendationsWithIds;
-
         } catch (Exception e) {
             log.error(
                     "Unexpected error during recommendation generation or saving for recording ID: {}",
@@ -142,30 +132,24 @@ public class LearningMaterialRecommenderService {
         }
     }
 
-
     private void linkRecommendationsToRecording(String recordingId,
             List<LearningRecommendation> savedRecommendations) {
         if (savedRecommendations == null || savedRecommendations.isEmpty()) {
             log.warn("No saved recommendations provided to link for recording ID: {}", recordingId);
             return;
         }
-
         List<String> newRecommendationIds =
                 savedRecommendations.stream().map(LearningRecommendation::getRecommendationId)
                         .filter(Objects::nonNull).collect(Collectors.toList());
-
         if (newRecommendationIds.isEmpty()) {
             log.warn("Extracted recommendation ID list is empty for recording ID: {}. Cannot link.",
                     recordingId);
             return;
         }
-
         log.info("Attempting to link {} new recommendation(s) to recording ID: {}",
                 newRecommendationIds.size(), recordingId);
-
         try {
             Recording recording = recordingService.getRecordingById(recordingId);
-
             if (recording != null) {
                 List<String> currentIds = recording.getRecommendationIds();
                 if (currentIds == null) {
@@ -173,7 +157,6 @@ public class LearningMaterialRecommenderService {
                 } else {
                     currentIds = new ArrayList<>(currentIds);
                 }
-
                 boolean updated = false;
                 for (String newId : newRecommendationIds) {
                     if (!currentIds.contains(newId)) {
@@ -181,7 +164,6 @@ public class LearningMaterialRecommenderService {
                         updated = true;
                     }
                 }
-
                 if (updated) {
                     recording.setRecommendationIds(currentIds);
                     recordingService.updateRecording(recording);
@@ -208,7 +190,6 @@ public class LearningMaterialRecommenderService {
                     e.getMessage(), e);
         }
     }
-
 
     private List<LearningRecommendation> processYouTubeResults(List<SearchResult> youtubeResults,
             String recordingId) {

@@ -38,6 +38,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.remote.dto.GlossaryItemDto
 import edu.cit.audioscholar.data.remote.dto.RecommendationDto
@@ -390,10 +391,10 @@ fun RecordingDetailsScreen(
                                         Spacer(modifier = Modifier.height(8.dp))
 
                                         if (uiState.summaryStatus == SummaryStatus.READY) {
-                                            Text(
-                                                text = uiState.summaryText.ifBlank { stringResource(R.string.details_summary_placeholder) },
+                                            MarkdownText(
+                                                markdown = uiState.summaryText.ifBlank { stringResource(R.string.details_summary_placeholder) },
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = if (uiState.summaryText.isBlank()) LocalContentColor.current.copy(alpha = 0.5f) else LocalContentColor.current
+                                                modifier = Modifier.fillMaxWidth()
                                             )
                                             if (uiState.summaryText.isNotEmpty() || uiState.glossaryItems.isNotEmpty()) {
                                                 Spacer(modifier = Modifier.height(12.dp))

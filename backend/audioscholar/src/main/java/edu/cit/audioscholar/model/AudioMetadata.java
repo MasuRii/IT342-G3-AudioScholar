@@ -20,31 +20,15 @@ public class AudioMetadata {
     private ProcessingStatus status;
     private String recordingId;
     private String summaryId;
+    private String transcriptText;
+    private String tempFilePath;
+    private String failureReason;
 
-    public AudioMetadata() {
-        this.status = ProcessingStatus.UPLOADED;
-    }
-
-    public AudioMetadata(String userId, String fileName, long fileSize, String contentType,
-            String title, String description, String nhostFileId, String storageUrl,
-            Timestamp uploadTimestamp, String recordingId) {
-        this();
-        this.userId = userId;
-        this.fileName = fileName;
-        this.fileSize = fileSize;
-        this.contentType = contentType;
-        this.title = title != null ? title : "";
-        this.description = description != null ? description : "";
-        this.nhostFileId = nhostFileId;
-        this.storageUrl = storageUrl;
-        this.uploadTimestamp = uploadTimestamp;
-        this.recordingId = recordingId;
-    }
+    public AudioMetadata() {}
 
     public AudioMetadata(String id, String userId, String fileName, long fileSize,
-            String contentType, String title, String description, String nhostFileId,
-            String storageUrl, Timestamp uploadTimestamp, ProcessingStatus status,
-            String recordingId, String summaryId) {
+            String contentType, String title, String description, Timestamp uploadTimestamp,
+            String recordingId, ProcessingStatus initialStatus, String tempFilePath) {
         this.id = id;
         this.userId = userId;
         this.fileName = fileName;
@@ -52,13 +36,13 @@ public class AudioMetadata {
         this.contentType = contentType;
         this.title = title != null ? title : "";
         this.description = description != null ? description : "";
-        this.nhostFileId = nhostFileId;
-        this.storageUrl = storageUrl;
         this.uploadTimestamp = uploadTimestamp;
-        this.status = status;
         this.recordingId = recordingId;
-        this.summaryId = summaryId;
+        this.status = initialStatus;
+        this.tempFilePath = tempFilePath;
     }
+
+
 
     public String getId() {
         return id;
@@ -164,6 +148,30 @@ public class AudioMetadata {
         this.summaryId = summaryId;
     }
 
+    public String getTranscriptText() {
+        return transcriptText;
+    }
+
+    public void setTranscriptText(String transcriptText) {
+        this.transcriptText = transcriptText;
+    }
+
+    public String getTempFilePath() {
+        return tempFilePath;
+    }
+
+    public void setTempFilePath(String tempFilePath) {
+        this.tempFilePath = tempFilePath;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
+    }
+
+    public void setFailureReason(String failureReason) {
+        this.failureReason = failureReason;
+    }
+
 
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
@@ -192,8 +200,48 @@ public class AudioMetadata {
             map.put("recordingId", recordingId);
         if (summaryId != null)
             map.put("summaryId", summaryId);
+        if (transcriptText != null)
+            map.put("transcriptText", transcriptText);
+        if (tempFilePath != null)
+            map.put("tempFilePath", tempFilePath);
+        if (failureReason != null)
+            map.put("failureReason", failureReason);
+
         return map;
     }
+
+    public static AudioMetadata fromMap(Map<String, Object> map) {
+        if (map == null)
+            return null;
+        AudioMetadata meta = new AudioMetadata();
+        meta.setId((String) map.get("id"));
+        meta.setUserId((String) map.get("userId"));
+        meta.setFileName((String) map.get("fileName"));
+        Object size = map.get("fileSize");
+        if (size instanceof Number)
+            meta.setFileSize(((Number) size).longValue());
+        meta.setContentType((String) map.get("contentType"));
+        meta.setTitle((String) map.get("title"));
+        meta.setDescription((String) map.get("description"));
+        meta.setNhostFileId((String) map.get("nhostFileId"));
+        meta.setStorageUrl((String) map.get("storageUrl"));
+        meta.setUploadTimestamp((Timestamp) map.get("uploadTimestamp"));
+        String statusStr = (String) map.get("status");
+        if (statusStr != null) {
+            try {
+                meta.setStatus(ProcessingStatus.valueOf(statusStr));
+            } catch (IllegalArgumentException e) {
+                meta.setStatus(ProcessingStatus.FAILED);
+            }
+        }
+        meta.setRecordingId((String) map.get("recordingId"));
+        meta.setSummaryId((String) map.get("summaryId"));
+        meta.setTranscriptText((String) map.get("transcriptText"));
+        meta.setTempFilePath((String) map.get("tempFilePath"));
+        meta.setFailureReason((String) map.get("failureReason"));
+        return meta;
+    }
+
 
     @Override
     public boolean equals(Object o) {
@@ -202,31 +250,19 @@ public class AudioMetadata {
         if (o == null || getClass() != o.getClass())
             return false;
         AudioMetadata that = (AudioMetadata) o;
-        return fileSize == that.fileSize && Objects.equals(id, that.id)
-                && Objects.equals(userId, that.userId) && Objects.equals(fileName, that.fileName)
-                && Objects.equals(contentType, that.contentType)
-                && Objects.equals(title, that.title)
-                && Objects.equals(description, that.description)
-                && Objects.equals(nhostFileId, that.nhostFileId)
-                && Objects.equals(storageUrl, that.storageUrl)
-                && Objects.equals(uploadTimestamp, that.uploadTimestamp) && status == that.status
-                && Objects.equals(recordingId, that.recordingId)
-                && Objects.equals(summaryId, that.summaryId);
+        return Objects.equals(id, that.id) && Objects.equals(userId, that.userId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, userId, fileName, fileSize, contentType, title, description,
-                nhostFileId, storageUrl, uploadTimestamp, status, recordingId, summaryId);
+        return Objects.hash(id, userId);
     }
 
     @Override
     public String toString() {
         return "AudioMetadata{" + "id='" + id + '\'' + ", userId='" + userId + '\'' + ", fileName='"
-                + fileName + '\'' + ", fileSize=" + fileSize + ", contentType='" + contentType
-                + '\'' + ", title='" + title + '\'' + ", description='" + description + '\''
-                + ", nhostFileId='" + nhostFileId + '\'' + ", storageUrl='" + storageUrl + '\''
-                + ", uploadTimestamp=" + uploadTimestamp + ", status=" + status + ", recordingId='"
-                + recordingId + '\'' + ", summaryId='" + summaryId + '\'' + '}';
+                + fileName + '\'' + ", status=" + status + ", recordingId='" + recordingId + '\''
+                + ", tempFilePath='" + tempFilePath + '\'' + ", storageUrl='" + storageUrl + '\''
+                + '}';
     }
 }

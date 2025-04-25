@@ -5,11 +5,8 @@ import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.ServerTimestamp;
 
 public class Summary {
-
     private String summaryId;
     private String recordingId;
-    private String fullText;
-    private String condensedSummary;
     private List<String> keyPoints;
     private List<String> topics;
     private List<Map<String, String>> glossary;
@@ -29,9 +26,7 @@ public class Summary {
         this.summaryId = summaryId;
         this.recordingId = recordingId;
         this.formattedSummaryText = formattedSummaryText;
-        this.fullText = formattedSummaryText;
     }
-
 
     public String getSummaryId() {
         return summaryId;
@@ -49,21 +44,6 @@ public class Summary {
         this.recordingId = recordingId;
     }
 
-    public String getFullText() {
-        return fullText;
-    }
-
-    public void setFullText(String fullText) {
-        this.fullText = fullText;
-    }
-
-    public String getCondensedSummary() {
-        return condensedSummary;
-    }
-
-    public void setCondensedSummary(String condensedSummary) {
-        this.condensedSummary = condensedSummary;
-    }
 
     public List<String> getKeyPoints() {
         return keyPoints;
@@ -105,14 +85,10 @@ public class Summary {
         this.createdAt = createdAt;
     }
 
-
-
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
         map.put("summaryId", summaryId);
         map.put("recordingId", recordingId);
-        map.put("fullText", fullText);
-        map.put("condensedSummary", condensedSummary);
         map.put("keyPoints", keyPoints);
         map.put("topics", topics);
         map.put("glossary", glossary);
@@ -124,12 +100,9 @@ public class Summary {
         if (map == null) {
             return null;
         }
-
         Summary summary = new Summary();
         summary.summaryId = (String) map.get("summaryId");
         summary.recordingId = (String) map.get("recordingId");
-        summary.fullText = (String) map.get("fullText");
-        summary.condensedSummary = (String) map.get("condensedSummary");
         summary.formattedSummaryText = (String) map.get("formattedSummaryText");
 
         Object keyPointsObj = map.get("keyPoints");
@@ -162,6 +135,7 @@ public class Summary {
                     Map<String, String> glossaryItem = new HashMap<>();
                     Object termObj = rawMap.get("term");
                     Object defObj = rawMap.get("definition");
+
                     if (termObj instanceof String && defObj instanceof String) {
                         glossaryItem.put("term", (String) termObj);
                         glossaryItem.put("definition", (String) defObj);

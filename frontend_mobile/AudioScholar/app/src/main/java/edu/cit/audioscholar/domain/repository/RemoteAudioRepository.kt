@@ -1,8 +1,8 @@
 package edu.cit.audioscholar.domain.repository
 
-import android.net.Uri
 import edu.cit.audioscholar.data.remote.dto.*
 import kotlinx.coroutines.flow.Flow
+import java.io.File
 
 sealed class UploadResult {
     data class Success(val metadata: AudioMetadataDto?) : UploadResult()
@@ -13,7 +13,7 @@ sealed class UploadResult {
 
 interface RemoteAudioRepository {
     fun uploadAudioFile(
-        fileUri: Uri,
+        audioFile: File,
         title: String?,
         description: String?
     ): Flow<UploadResult>

@@ -116,10 +116,10 @@ class LocalAudioRepositoryImpl @Inject constructor(
             }
 
             val finalMetadata = RecordingMetadata(
-                id = parsedMetadata?.id ?: timestampMillis,
                 filePath = filePath,
                 fileName = fileName,
                 title = parsedMetadata?.title ?: baseNameWithTimestamp.removePrefix(FILENAME_PREFIX).replace("_", " "),
+                description = parsedMetadata?.description,
                 timestampMillis = timestampMillis,
                 durationMillis = if (parsedMetadata != null && parsedMetadata.durationMillis > 0) parsedMetadata.durationMillis else durationMillis,
                 remoteRecordingId = parsedMetadata?.remoteRecordingId,
@@ -196,10 +196,10 @@ class LocalAudioRepositoryImpl @Inject constructor(
 
                 metadataList.add(
                     RecordingMetadata(
-                        id = parsedMetadata?.id ?: timestampMillis,
                         filePath = filePath,
                         fileName = fileName,
                         title = parsedMetadata?.title ?: baseNameWithTimestamp.removePrefix(FILENAME_PREFIX).replace("_", " "),
+                        description = parsedMetadata?.description,
                         timestampMillis = timestampMillis,
                         durationMillis = if (parsedMetadata != null && parsedMetadata.durationMillis > 0) parsedMetadata.durationMillis else durationMillis,
                         remoteRecordingId = parsedMetadata?.remoteRecordingId,
@@ -419,13 +419,17 @@ class LocalAudioRepositoryImpl @Inject constructor(
         }
 
         val metadata = RecordingMetadata(
-            id = timestamp,
             filePath = targetFile.absolutePath,
             fileName = targetFileName,
             title = finalTitle,
             description = description,
             timestampMillis = timestamp,
-            durationMillis = durationMillis
+            durationMillis = durationMillis,
+            remoteRecordingId = null,
+            cachedSummaryText = null,
+            cachedGlossaryItems = null,
+            cachedRecommendations = null,
+            cacheTimestampMillis = null
         )
 
         val metadataSaved = saveMetadata(metadata)
@@ -472,10 +476,10 @@ class LocalAudioRepositoryImpl @Inject constructor(
         val finalTitle = title ?: baseName.removePrefix(FILENAME_PREFIX).replace("_", " ")
 
         return RecordingMetadata(
-            id = timestampMillis,
             filePath = audioFile.absolutePath,
             fileName = audioFile.name,
             title = finalTitle,
+            description = null,
             timestampMillis = timestampMillis,
             durationMillis = durationMillis,
             remoteRecordingId = null,
@@ -484,5 +488,69 @@ class LocalAudioRepositoryImpl @Inject constructor(
             cachedRecommendations = null,
             cacheTimestampMillis = null
         )
+    }
+
+    override fun getMetadataByRemoteId(remoteId: String): Flow<RecordingMetadata?> = flow {
+        Log.d(TAG_LOCAL_REPO, "Searching for local metadata matching remoteId: $remoteId")
+        val recordingsDir = getRecordingsDirectory()
+        if (recordingsDir == null || !recordingsDir.exists() || !recordingsDir.isDirectory) {
+            emit(null) // No directory, no cache
+            return@flow
+        }
+
+        // Find all JSON metadata files
+        val jsonFiles = recordingsDir.listFiles { _, name ->
+            name.endsWith(FILENAME_EXTENSION_METADATA, ignoreCase = true)
+        } ?: emptyArray()
+
+        Log.d(TAG_LOCAL_REPO, "Found ${jsonFiles.size} potential metadata files to check for remoteId.")
+
+        var foundMetadata: RecordingMetadata? = null
+        for (jsonFile in jsonFiles) {
+            try {
+                val jsonContent = jsonFile.readText()
+                val parsedMetadata = gson.fromJson(jsonContent, RecordingMetadata::class.java)
+                if (parsedMetadata?.remoteRecordingId == remoteId) {
+                    Log.i(TAG_LOCAL_REPO, "Found match for remoteId $remoteId in file: ${jsonFile.name}")
+                    // Re-validate file path just in case audio was deleted but JSON wasn't
+                    val audioFilePath = parsedMetadata.filePath
+                    if (File(audioFilePath).exists()) {
+                        foundMetadata = parsedMetadata
+                         // Fetch duration again in case it wasn't saved correctly before or file changed
+                         // This might be slightly inefficient but ensures accuracy if needed.
+                         // Optional: Trust saved duration if present: parsedMetadata.durationMillis > 0
+                         val updatedDuration = getDurationForFile(audioFilePath) ?: parsedMetadata.durationMillis
+                         foundMetadata = foundMetadata.copy(durationMillis = updatedDuration)
+
+                        break // Stop searching once found
+                    } else {
+                         Log.w(TAG_LOCAL_REPO, "Metadata found for $remoteId, but associated audio file ${parsedMetadata.filePath} is missing. Ignoring cache.")
+                         // Optionally delete the orphan JSON file here: jsonFile.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG_LOCAL_REPO, "Error parsing metadata file ${jsonFile.name} while searching for remoteId $remoteId", e)
+                // Continue searching other files
+            }
+        }
+        emit(foundMetadata)
+    }.flowOn(Dispatchers.IO) // Ensure file operations are off the main thread
+
+    private fun getDurationForFile(filePath: String): Long? {
+        var retriever: MediaMetadataRetriever? = null
+        return try {
+            retriever = MediaMetadataRetriever()
+            retriever.setDataSource(filePath)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } catch (e: Exception) {
+            Log.e(TAG_LOCAL_REPO, "Failed to get duration for file: $filePath", e)
+            null
+        } finally {
+            try {
+                retriever?.release()
+            } catch (e: Exception) {
+                Log.e(TAG_LOCAL_REPO, "Error releasing MediaMetadataRetriever in getDurationForFile", e)
+            }
+        }
     }
 }

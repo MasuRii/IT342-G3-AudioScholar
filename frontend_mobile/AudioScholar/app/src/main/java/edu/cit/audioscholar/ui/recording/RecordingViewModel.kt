@@ -322,12 +322,22 @@ class RecordingViewModel @Inject constructor(
             "Recording ${dateFormat.format(Date(timestamp))}"
         }
 
+        // Ensure description is handled (assuming null if not passed)
+        val description: String? = null // Or get from UI if you add a description field
+
         val metadata = RecordingMetadata(
             filePath = savedFilePath,
             fileName = savedFileName,
-            title = finalTitle,  // Always use a title (either provided or generated)
+            title = finalTitle,
+            description = description, // Add description field
             timestampMillis = timestamp,
-            durationMillis = finishedRecordingDuration
+            durationMillis = finishedRecordingDuration,
+            // Initialize new cache fields to null for a fresh recording
+            remoteRecordingId = null,
+            cachedSummaryText = null,
+            cachedGlossaryItems = null,
+            cachedRecommendations = null,
+            cacheTimestampMillis = null
         )
 
         Log.d("RecordingViewModel", "Finalizing recording metadata: $metadata")

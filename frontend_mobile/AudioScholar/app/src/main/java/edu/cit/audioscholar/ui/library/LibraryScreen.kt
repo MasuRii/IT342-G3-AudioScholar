@@ -96,6 +96,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private fun formatTimestampMillis(timestampMillis: Long): String {
     if (timestampMillis <= 0) return "Unknown date"
@@ -254,6 +256,24 @@ fun LibraryScreen(
                         )
                     }
                 }
+                is LibraryViewEvent.NavigateToLocalDetails -> {
+                    navController.navigate(Screen.RecordingDetails.createLocalRoute(filePath = event.filePath))
+                }
+                is LibraryViewEvent.NavigateToCloudDetails -> {
+                    val metadataDto = AudioMetadataDto(
+                        recordingId = event.recordingId,
+                        title = event.title,
+                        fileName = event.fileName,
+                        storageUrl = event.storageUrl,
+                        uploadTimestamp = event.timestampSeconds?.let { TimestampDto(it, 0) }
+                    )
+                    val route = Screen.RecordingDetails.createCloudRoute(metadata = metadataDto)
+                    if (route != "recording_details/error") {
+                        navController.navigate(route)
+                    } else {
+                        scope.launch { showSnackbar("Error: Cannot navigate, recording ID missing.") }
+                    }
+                }
             }
         }
     }
@@ -368,19 +388,21 @@ fun LibraryScreen(
                 when (page) {
                     0 -> LocalRecordingsTabPage(
                         uiState = uiState,
-                        navController = navController,
                         selectedIds = uiState.selectedRecordingIds,
                         isMultiSelectActive = uiState.isMultiSelectActive,
+                        onItemClick = { metadata -> viewModel.onRecordingClicked(metadata) },
                         onItemLongClick = viewModel::enterMultiSelectMode,
-                        onItemClick = viewModel::toggleSelection,
                         isLoading = uiState.isLoadingLocal && !uiState.isImporting,
+                        navController = navController
                     )
                     1 -> CloudRecordingsTabPage(
                         uiState = uiState,
+                        onItemClick = { metadataDto -> viewModel.onRecordingClicked(metadataDto) },
+                        isLoading = uiState.isLoadingCloud,
+                        navController = navController,
                         context = context,
                         scope = scope,
-                        showSnackbar = showSnackbar,
-                        isLoading = uiState.isLoadingCloud,
+                        showSnackbar = showSnackbar
                     )
                 }
             }
@@ -452,15 +474,14 @@ fun MultiSelectTopAppBar(
 @Composable
 fun LocalRecordingsTabPage(
     uiState: LibraryUiState,
-    navController: NavHostController,
     selectedIds: Set<String>,
     isMultiSelectActive: Boolean,
+    onItemClick: (RecordingMetadata) -> Unit,
     onItemLongClick: (String) -> Unit,
-    onItemClick: (String) -> Unit,
     isLoading: Boolean,
-    modifier: Modifier = Modifier,
+    navController: NavHostController
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (!isLoading && uiState.localRecordings.isEmpty()) {
             Text(
                 text = stringResource(R.string.library_empty_state_local),
@@ -478,29 +499,17 @@ fun LocalRecordingsTabPage(
                     val isSelected = selectedIds.contains(metadata.filePath)
                     LocalRecordingListItem(
                         metadata = metadata,
-                        navController = navController,
                         isMultiSelectActive = isMultiSelectActive,
                         isSelected = isSelected,
                         onLongClick = { onItemLongClick(metadata.filePath) },
-                        onToggleSelection = { onItemClick(metadata.filePath) },
-                        onNavigate = {
-                            if (!isMultiSelectActive) {
-                                val encodedFilePath = Uri.encode(metadata.filePath)
-                                navController.navigate(
-                                    Screen.RecordingDetails.createRoute(
-                                        encodedFilePath
-                                    )
-                                )
-                                Log.d(
-                                    "LocalRecordingListItem",
-                                    "Navigating to details for: $encodedFilePath"
-                                )
-                            }
-                        },
+                        onClick = { onItemClick(metadata) },
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                 }
             }
+        }
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
 }
@@ -508,13 +517,14 @@ fun LocalRecordingsTabPage(
 @Composable
 fun CloudRecordingsTabPage(
     uiState: LibraryUiState,
+    onItemClick: (AudioMetadataDto) -> Unit,
+    isLoading: Boolean,
+    navController: NavHostController,
     context: Context,
     scope: CoroutineScope,
-    showSnackbar: suspend (String) -> Unit,
-    isLoading: Boolean,
-    modifier: Modifier = Modifier,
+    showSnackbar: suspend (String) -> Unit
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (!isLoading && uiState.cloudRecordings.isEmpty() && uiState.hasAttemptedCloudLoad) {
             Text(
                 text = stringResource(R.string.library_empty_state_cloud),
@@ -530,16 +540,27 @@ fun CloudRecordingsTabPage(
             ) {
                 items(
                     uiState.cloudRecordings,
-                    key = { it.id ?: it.fileName ?: it.hashCode() }) { metadata ->
+                    key = { it.recordingId ?: it.id ?: it.fileName ?: it.hashCode() }
+                ) { metadata ->
                     CloudRecordingListItem(
                         metadata = metadata,
-                        onItemClick = {
-                            playCloudRecording(context, it, scope, showSnackbar)
+                        onItemClick = { clickedMetadata ->
+                            val route = Screen.RecordingDetails.createCloudRoute(clickedMetadata)
+                            if (route != "recording_details/error") {
+                                navController.navigate(route)
+                                Log.d("CloudRecordingListItem", "Navigating route: $route")
+                            } else {
+                                Log.w("CloudRecordingListItem", "Cloud recording ID is missing, cannot navigate.")
+                                scope.launch { showSnackbar("Cannot open details: Recording ID missing.") }
+                            }
                         },
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                 }
             }
+        }
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
 }
@@ -548,12 +569,10 @@ fun CloudRecordingsTabPage(
 @Composable
 fun LocalRecordingListItem(
     metadata: RecordingMetadata,
-    navController: NavHostController,
     isMultiSelectActive: Boolean,
     isSelected: Boolean,
     onLongClick: () -> Unit,
-    onToggleSelection: () -> Unit,
-    onNavigate: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -566,13 +585,7 @@ fun LocalRecordingListItem(
                 .fillMaxWidth()
                 .height(listItemHeight)
                 .combinedClickable(
-                    onClick = {
-                        if (isMultiSelectActive) {
-                            onToggleSelection()
-                        } else {
-                            onNavigate()
-                        }
-                    },
+                    onClick = onClick,
                     onLongClick = {
                         if (!isMultiSelectActive) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -593,7 +606,7 @@ fun LocalRecordingListItem(
             if (isMultiSelectActive) {
                 Checkbox(
                     checked = isSelected,
-                    onCheckedChange = { onToggleSelection() },
+                    onCheckedChange = { onClick() },
                 )
             }
         }
@@ -633,15 +646,14 @@ fun LocalRecordingListItem(
 @Composable
 fun CloudRecordingListItem(
     metadata: AudioMetadataDto,
-    onItemClick: (AudioMetadataDto) -> Unit,
+    onItemClick: (metadata: AudioMetadataDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable { onItemClick(metadata) }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onItemClick(metadata) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

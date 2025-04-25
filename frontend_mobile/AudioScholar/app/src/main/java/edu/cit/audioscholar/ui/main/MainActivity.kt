@@ -2,6 +2,7 @@ package edu.cit.audioscholar.ui.main
 
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -75,6 +76,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
+import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
@@ -93,6 +95,7 @@ import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
@@ -110,8 +113,44 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
 
-    object RecordingDetails : Screen("recording_details/{recordingId}", R.string.nav_recording_details) {
-        fun createRoute(recordingId: String) = "recording_details/$recordingId"
+    object RecordingDetails : Screen("recording_details", R.string.nav_recording_details) {
+        const val ARG_LOCAL_FILE_PATH = "localFilePath"
+        const val ARG_CLOUD_RECORDING_ID = "cloudRecordingId"
+        const val ARG_CLOUD_TITLE = "cloudTitle"
+        const val ARG_CLOUD_FILENAME = "cloudFileName"
+        const val ARG_CLOUD_TIMESTAMP_SECONDS = "cloudTimestampSeconds"
+        const val ARG_CLOUD_STORAGE_URL = "cloudStorageUrl"
+
+        const val ROUTE_PATTERN = "recording_details" +
+                "?$ARG_LOCAL_FILE_PATH={$ARG_LOCAL_FILE_PATH}" +
+                "&$ARG_CLOUD_RECORDING_ID={$ARG_CLOUD_RECORDING_ID}" +
+                "&$ARG_CLOUD_TITLE={$ARG_CLOUD_TITLE}" +
+                "&$ARG_CLOUD_FILENAME={$ARG_CLOUD_FILENAME}" +
+                "&$ARG_CLOUD_TIMESTAMP_SECONDS={$ARG_CLOUD_TIMESTAMP_SECONDS}" +
+                "&$ARG_CLOUD_STORAGE_URL={$ARG_CLOUD_STORAGE_URL}"
+
+        fun createLocalRoute(filePath: String): String {
+            return "recording_details?$ARG_LOCAL_FILE_PATH=${Uri.encode(filePath)}"
+        }
+
+        fun createCloudRoute(metadata: AudioMetadataDto): String {
+            val recordingId = metadata.recordingId
+            if (recordingId.isNullOrBlank()) {
+                Log.e("Screen.RecordingDetails", "Cannot create cloud route, recordingId is null or blank in metadata: $metadata")
+                return "recording_details/error"
+            }
+
+            val title = Uri.encode(metadata.title ?: metadata.fileName ?: "Cloud Recording")
+            val fileName = Uri.encode(metadata.fileName ?: "Unknown Filename")
+            val timestamp = metadata.uploadTimestamp?.seconds ?: 0L
+            val storageUrl = Uri.encode(metadata.storageUrl ?: "")
+
+            return "recording_details?$ARG_CLOUD_RECORDING_ID=$recordingId" +
+                    "&$ARG_CLOUD_TITLE=$title" +
+                    "&$ARG_CLOUD_FILENAME=$fileName" +
+                    "&$ARG_CLOUD_TIMESTAMP_SECONDS=$timestamp" +
+                    "&$ARG_CLOUD_STORAGE_URL=$storageUrl"
+        }
     }
 }
 
@@ -534,14 +573,32 @@ fun MainAppScreen(
                 )
             }
             composable(
-                route = Screen.RecordingDetails.route,
-                arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
-            ) { backStackEntry ->
-                RecordingDetailsScreen(
-                    navController = navController
+                route = Screen.RecordingDetails.ROUTE_PATTERN,
+                arguments = listOf(
+                    navArgument(Screen.RecordingDetails.ARG_LOCAL_FILE_PATH) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_RECORDING_ID) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_TITLE) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_FILENAME) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_TIMESTAMP_SECONDS) {
+                        type = NavType.LongType; defaultValue = 0L },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_STORAGE_URL) {
+                        type = NavType.StringType; nullable = true; defaultValue = null }
                 )
+            ) { backStackEntry ->
+                RecordingDetailsScreen(navController = navController)
             }
+            composable("recording_details/error") {
+                Text("Error: Could not navigate to recording details.")
+                LaunchedEffect(Unit) {
+                    delay(2000)
+                    navController.popBackStack()
+                }
             }
         }
     }
+}
 }

@@ -381,9 +381,60 @@ class LibraryViewModel @Inject constructor(
     fun consumeError() {
         _uiState.update { it.copy(error = null) }
     }
+
+    fun onRecordingClicked(recording: Any) {
+        if (_uiState.value.isMultiSelectActive) {
+            when (recording) {
+                is RecordingMetadata -> toggleSelection(recording.filePath)
+                is AudioMetadataDto -> {
+                    Log.w("LibraryViewModel", "Multi-select toggle attempted on cloud item (not implemented). ID: ${recording.recordingId}")
+                }
+                else -> Log.w("LibraryViewModel", "onRecordingClicked in multi-select mode called with unknown type: ${recording::class.java}")
+            }
+        } else {
+            viewModelScope.launch {
+                when (recording) {
+                    is RecordingMetadata -> {
+                        Log.d("LibraryViewModel", "Local recording clicked: ${recording.filePath}")
+                        _eventChannel.send(LibraryViewEvent.NavigateToLocalDetails(recording.filePath))
+                    }
+                    is AudioMetadataDto -> {
+                        val recordingId = recording.recordingId
+                        if (recordingId != null) {
+                            Log.d("LibraryViewModel", "Cloud recording clicked: ID=${recording.recordingId}, Title=${recording.title}")
+                            _eventChannel.send(
+                                LibraryViewEvent.NavigateToCloudDetails(
+                                    recordingId = recordingId,
+                                    title = recording.title ?: recording.fileName,
+                                    fileName = recording.fileName ?: "Unknown Filename",
+                                    timestampSeconds = recording.uploadTimestamp?.seconds,
+                                    storageUrl = recording.storageUrl
+                                )
+                            )
+                        } else {
+                            Log.e("LibraryViewModel", "Cloud recording clicked, but recordingId is null. Title: ${recording.title}")
+                            _eventChannel.send(LibraryViewEvent.ShowSnackbar("Cannot open details: Recording ID is missing."))
+                        }
+                    }
+                    else -> {
+                        Log.w("LibraryViewModel", "onRecordingClicked called with unknown type: ${recording::class.java}")
+                        _eventChannel.send(LibraryViewEvent.ShowSnackbar("Cannot open details for this item type."))
+                    }
+                }
+            }
+        }
+    }
 }
 
 sealed class LibraryViewEvent {
     object LaunchMultiFilePicker : LibraryViewEvent()
     data class ShowSnackbar(val message: String) : LibraryViewEvent()
+    data class NavigateToLocalDetails(val filePath: String) : LibraryViewEvent()
+    data class NavigateToCloudDetails(
+        val recordingId: String,
+        val title: String?,
+        val fileName: String,
+        val timestampSeconds: Long?,
+        val storageUrl: String?
+    ) : LibraryViewEvent()
 }

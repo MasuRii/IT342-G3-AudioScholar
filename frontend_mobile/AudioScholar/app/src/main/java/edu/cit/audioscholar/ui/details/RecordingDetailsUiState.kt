@@ -21,6 +21,8 @@ data class RecordingDetailsUiState(
     val durationFormatted: String = "00:00",
     val filePath: String = "",
     val remoteRecordingId: String? = null,
+    val storageUrl: String? = null,
+    val isCloudSource: Boolean = false,
 
     val isEditingTitle: Boolean = false,
     val editableTitle: String = "",
@@ -49,4 +51,13 @@ data class RecordingDetailsUiState(
         get() = uploadProgressPercent != null ||
                 summaryStatus == SummaryStatus.PROCESSING ||
                 recommendationsStatus == RecommendationsStatus.LOADING
+
+    val isPlaybackReady: Boolean
+        get() = !isProcessing && !isDeleting && (filePath.isNotEmpty() || !storageUrl.isNullOrBlank())
+
+    val showLocalActions: Boolean
+        get() = !isCloudSource || filePath.isNotEmpty()
+
+    val showCloudInfo: Boolean
+        get() = isCloudSource || remoteRecordingId != null
 }

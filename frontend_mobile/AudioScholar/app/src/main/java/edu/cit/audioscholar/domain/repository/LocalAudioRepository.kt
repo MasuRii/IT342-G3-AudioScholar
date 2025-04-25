@@ -14,4 +14,5 @@ interface LocalAudioRepository {
     suspend fun importAudioFile(sourceUri: Uri, originalFileName: String, title: String?, description: String?): Result<RecordingMetadata>
 
     suspend fun saveMetadata(metadata: RecordingMetadata): Boolean
+    fun getMetadataByRemoteId(remoteId: String): Flow<RecordingMetadata?>
 }

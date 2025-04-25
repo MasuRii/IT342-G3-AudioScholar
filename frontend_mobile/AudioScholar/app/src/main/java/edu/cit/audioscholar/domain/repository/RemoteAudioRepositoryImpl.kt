@@ -310,4 +310,23 @@ class RemoteAudioRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
+    override fun getCloudRecordingDetails(recordingId: String): Flow<Result<AudioMetadataDto>> = flow {
+        try {
+            Log.d(TAG_REMOTE_REPO, "Fetching cloud recording details for ID: $recordingId")
+            val response = apiService.getRecordingDetails(recordingId)
+            if (response.isSuccessful && response.body() != null) {
+                Log.i(TAG_REMOTE_REPO, "Successfully fetched details for cloud recording ID: $recordingId")
+                emit(Result.success(response.body()!!))
+            } else {
+                val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
+                Log.e(TAG_REMOTE_REPO, "Failed to fetch cloud recording details: ${response.code()} - $errorBody")
+                val exception = HttpException(response)
+                emit(Result.failure(exception))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_REMOTE_REPO, "Exception fetching cloud recording details for ID: $recordingId", e)
+            emit(Result.failure(e))
+        }
+    }.flowOn(Dispatchers.IO)
+
 }

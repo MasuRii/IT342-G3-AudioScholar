@@ -90,55 +90,41 @@ fun RecordingDetailsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = LocalClipboardManager.current
 
-    val filePickerLauncher = rememberLauncherForActivityResult(
+    val powerPointLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
-            if (uri != null) {
-                val fileName = getFileNameFromUri(contentResolver, uri)
-                viewModel.setAttachedPowerPointFile(fileName)
-            } else {
-                viewModel.setAttachedPowerPointFile(null)
-            }
+            viewModel.onPowerPointSelected(uri)
         }
     )
     LaunchedEffect(Unit) {
         viewModel.triggerFilePicker.collect {
-            val mimeTypes = arrayOf(
-                "application/vnd.ms-powerpoint",
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-            )
             try {
-                filePickerLauncher.launch(mimeTypes)
-            } catch (e: Exception) {
-                Log.e("FilePickerLaunch", "Error launching file picker", e)
-                scope.launch { snackbarHostState.showSnackbar("Could not open file picker.") }
+                powerPointLauncher.launch(arrayOf("application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"))
+            } catch (e: ActivityNotFoundException) {
+                Log.e("RecordingDetailsScreen", "No activity found to handle PowerPoint selection", e)
+                Toast.makeText(context, "No app found to select PowerPoint files.", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    LaunchedEffect(snackbarHostState) {
-        viewModel.uiState.collectLatest { state ->
-            state.error?.let { message ->
+    LaunchedEffect(Unit) {
+        viewModel.infoMessageEvent.collectLatest { message: String? ->
+            message?.let {
                 scope.launch {
-                    snackbarHostState.showSnackbar(
-                        message = message,
-                        duration = SnackbarDuration.Short
-                    )
-                }
-                viewModel.consumeError()
-            }
-            state.infoMessage?.let { message ->
-                scope.launch {
-                    snackbarHostState.showSnackbar(
-                        message = message,
-                        duration = SnackbarDuration.Short
-                    )
+                    snackbarHostState.showSnackbar(it)
                 }
                 viewModel.consumeInfoMessage()
             }
-            state.textToCopy?.let { text ->
-                clipboardManager.setText(AnnotatedString(text))
-                viewModel.consumeTextToCopy()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.errorEvent.collectLatest { error: String? ->
+            error?.let {
+                scope.launch {
+                    snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long)
+                }
+                viewModel.consumeError()
             }
         }
     }
@@ -149,9 +135,15 @@ fun RecordingDetailsScreen(
         }
     }
 
-    LaunchedEffect(uiState.filePath, uiState.isLoading, uiState.isDeleting) {
-        if (uiState.filePath.isEmpty() && !uiState.isLoading && !uiState.isDeleting) {
-            Log.d("RecordingDetailsScreen", "File path became empty, navigating up.")
+    LaunchedEffect(uiState.filePath, uiState.remoteRecordingId, uiState.isLoading, uiState.isDeleting, uiState.error) {
+        val localFileDeleted = uiState.filePath.isEmpty() && !uiState.isLoading && !uiState.isDeleting && !uiState.isCloudSource
+        val criticalLoadError = uiState.filePath.isEmpty() && uiState.remoteRecordingId == null && !uiState.isLoading && uiState.error != null
+
+        if (localFileDeleted) {
+            Log.d("RecordingDetailsScreen", "Local file path became empty after load/delete, navigating up.")
+            navController.navigateUp()
+        } else if (criticalLoadError) {
+            Log.d("RecordingDetailsScreen", "Critical load error and no ID/Path available, navigating up.")
             navController.navigateUp()
         }
     }
@@ -170,7 +162,7 @@ fun RecordingDetailsScreen(
                     }
                 },
                 actions = {
-                    if (uiState.filePath.isNotEmpty() && !uiState.isDeleting) {
+                    if ((uiState.filePath.isNotEmpty() || uiState.remoteRecordingId != null) && !uiState.isDeleting) {
                         IconButton(onClick = viewModel::requestDelete) {
                             Icon(
                                 imageVector = Icons.Filled.Delete,
@@ -186,25 +178,23 @@ fun RecordingDetailsScreen(
         Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
 
             when {
-                uiState.isLoading && uiState.filePath.isEmpty() -> {
+                uiState.isLoading && uiState.filePath.isEmpty() && uiState.remoteRecordingId == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
-                        Log.d("DetailsScreen", "Showing initial loading indicator")
+                        Log.d("DetailsScreen", "Showing initial loading indicator (no path/ID yet)")
                     }
                 }
-
-                uiState.filePath.isEmpty() && !uiState.isLoading && !uiState.isDeleting -> {
+                uiState.filePath.isEmpty() && uiState.remoteRecordingId == null && !uiState.isLoading && uiState.error != null -> {
                     Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            stringResource(R.string.details_error_loading),
+                            text = uiState.error ?: stringResource(R.string.details_error_loading),
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center
                         )
-                        Log.d("DetailsScreen", "Showing error loading details")
+                        Log.d("DetailsScreen", "Showing critical error loading details: ${uiState.error}")
                     }
                 }
-
                 else -> {
                     Column(
                         modifier = Modifier
@@ -215,7 +205,7 @@ fun RecordingDetailsScreen(
                         val focusRequester = remember { FocusRequester() }
                         val focusManager = LocalFocusManager.current
 
-                        Box(modifier = Modifier.fillMaxWidth()) {
+                        Box {
                             if (uiState.isEditingTitle) {
                                 BasicTextField(
                                     value = uiState.editableTitle,
@@ -268,8 +258,7 @@ fun RecordingDetailsScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
+                        Spacer(modifier = Modifier.height(5.dp))
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -288,47 +277,51 @@ fun RecordingDetailsScreen(
                                 color = LocalContentColor.current.copy(alpha = 0.7f)
                             )
                         }
-
                         Spacer(modifier = Modifier.height(16.dp))
+
                         HorizontalDivider()
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(stringResource(R.string.details_playback_title), style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val isPlaybackEnabled = !uiState.isProcessing && !uiState.isDeleting
-                            IconButton(
-                                onClick = viewModel::onPlayPauseToggle,
-                                enabled = isPlaybackEnabled
+                        val isPlaybackEnabled = uiState.isPlaybackReady
+                        if (uiState.filePath.isNotEmpty() || uiState.storageUrl != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = if (uiState.isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
-                                    contentDescription = if (uiState.isPlaying) stringResource(R.string.cd_pause_playback) else stringResource(R.string.cd_play_playback),
-                                    modifier = Modifier.size(48.dp),
+                                IconButton(
+                                    onClick = viewModel::onPlayPauseToggle,
+                                    enabled = isPlaybackEnabled
+                                ) {
+                                    Icon(
+                                        imageVector = if (uiState.isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                        contentDescription = if (uiState.isPlaying) stringResource(R.string.cd_pause_playback) else stringResource(R.string.cd_play_playback),
+                                        modifier = Modifier.size(48.dp),
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Slider(
+                                    value = uiState.playbackProgress,
+                                    onValueChange = viewModel::onSeek,
+                                    modifier = Modifier.weight(1f),
+                                    enabled = isPlaybackEnabled
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "${uiState.currentPositionFormatted} / ${uiState.durationFormatted}",
+                                    style = MaterialTheme.typography.bodySmall
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Slider(
-                                value = uiState.playbackProgress,
-                                onValueChange = viewModel::onSeek,
-                                modifier = Modifier.weight(1f),
-                                enabled = isPlaybackEnabled
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "${uiState.currentPositionFormatted} / ${uiState.durationFormatted}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                        } else {
+                            Text("Playback unavailable.", style = MaterialTheme.typography.bodyMedium)
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider()
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        if (uiState.remoteRecordingId == null && !uiState.isProcessing) {
+                        if (uiState.filePath.isNotEmpty() && uiState.remoteRecordingId == null && !uiState.isProcessing) {
                             Button(
                                 onClick = viewModel::onProcessRecordingClicked,
                                 modifier = Modifier.fillMaxWidth(),
@@ -343,11 +336,10 @@ fun RecordingDetailsScreen(
                                 Text(stringResource(R.string.details_process_recording_button))
                             }
                             Spacer(modifier = Modifier.height(16.dp))
-                            HorizontalDivider()
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
 
-                        if (uiState.remoteRecordingId != null || uiState.summaryStatus == SummaryStatus.PROCESSING) {
+                        if (uiState.showCloudInfo || uiState.summaryStatus != SummaryStatus.IDLE) {
+                            Spacer(modifier = Modifier.height(16.dp))
                             Text(stringResource(R.string.details_summary_title), style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -417,13 +409,13 @@ fun RecordingDetailsScreen(
                                     }
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
-                                HorizontalDivider()
-                                Spacer(modifier = Modifier.height(16.dp))
                             }
                         }
 
-                        if (uiState.summaryStatus == SummaryStatus.READY && uiState.glossaryItems.isNotEmpty()) {
-                            Text(stringResource(R.string.details_ai_notes_title), style = MaterialTheme.typography.titleMedium)
+                        if (uiState.showCloudInfo || uiState.summaryStatus != SummaryStatus.IDLE) {
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(stringResource(R.string.details_notes_title), style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.height(8.dp))
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -440,61 +432,65 @@ fun RecordingDetailsScreen(
                                 }
                             }
                             Spacer(modifier = Modifier.height(16.dp))
-                            HorizontalDivider()
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
 
-                        Text(stringResource(R.string.details_powerpoint_title), style = MaterialTheme.typography.titleMedium)
+                        HorizontalDivider()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            stringResource(R.string.details_powerpoint_title),
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
+                        Card(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            val currentAttachment = uiState.attachedPowerPoint
-                            if (currentAttachment != null) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)) {
-                                    Icon(Icons.Filled.Attachment, contentDescription = null, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                val currentAttachment = uiState.attachedPowerPoint
+                                Column(Modifier.weight(1f)) {
                                     Text(
-                                        text = currentAttachment,
+                                        text = currentAttachment ?: stringResource(R.string.details_powerpoint_none_attached),
                                         style = MaterialTheme.typography.bodyMedium,
                                         maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (currentAttachment == null) LocalContentColor.current.copy(alpha = 0.7f) else LocalContentColor.current
                                     )
                                 }
-                            } else {
-                                Text(
-                                    text = stringResource(R.string.details_powerpoint_none_attached),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = LocalContentColor.current.copy(alpha = 0.7f),
-                                    modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp)
-                                )
-                            }
-                            Button(
-                                onClick = {
-                                    if (currentAttachment == null) {
-                                        viewModel.requestAttachPowerPoint()
-                                    } else {
-                                        viewModel.detachPowerPoint()
-                                    }
-                                },
-                                enabled = !uiState.isProcessing && !uiState.isDeleting
-                            ) {
-                                val icon = if (currentAttachment == null) Icons.Filled.AttachFile else Icons.Filled.LinkOff
-                                val textRes = if (currentAttachment == null) R.string.details_powerpoint_attach_button else R.string.details_powerpoint_detach_button
-                                Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                                Text(stringResource(textRes))
+                                Spacer(Modifier.width(16.dp))
+                                val buttonsEnabled = !uiState.isProcessing && !uiState.isDeleting && !uiState.isCloudSource
+                                Button(
+                                    onClick = {
+                                        if (currentAttachment == null) {
+                                            viewModel.requestAttachPowerPoint()
+                                        } else {
+                                            viewModel.detachPowerPoint()
+                                        }
+                                    },
+                                    enabled = buttonsEnabled
+                                ) {
+                                    val icon = if (currentAttachment == null) Icons.Filled.AttachFile else Icons.Filled.LinkOff
+                                    val textRes = if (currentAttachment == null) R.string.details_powerpoint_attach_button else R.string.details_powerpoint_detach_button
+                                    Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                    Text(stringResource(textRes))
+                                }
                             }
                         }
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                        if (uiState.remoteRecordingId != null || uiState.recommendationsStatus == RecommendationsStatus.LOADING) {
-                            Spacer(modifier = Modifier.height(16.dp))
+                        if (uiState.showCloudInfo || uiState.recommendationsStatus != RecommendationsStatus.IDLE) {
                             HorizontalDivider()
                             Spacer(modifier = Modifier.height(16.dp))
-
-                            Text(stringResource(R.string.details_youtube_title), style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                stringResource(R.string.details_youtube_title),
+                                style = MaterialTheme.typography.titleMedium
+                            )
                             Spacer(modifier = Modifier.height(8.dp))
 
                             when(uiState.recommendationsStatus) {

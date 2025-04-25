@@ -75,4 +75,9 @@ interface ApiService {
     suspend fun getRecordingRecommendations(
         @Path("recordingId") recordingId: String
     ): Response<List<RecommendationDto>>
+
+    @GET("/api/recordings/{recordingId}")
+    suspend fun getRecordingDetails(
+        @Path("recordingId") recordingId: String
+    ): Response<AudioMetadataDto>
 }

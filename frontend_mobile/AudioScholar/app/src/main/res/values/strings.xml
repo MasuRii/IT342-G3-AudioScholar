@@ -317,4 +317,6 @@
     <string name="login_welcome_new">Log in to your account</string>
     <string name="login_welcome_returning">Welcome back!</string>
 
+    <string name="details_notes_title">AI Notes</string>
+
 </resources>

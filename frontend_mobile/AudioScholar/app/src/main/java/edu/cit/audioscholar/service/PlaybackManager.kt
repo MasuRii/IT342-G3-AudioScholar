@@ -3,6 +3,7 @@ package edu.cit.audioscholar.service
 import android.content.Context
 import android.util.Log
 import androidx.core.net.toUri
+import androidx.compose.runtime.Stable
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -21,7 +22,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.io.File
 
+@Stable
 data class PlaybackState(
     val isPlaying: Boolean = false,
     val currentPositionMs: Long = 0L,
@@ -38,11 +41,14 @@ class PlaybackManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private var player: ExoPlayer? = null
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var progressJob: Job? = null
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
+
+    private val scopeJob = SupervisorJob()
+    private val scope = CoroutineScope(Dispatchers.Main + scopeJob)
+    private var positionUpdateJob: Job? = null
+    private val POSITION_UPDATE_INTERVAL_MS = 500L
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -133,18 +139,22 @@ class PlaybackManager @Inject constructor(
     }
 
     fun play() {
-        Log.d(TAG, "play called. Player exists: ${player != null}, Is ready: ${playbackState.value.isReady}")
-        if (player?.playbackState == Player.STATE_ENDED) {
-            player?.seekTo(0)
-            player?.playWhenReady = true
-        } else {
+        if (player != null) {
             player?.play()
+            Log.d(TAG, "play() called on existing player instance.")
+        } else {
+            Log.w(TAG, "play() called but player instance is null.")
+            _playbackState.update { it.copy(error = "Player not ready.") }
         }
     }
 
     fun pause() {
-        Log.d(TAG, "pause called. Player exists: ${player != null}")
-        player?.pause()
+        if (player != null) {
+            player?.pause()
+            Log.d(TAG, "pause() called on existing player instance.")
+        } else {
+            Log.w(TAG, "pause() called but player instance is null.")
+        }
     }
 
     fun seekTo(positionMs: Long) {
@@ -158,12 +168,7 @@ class PlaybackManager @Inject constructor(
     }
 
     fun releasePlayer() {
-        Log.d(TAG, "releasePlayer called.")
-        stopProgressUpdates()
-        player?.removeListener(playerListener)
-        player?.release()
-        player = null
-        _playbackState.value = PlaybackState()
+        releasePlayerInternal()
     }
 
     fun consumeError() {
@@ -174,10 +179,10 @@ class PlaybackManager @Inject constructor(
     }
 
     private fun startProgressUpdates() {
-        if (progressJob?.isActive == true) return
-        stopProgressUpdates()
+        if (positionUpdateJob?.isActive == true) return
+        stopPositionUpdates()
 
-        progressJob = coroutineScope.launch {
+        positionUpdateJob = scope.launch {
             Log.d(TAG, "Progress updates coroutine started.")
             while (isActive) {
                 player?.let { currentPlayer ->
@@ -190,11 +195,11 @@ class PlaybackManager @Inject constructor(
                         }
                     } else {
                         Log.d(TAG, "Player not playing, stopping progress updates from within loop.")
-                        stopProgressUpdates()
+                        stopPositionUpdates()
                     }
                 } ?: run {
                     Log.d(TAG, "Player is null, stopping progress updates from within loop.")
-                    stopProgressUpdates()
+                    stopPositionUpdates()
                 }
                 delay(PROGRESS_UPDATE_INTERVAL_MS)
             }
@@ -204,11 +209,11 @@ class PlaybackManager @Inject constructor(
     }
 
     private fun stopProgressUpdates() {
-        if (progressJob?.isActive == true) {
-            progressJob?.cancel()
+        if (positionUpdateJob?.isActive == true) {
+            positionUpdateJob?.cancel()
             Log.d(TAG, "Progress updates job cancelled.")
         }
-        progressJob = null
+        positionUpdateJob = null
     }
 
     private fun playbackStateToString(state: Int): String {
@@ -219,5 +224,59 @@ class PlaybackManager @Inject constructor(
             Player.STATE_ENDED -> "ENDED"
             else -> "UNKNOWN ($state)"
         }
+    }
+
+    fun preparePlayerForStreaming(url: String) {
+        releasePlayerInternal()
+        Log.d(TAG, "Creating new ExoPlayer instance for streaming URL: $url")
+        try {
+            player = ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(url))
+                addListener(playerListener)
+                prepare()
+                playWhenReady = false
+                Log.d(TAG, "ExoPlayer instance created and prepare() called for streaming.")
+            }
+            _playbackState.update { it.copy(isPlaying = false, isReady = false, currentPositionMs = 0L, totalDurationMs = 0L, error = null) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing ExoPlayer for streaming", e)
+            _playbackState.update { it.copy(error = "Failed to initialize player.") }
+            player = null
+        }
+    }
+
+    private fun startPositionUpdates() {
+        stopPositionUpdates()
+        positionUpdateJob = scope.launch {
+            while (isActive && _playbackState.value.isPlaying) {
+                val currentPosition = player?.currentPosition ?: 0L
+                if (_playbackState.value.isReady && currentPosition >= 0) {
+                    _playbackState.update { it.copy(currentPositionMs = currentPosition) }
+                }
+                delay(POSITION_UPDATE_INTERVAL_MS)
+            }
+        }
+        Log.d(TAG, "Started position updates.")
+    }
+
+    private fun stopPositionUpdates() {
+        positionUpdateJob?.cancel()
+        positionUpdateJob = null
+        Log.d(TAG, "Stopped position updates.")
+    }
+
+    fun cleanup() {
+        releasePlayer()
+        scopeJob.cancel()
+        Log.d(TAG, "PlaybackManager cleaned up and scope cancelled.")
+    }
+
+    private fun releasePlayerInternal() {
+        stopPositionUpdates()
+        player?.removeListener(playerListener)
+        player?.release()
+        player = null
+        _playbackState.update { PlaybackState() }
+        Log.d(TAG, "Player released.")
     }
 }

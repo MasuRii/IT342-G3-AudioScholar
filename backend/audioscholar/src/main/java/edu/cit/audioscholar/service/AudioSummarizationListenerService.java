@@ -1,11 +1,15 @@
 package edu.cit.audioscholar.service;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -20,7 +24,6 @@ import edu.cit.audioscholar.model.*;
 
 @Service
 public class AudioSummarizationListenerService {
-
         private static final Logger log =
                         LoggerFactory.getLogger(AudioSummarizationListenerService.class);
 
@@ -31,12 +34,14 @@ public class AudioSummarizationListenerService {
         private final RecordingService recordingService;
         private final SummaryService summaryService;
         private final ObjectMapper objectMapper;
+        private final Path tempFileDir;
 
         public AudioSummarizationListenerService(FirebaseService firebaseService,
                         NhostStorageService nhostStorageService, GeminiService geminiService,
                         LearningMaterialRecommenderService learningMaterialRecommenderService,
                         @Lazy RecordingService recordingService,
-                        @Lazy SummaryService summaryService, ObjectMapper objectMapper) {
+                        @Lazy SummaryService summaryService, ObjectMapper objectMapper,
+                        @Value("${app.temp-file-dir}") String tempFileDirStr) {
                 this.firebaseService = firebaseService;
                 this.nhostStorageService = nhostStorageService;
                 this.geminiService = geminiService;
@@ -44,6 +49,13 @@ public class AudioSummarizationListenerService {
                 this.recordingService = recordingService;
                 this.summaryService = summaryService;
                 this.objectMapper = objectMapper;
+                this.tempFileDir = Paths.get(tempFileDirStr);
+                try {
+                        Files.createDirectories(this.tempFileDir);
+                } catch (IOException e) {
+                        log.error("Could not create temporary directory for listener: {}",
+                                        this.tempFileDir.toAbsolutePath(), e);
+                }
         }
 
         @RabbitListener(queues = RabbitMQConfig.PROCESSING_QUEUE_NAME)
@@ -57,13 +69,15 @@ public class AudioSummarizationListenerService {
                         return;
                 }
 
-                String recordingId = message.getRecordingId();
-                String metadataId = message.getMetadataId();
+                final String recordingId = message.getRecordingId();
+                final String metadataId = message.getMetadataId();
                 log.info("[AMQP Listener] Received request for recordingId: {}, metadataId: {}",
                                 recordingId, metadataId);
 
                 AudioMetadata metadata = null;
                 Recording recording = null;
+                Path tempAudioFilePath = null;
+
                 try {
                         log.debug("[{}] Fetching AudioMetadata document...", metadataId);
                         metadata = firebaseService.getAudioMetadataById(metadataId);
@@ -96,18 +110,14 @@ public class AudioSummarizationListenerService {
                                         metadataId);
                         updateMetadataStatus(metadataId, ProcessingStatus.PROCESSING, null);
 
-
-                        String base64Audio = downloadAudio(recording);
-                        if (base64Audio == null) {
-                                updateMetadataStatusToFailed(metadataId,
-                                                "Failed to download or encode audio.");
+                        tempAudioFilePath = downloadAudioToFile(recording, metadataId);
+                        if (tempAudioFilePath == null) {
                                 return;
                         }
 
-                        String transcriptText = performTranscription(recording, base64Audio);
+                        String transcriptText = performTranscription(recording, tempAudioFilePath,
+                                        metadataId);
                         if (transcriptText == null) {
-                                updateMetadataStatusToFailed(metadataId,
-                                                "Audio transcription failed.");
                                 return;
                         }
 
@@ -118,10 +128,9 @@ public class AudioSummarizationListenerService {
                         }
                         metadata.setTranscriptText(transcriptText);
 
-                        String summarizationJson = performSummarization(recording, transcriptText);
+                        String summarizationJson =
+                                        performSummarization(recording, transcriptText, metadataId);
                         if (summarizationJson == null) {
-                                updateMetadataStatusToFailed(metadataId,
-                                                "Content summarization and analysis failed.");
                                 return;
                         }
 
@@ -146,11 +155,6 @@ public class AudioSummarizationListenerService {
                                         recordingId, metadataId, e);
                         updateMetadataStatusToFailed(metadataId,
                                         "Firestore interaction failed during processing.");
-                } catch (IOException e) {
-                        log.error("[{}] I/O error (likely Nhost download/encoding) for metadata {}.",
-                                        recordingId, metadataId, e);
-                        updateMetadataStatusToFailed(metadataId,
-                                        "Audio download or encoding failed.");
                 } catch (ExecutionException | InterruptedException e) {
                         log.error("[{}] Concurrency/Execution error during processing for metadata {}.",
                                         recordingId, metadataId, e);
@@ -160,52 +164,198 @@ public class AudioSummarizationListenerService {
                 } catch (RuntimeException e) {
                         log.error("[{}] Runtime error during processing for metadata {}.",
                                         recordingId, metadataId, e);
-                        updateMetadataStatusToFailed(metadataId,
-                                        "Processing runtime error: " + e.getMessage());
+                        AudioMetadata currentMeta =
+                                        firebaseService.getAudioMetadataById(metadataId);
+                        if (currentMeta != null
+                                        && currentMeta.getStatus() != ProcessingStatus.FAILED) {
+                                updateMetadataStatusToFailed(metadataId,
+                                                "Processing runtime error: " + e.getMessage());
+                        }
                 } catch (Exception e) {
                         log.error("[{}] Unexpected error during processing for metadata {}.",
                                         recordingId, metadataId, e);
+                        AudioMetadata currentMeta =
+                                        firebaseService.getAudioMetadataById(metadataId);
+                        if (currentMeta != null
+                                        && currentMeta.getStatus() != ProcessingStatus.FAILED) {
+                                updateMetadataStatusToFailed(metadataId,
+                                                "Unexpected processing error: " + e.getMessage());
+                        }
+                } finally {
+                        if (tempAudioFilePath != null) {
+                                try {
+                                        log.debug("[{}] Deleting temporary audio file: {}",
+                                                        recordingId,
+                                                        tempAudioFilePath.toAbsolutePath());
+                                        Files.deleteIfExists(tempAudioFilePath);
+                                        log.info("[{}] Successfully deleted temporary audio file: {}",
+                                                        recordingId,
+                                                        tempAudioFilePath.toAbsolutePath());
+                                } catch (IOException e) {
+                                        log.warn("[{}] Failed to delete temporary audio file: {}. Error: {}",
+                                                        recordingId,
+                                                        tempAudioFilePath.toAbsolutePath(),
+                                                        e.getMessage());
+                                }
+                        }
+                }
+        }
+
+        private Path downloadAudioToFile(Recording recording, String metadataId) {
+                String recordingId = recording.getRecordingId();
+                Path tempFilePath = null;
+                try {
+                        String nhostFileId = extractNhostIdFromUrl(recording.getAudioUrl());
+                        if (nhostFileId == null) {
+                                log.error("[{}] Could not extract Nhost File ID from URL: {}. Cannot download audio.",
+                                                recordingId, recording.getAudioUrl());
+                                updateMetadataStatusToFailed(metadataId,
+                                                "Invalid Nhost URL in Recording document.");
+                                return null;
+                        }
+                        String fileExtension = Optional.ofNullable(recording.getFileName())
+                                        .map(f -> f.contains(".") ? f.substring(f.lastIndexOf("."))
+                                                        : ".tmp")
+                                        .orElse(".tmp");
+                        tempFilePath = Files.createTempFile(tempFileDir,
+                                        "audio_" + recordingId + "_", fileExtension);
+                        log.info("[{}] Created temporary file path for download: {}", recordingId,
+                                        tempFilePath.toAbsolutePath());
+                        nhostStorageService.downloadFileToPath(nhostFileId, tempFilePath);
+                        log.info("[{}] Successfully downloaded audio from Nhost file ID {} to {}",
+                                        recordingId, nhostFileId, tempFilePath.toAbsolutePath());
+                        return tempFilePath;
+                } catch (IOException e) {
+                        log.error("[{}] IOException during audio download/saving for metadata {}. Temp path: {}. Error: {}",
+                                        recordingId, metadataId, tempFilePath, e.getMessage(), e);
                         updateMetadataStatusToFailed(metadataId,
-                                        "Unexpected processing error: " + e.getMessage());
+                                        "Audio download or saving failed: " + e.getMessage());
+                        if (tempFilePath != null) {
+                                try {
+                                        Files.deleteIfExists(tempFilePath);
+                                } catch (IOException ignored) {
+                                }
+                        }
+                        return null;
+                } catch (Exception e) {
+                        log.error("[{}] Unexpected exception during audio download for metadata {}. Temp path: {}. Error: {}",
+                                        recordingId, metadataId, tempFilePath, e.getMessage(), e);
+                        updateMetadataStatusToFailed(metadataId,
+                                        "Unexpected download error: " + e.getMessage());
+                        if (tempFilePath != null) {
+                                try {
+                                        Files.deleteIfExists(tempFilePath);
+                                } catch (IOException ignored) {
+                                }
+                        }
+                        return null;
                 }
         }
 
-        private String downloadAudio(Recording recording) throws IOException {
+        private String performTranscription(Recording recording, Path audioFilePath,
+                        String metadataId) {
                 String recordingId = recording.getRecordingId();
-                String nhostFileId = extractNhostIdFromUrl(recording.getAudioUrl());
-                if (nhostFileId == null) {
-                        log.error("[{}] Could not extract Nhost File ID from URL: {}. Cannot download audio.",
-                                        recordingId, recording.getAudioUrl());
+                try {
+                        log.info("[{}] Calling Gemini Transcription API (Flash Model) using file: {}",
+                                        recordingId, audioFilePath.toAbsolutePath());
+                        String transcriptionResult = geminiService.callGeminiTranscriptionAPI(
+                                        audioFilePath, recording.getFileName());
+                        if (isErrorResponse(transcriptionResult)) {
+                                log.error("[{}] Gemini Transcription API failed. Response: {}",
+                                                recordingId, transcriptionResult);
+                                String errorDetails = "Transcription API Error";
+                                try {
+                                        JsonNode errorNode =
+                                                        objectMapper.readTree(transcriptionResult);
+                                        errorDetails = errorNode.path("error")
+                                                        .asText("Transcription API Error") + ": "
+                                                        + errorNode.path("details").asText(
+                                                                        "Details unavailable");
+                                } catch (JsonProcessingException ignored) {
+                                }
+                                updateMetadataStatusToFailed(metadataId, errorDetails);
+                                return null;
+                        }
+                        if (transcriptionResult.isBlank()) {
+                                log.error("[{}] Gemini Transcription API returned an empty result.",
+                                                recordingId);
+                                updateMetadataStatusToFailed(metadataId,
+                                                "Audio transcription returned empty result.");
+                                return null;
+                        }
+                        log.info("[{}] Transcription successful.", recordingId);
+                        log.debug("[{}] Transcript (first 100 chars): {}", recordingId,
+                                        transcriptionResult.substring(0,
+                                                        Math.min(transcriptionResult.length(), 100))
+                                                        + "...");
+                        return transcriptionResult;
+                } catch (IOException e) {
+                        log.error("[{}] IOException during transcription (reading temp file?) for metadata {}. File: {}. Error: {}",
+                                        recordingId, metadataId, audioFilePath.toAbsolutePath(),
+                                        e.getMessage(), e);
+                        updateMetadataStatusToFailed(metadataId,
+                                        "Transcription I/O error: " + e.getMessage());
+                        return null;
+                } catch (Exception e) {
+                        log.error("[{}] Unexpected exception during transcription for metadata {}. File: {}. Error: {}",
+                                        recordingId, metadataId, audioFilePath.toAbsolutePath(),
+                                        e.getMessage(), e);
+                        updateMetadataStatusToFailed(metadataId,
+                                        "Unexpected transcription error: " + e.getMessage());
                         return null;
                 }
-                log.info("[{}] Downloading audio from Nhost file ID: {}", recordingId, nhostFileId);
-                String base64Audio = nhostStorageService.downloadFileAsBase64(nhostFileId);
-                log.info("[{}] Successfully downloaded and Base64 encoded audio.", recordingId);
-                return base64Audio;
         }
 
-        private String performTranscription(Recording recording, String base64Audio) {
+        private String performSummarization(Recording recording, String transcriptText,
+                        String metadataId) {
                 String recordingId = recording.getRecordingId();
-                log.info("[{}] Calling Gemini Transcription API (Flash Model)...", recordingId);
-                String transcriptionResult = geminiService.callGeminiTranscriptionAPI(base64Audio,
-                                recording.getFileName());
-                if (isErrorResponse(transcriptionResult)) {
-                        log.error("[{}] Gemini Transcription API failed. Response: {}", recordingId,
-                                        transcriptionResult);
-                        return null;
-                }
-                if (transcriptionResult.isBlank()) {
-                        log.error("[{}] Gemini Transcription API returned an empty result.",
+                try {
+                        String prompt = createSummarizationPrompt(recording);
+                        log.debug("[{}] Generated Gemini Summarization prompt for JSON mode: '{}'",
+                                        recordingId, prompt);
+                        log.info("[{}] Calling Gemini Summarization API (Pro Model, JSON Mode)...",
                                         recordingId);
+                        String summarizationResult = geminiService
+                                        .callGeminiSummarizationAPI(prompt, transcriptText);
+                        if (isErrorResponse(summarizationResult)) {
+                                log.error("[{}] Gemini Summarization API failed. Response: {}",
+                                                recordingId, summarizationResult);
+                                String errorDetails = "Summarization API Error";
+                                try {
+                                        JsonNode errorNode =
+                                                        objectMapper.readTree(summarizationResult);
+                                        errorDetails = errorNode.path("error")
+                                                        .asText("Summarization API Error") + ": "
+                                                        + errorNode.path("details").asText(
+                                                                        "Details unavailable");
+                                } catch (JsonProcessingException ignored) {
+                                }
+                                updateMetadataStatusToFailed(metadataId, errorDetails);
+                                return null;
+                        }
+                        if (summarizationResult.isBlank()) {
+                                log.error("[{}] Gemini Summarization API returned an empty result.",
+                                                recordingId);
+                                updateMetadataStatusToFailed(metadataId,
+                                                "Summarization returned empty result.");
+                                return null;
+                        }
+                        log.info("[{}] Summarization API call successful. Received JSON response.",
+                                        recordingId);
+                        log.debug("[{}] Summarization JSON (first 500 chars): {}", recordingId,
+                                        summarizationResult.substring(0,
+                                                        Math.min(summarizationResult.length(), 500))
+                                                        + "...");
+                        return summarizationResult;
+                } catch (Exception e) {
+                        log.error("[{}] Unexpected exception during summarization for metadata {}. Error: {}",
+                                        recordingId, metadataId, e.getMessage(), e);
+                        updateMetadataStatusToFailed(metadataId,
+                                        "Unexpected summarization error: " + e.getMessage());
                         return null;
                 }
-                log.info("[{}] Transcription successful.", recordingId);
-                log.debug("[{}] Transcript (first 100 chars): {}", recordingId,
-                                transcriptionResult.substring(0,
-                                                Math.min(transcriptionResult.length(), 100))
-                                                + "...");
-                return transcriptionResult;
         }
+
 
         private boolean saveTranscript(String metadataId, String transcriptText) {
                 log.info("[{}] Attempting to save transcript text to metadata.", metadataId);
@@ -226,34 +376,6 @@ public class AudioSummarizationListenerService {
                 }
         }
 
-        private String performSummarization(Recording recording, String transcriptText) {
-                String recordingId = recording.getRecordingId();
-                String prompt = createSummarizationPrompt(recording);
-                log.debug("[{}] Generated Gemini Summarization prompt for JSON mode: '{}'",
-                                recordingId, prompt);
-                log.info("[{}] Calling Gemini Summarization API (Pro Model, JSON Mode)...",
-                                recordingId);
-                String summarizationResult =
-                                geminiService.callGeminiSummarizationAPI(prompt, transcriptText);
-                if (isErrorResponse(summarizationResult)) {
-                        log.error("[{}] Gemini Summarization API failed. Response: {}", recordingId,
-                                        summarizationResult);
-                        return null;
-                }
-                if (summarizationResult.isBlank()) {
-                        log.error("[{}] Gemini Summarization API returned an empty result.",
-                                        recordingId);
-                        return null;
-                }
-                log.info("[{}] Summarization API call successful. Received JSON response.",
-                                recordingId);
-                log.debug("[{}] Summarization JSON (first 500 chars): {}", recordingId,
-                                summarizationResult.substring(0,
-                                                Math.min(summarizationResult.length(), 500))
-                                                + "...");
-                return summarizationResult;
-        }
-
         private Summary parseAndSaveSummary(Recording recording, String metadataId,
                         String summarizationJson) {
                 String recordingId = recording.getRecordingId();
@@ -270,14 +392,12 @@ public class AudioSummarizationListenerService {
                                                 "AI service failed: " + errorTitle);
                                 return null;
                         }
-
                         String summaryText = responseNode.path("summaryText").asText(null);
                         List<String> keyPoints =
                                         parseStringList(responseNode, "keyPoints", recordingId);
                         List<String> topics = parseStringList(responseNode, "topics", recordingId);
                         List<Map<String, String>> glossary =
                                         parseGlossary(responseNode, recordingId);
-
                         if (summaryText == null) {
                                 log.error("[{}] Gemini JSON response missing required 'summaryText' field. Response: {}",
                                                 recordingId, summarizationJson);
@@ -285,11 +405,9 @@ public class AudioSummarizationListenerService {
                                                 "AI response missing required 'summaryText'.");
                                 return null;
                         }
-
                         log.info("[{}] Successfully parsed JSON response. Found {} key points, {} topics, and {} glossary items.",
                                         recordingId, keyPoints.size(), topics.size(),
                                         glossary.size());
-
                         Summary structuredSummary = new Summary();
                         structuredSummary.setSummaryId(UUID.randomUUID().toString());
                         structuredSummary.setRecordingId(recordingId);
@@ -297,7 +415,6 @@ public class AudioSummarizationListenerService {
                         structuredSummary.setKeyPoints(keyPoints);
                         structuredSummary.setTopics(topics);
                         structuredSummary.setGlossary(glossary);
-
                         log.info("[{}] Attempting to save summary (ID: {}) with {} key points, {} topics, {} glossary items to Firestore.",
                                         recordingId, structuredSummary.getSummaryId(),
                                         keyPoints.size(), topics.size(), glossary.size());
@@ -305,7 +422,6 @@ public class AudioSummarizationListenerService {
                         log.info("[{}] Summary (ID: {}) saved successfully.", recordingId,
                                         savedSummary.getSummaryId());
                         return savedSummary;
-
                 } catch (JsonProcessingException e) {
                         log.error("[{}] Failed to parse JSON response received from Summarization API. Error: {}. Response: {}",
                                         recordingId, e.getMessage(),
@@ -337,8 +453,11 @@ public class AudioSummarizationListenerService {
                 log.info("[{}] Finalizing processing. Attempting to link summaryId {} and set status to COMPLETED.",
                                 metadataId, summaryId);
                 try {
-                        Map<String, Object> updateMap = Map.of("summaryId", summaryId, "status",
-                                        ProcessingStatus.COMPLETED.name());
+                        Map<String, Object> updateMap = new HashMap<>();
+                        updateMap.put("summaryId", summaryId);
+                        updateMap.put("status", ProcessingStatus.COMPLETED.name());
+                        updateMap.put("failureReason", null);
+
                         firebaseService.updateDataWithMap(
                                         firebaseService.getAudioMetadataCollectionName(),
                                         metadataId, updateMap);
@@ -361,7 +480,6 @@ public class AudioSummarizationListenerService {
                                         recordingId, metadataId, fetchEx.getMessage());
                         return;
                 }
-
                 if (finalMetadata != null
                                 && finalMetadata.getStatus() == ProcessingStatus.COMPLETED) {
                         try {
@@ -422,6 +540,7 @@ public class AudioSummarizationListenerService {
                 return false;
         }
 
+
         private List<String> parseStringList(JsonNode parentNode, String fieldName,
                         String recordingId) {
                 if (parentNode.hasNonNull(fieldName) && parentNode.path(fieldName).isArray()) {
@@ -450,9 +569,12 @@ public class AudioSummarizationListenerService {
                                         boolean invalid = !item.containsKey("term")
                                                         || !item.containsKey("definition")
                                                         || !(item.get("term") instanceof String)
-                                                        || !(item.get("definition") instanceof String);
+                                                        || !(item.get("definition") instanceof String)
+                                                        || ((String) item.get("term")).isBlank()
+                                                        || ((String) item.get("definition"))
+                                                                        .isBlank();
                                         if (invalid) {
-                                                log.warn("[{}] Invalid glossary item structure found: {}. Skipping item.",
+                                                log.warn("[{}] Invalid or incomplete glossary item structure found: {}. Skipping item.",
                                                                 recordingId, item);
                                         }
                                         return invalid;
@@ -488,12 +610,6 @@ public class AudioSummarizationListenerService {
                         AudioMetadata currentMeta =
                                         firebaseService.getAudioMetadataById(metadataId);
                         if (currentMeta != null) {
-                                if (currentMeta.getStatus() == ProcessingStatus.COMPLETED
-                                                && newStatus == ProcessingStatus.FAILED) {
-                                        log.warn("[{}] Metadata status is already COMPLETED. Not overwriting with FAILED due to reason: {}",
-                                                        metadataId, reason);
-                                        return;
-                                }
                                 if (currentMeta.getStatus() == ProcessingStatus.FAILED
                                                 && (newStatus == ProcessingStatus.PENDING
                                                                 || newStatus == ProcessingStatus.PROCESSING)) {
@@ -501,15 +617,20 @@ public class AudioSummarizationListenerService {
                                                         metadataId, newStatus);
                                         return;
                                 }
-
+                                if (currentMeta.getStatus() == ProcessingStatus.PROCESSING
+                                                && newStatus == ProcessingStatus.PENDING) {
+                                        log.warn("[{}] Metadata status is already PROCESSING. Not overwriting with PENDING.",
+                                                        metadataId);
+                                        return;
+                                }
                                 Map<String, Object> updateMap = new HashMap<>();
                                 updateMap.put("status", newStatus.name());
-                                if (reason != null) {
-                                        updateMap.put("failureReason", reason);
+                                if (newStatus == ProcessingStatus.FAILED) {
+                                        updateMap.put("failureReason", reason != null ? reason
+                                                        : "Unknown failure");
                                 } else {
                                         updateMap.put("failureReason", null);
                                 }
-
                                 firebaseService.updateDataWithMap(
                                                 firebaseService.getAudioMetadataCollectionName(),
                                                 metadataId, updateMap);
@@ -547,4 +668,5 @@ public class AudioSummarizationListenerService {
                 log.warn("Could not extract Nhost ID using expected pattern from URL: {}", url);
                 return null;
         }
+
 }

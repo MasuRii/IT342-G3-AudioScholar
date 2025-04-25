@@ -22,15 +22,44 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
-import javax.inject.Named
-import javax.inject.Singleton
+import javax.inject.*
+
+@Singleton
+class TimeoutInterceptor @Inject constructor() : Interceptor {
+
+    companion object {
+        private const val UPLOAD_WRITE_TIMEOUT_SECONDS = 180L
+        private const val UPLOAD_READ_TIMEOUT_SECONDS = 60L
+        private const val TAG = "TimeoutInterceptor"
+    }
+
+    @Throws(IOException::class)
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+
+        val isUploadRequest = request.method == "POST" &&
+                request.url.encodedPath.endsWith("/api/audio/upload")
+
+        if (isUploadRequest) {
+            Log.d(TAG, "Applying longer timeouts for /api/audio/upload request.")
+            val newChain = chain
+                .withConnectTimeout(chain.connectTimeoutMillis(), TimeUnit.MILLISECONDS)
+                .withWriteTimeout(UPLOAD_WRITE_TIMEOUT_SECONDS.toInt(), TimeUnit.SECONDS)
+                .withReadTimeout(UPLOAD_READ_TIMEOUT_SECONDS.toInt(), TimeUnit.SECONDS)
+
+            return newChain.proceed(request)
+        } else {
+            return chain.proceed(request)
+        }
+    }
+}
+
 
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val PRIMARY_BASE_URL = "https://it342-g3-audioscholar-onrender-com.onrender.com/"
+    private const val PRIMARY_BASE_URL = "https://mastodon-balanced-randomly.ngrok-free.app/"
     private const val FALLBACK_URL_1 = "https://mastodon-balanced-randomly.ngrok-free.app/"
     private const val FALLBACK_URL_2 = "http://192.168.254.104:8080/"
 
@@ -73,20 +102,28 @@ object NetworkModule {
         val fallback1HttpUrl = FALLBACK_URL_1.toHttpUrlOrNull()
         val fallback2HttpUrl = FALLBACK_URL_2.toHttpUrlOrNull()
 
-        if (primaryHttpUrl == null) {
-            Log.e(TAG, "FATAL: Could not parse PRIMARY_BASE_URL: $PRIMARY_BASE_URL")
-        }
-        if (fallback1HttpUrl == null) {
-            Log.w(TAG, "WARNING: Could not parse FALLBACK_URL_1: $FALLBACK_URL_1. First fallback will not work.")
-        }
-        if (fallback2HttpUrl == null) {
-            Log.w(TAG, "WARNING: Could not parse FALLBACK_URL_2: $FALLBACK_URL_2. Second fallback will not work.")
-        }
+        if (primaryHttpUrl == null) Log.e(TAG, "FATAL: Could not parse PRIMARY_BASE_URL: $PRIMARY_BASE_URL")
+        if (fallback1HttpUrl == null) Log.w(TAG, "WARNING: Could not parse FALLBACK_URL_1: $FALLBACK_URL_1.")
+        if (fallback2HttpUrl == null) Log.w(TAG, "WARNING: Could not parse FALLBACK_URL_2: $FALLBACK_URL_2.")
 
         return Interceptor { chain ->
             val originalRequest: Request = chain.request()
             var lastException: IOException? = null
             var lastResponseCode: Int = -1
+
+            val isUploadRequest = originalRequest.method == "POST" &&
+                    originalRequest.url.encodedPath.endsWith("/api/audio/upload")
+
+            if (isUploadRequest) {
+                Log.d(TAG, "Upload request detected. Fallback interceptor will NOT retry this request.")
+                try {
+                    return@Interceptor chain.proceed(originalRequest)
+                } catch (e: IOException) {
+                    Log.e(TAG, "Upload request failed with IOException, rethrowing without fallback.", e)
+                    throw e
+                }
+            }
+
 
             if (primaryHttpUrl != null) {
                 val primaryUrl = originalRequest.url.newBuilder()
@@ -95,27 +132,25 @@ object NetworkModule {
                     .port(primaryHttpUrl.port)
                     .build()
                 val primaryRequest = originalRequest.newBuilder().url(primaryUrl).build()
-
-                Log.d(TAG, "Attempting request to primary URL: ${primaryRequest.url}")
+                Log.d(TAG, "[Fallback] Attempting request to primary URL: ${primaryRequest.url}")
                 try {
                     val response = chain.proceed(primaryRequest)
                     lastResponseCode = response.code
                     if (response.isSuccessful || response.code < 500) {
-                        Log.d(TAG, "Primary URL request successful (code: ${response.code}).")
+                        Log.d(TAG, "[Fallback] Primary URL request successful or client error (code: ${response.code}).")
                         return@Interceptor response
                     } else {
-                        Log.w(TAG, "Primary URL request failed with server error code: ${response.code}. Attempting fallback 1.")
+                        Log.w(TAG, "[Fallback] Primary URL request failed with server error code: ${response.code}. Attempting fallback 1.")
                         response.close()
                     }
                 } catch (e: IOException) {
-                    Log.e(TAG, "Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback 1.")
+                    Log.e(TAG, "[Fallback] Primary URL request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback 1.")
                     lastException = e
                 }
             } else {
-                Log.e(TAG, "Primary URL is invalid. Skipping primary attempt.")
+                Log.e(TAG, "[Fallback] Primary URL is invalid. Skipping primary attempt.")
                 lastException = IOException("Primary Base URL '$PRIMARY_BASE_URL' is invalid.")
             }
-
 
             if (fallback1HttpUrl != null) {
                 val fallback1Url = originalRequest.url.newBuilder()
@@ -124,25 +159,24 @@ object NetworkModule {
                     .port(fallback1HttpUrl.port)
                     .build()
                 val fallback1Request = originalRequest.newBuilder().url(fallback1Url).build()
-
-                Log.w(TAG, "Attempting fallback request 1 to: $fallback1Url")
+                Log.w(TAG, "[Fallback] Attempting fallback request 1 to: $fallback1Url")
                 try {
                     val response = chain.proceed(fallback1Request)
                     lastResponseCode = response.code
                     lastException = null
                     if (response.isSuccessful || response.code < 500) {
-                        Log.d(TAG, "Fallback URL 1 request successful (code: ${response.code}).")
+                        Log.d(TAG, "[Fallback] Fallback URL 1 request successful (code: ${response.code}).")
                         return@Interceptor response
                     } else {
-                        Log.w(TAG, "Fallback URL 1 request failed with server error code: ${response.code}. Attempting fallback 2.")
+                        Log.w(TAG, "[Fallback] Fallback URL 1 request failed with server error code: ${response.code}. Attempting fallback 2.")
                         response.close()
                     }
                 } catch (e: IOException) {
-                    Log.e(TAG, "Fallback URL 1 request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback 2.")
+                    Log.e(TAG, "[Fallback] Fallback URL 1 request failed with IOException (${e::class.java.simpleName}): ${e.message}. Attempting fallback 2.")
                     lastException = e
                 }
             } else {
-                Log.w(TAG, "Fallback URL 1 is invalid. Skipping fallback 1 attempt.")
+                Log.w(TAG, "[Fallback] Fallback URL 1 is invalid. Skipping fallback 1 attempt.")
                 if (lastException == null && lastResponseCode >= 500) {
                     lastException = IOException("Primary request failed (HTTP $lastResponseCode) and Fallback URL 1 '$FALLBACK_URL_1' is invalid.")
                 } else if (lastException == null) {
@@ -157,26 +191,25 @@ object NetworkModule {
                     .port(fallback2HttpUrl.port)
                     .build()
                 val fallback2Request = originalRequest.newBuilder().url(fallback2Url).build()
-
-                Log.w(TAG, "Attempting fallback request 2 to: $fallback2Url")
+                Log.w(TAG, "[Fallback] Attempting fallback request 2 to: $fallback2Url")
                 try {
                     val response = chain.proceed(fallback2Request)
                     lastResponseCode = response.code
                     lastException = null
                     if (response.isSuccessful || response.code < 500) {
-                        Log.d(TAG, "Fallback URL 2 request successful (code: ${response.code}).")
+                        Log.d(TAG, "[Fallback] Fallback URL 2 request successful (code: ${response.code}).")
                         return@Interceptor response
                     } else {
-                        Log.w(TAG, "Fallback URL 2 request also failed with server error code: ${response.code}. All attempts failed.")
+                        Log.w(TAG, "[Fallback] Fallback URL 2 request also failed with server error code: ${response.code}. All attempts failed.")
                         response.close()
-                        throw IOException("All attempts failed. Last attempt (Fallback 2) resulted in HTTP code: $lastResponseCode")
+                        lastException = IOException("All attempts failed. Last attempt (Fallback 2) resulted in HTTP code: $lastResponseCode")
                     }
                 } catch (e: IOException) {
-                    Log.e(TAG, "Fallback URL 2 request also failed with IOException (${e::class.java.simpleName}): ${e.message}. All attempts failed.")
+                    Log.e(TAG, "[Fallback] Fallback URL 2 request also failed with IOException (${e::class.java.simpleName}): ${e.message}. All attempts failed.")
                     lastException = e
                 }
             } else {
-                Log.w(TAG, "Fallback URL 2 is invalid. Skipping fallback 2 attempt.")
+                Log.w(TAG, "[Fallback] Fallback URL 2 is invalid. Skipping fallback 2 attempt.")
                 if (lastException == null && lastResponseCode >= 500) {
                     lastException = IOException("Previous attempts failed (last code: $lastResponseCode) and Fallback URL 2 '$FALLBACK_URL_2' is invalid.")
                 } else if (lastException == null) {
@@ -184,9 +217,15 @@ object NetworkModule {
                 }
             }
 
-            Log.e(TAG, "All URL attempts (Primary, Fallback 1, Fallback 2) failed.")
-            throw lastException ?: IOException("All attempts failed. Last attempt resulted in HTTP code: $lastResponseCode")
+            Log.e(TAG, "[Fallback] All URL attempts (Primary, Fallback 1, Fallback 2) failed for non-upload request.")
+            throw lastException ?: IOException("All attempts failed. Last known HTTP code: $lastResponseCode")
         }
+    }
+
+    @Provides
+    @Singleton
+    fun provideTimeoutInterceptor(): TimeoutInterceptor {
+        return TimeoutInterceptor()
     }
 
     @Provides
@@ -194,11 +233,14 @@ object NetworkModule {
     fun provideOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
         fallbackInterceptor: Interceptor,
-        authInterceptor: AuthInterceptor
+        authInterceptor: AuthInterceptor,
+        timeoutInterceptor: TimeoutInterceptor
     ): OkHttpClient {
+        Log.d(TAG, "Providing OkHttpClient instance")
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .addInterceptor(fallbackInterceptor)
+            .addInterceptor(timeoutInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -215,6 +257,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient, gson: Gson): Retrofit {
+        Log.d(TAG, "Providing Retrofit instance with base URL: $PRIMARY_BASE_URL")
         return Retrofit.Builder()
             .baseUrl(PRIMARY_BASE_URL)
             .client(okHttpClient)

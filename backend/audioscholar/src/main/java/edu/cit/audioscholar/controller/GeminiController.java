@@ -27,23 +27,25 @@ public class GeminiController {
     @GetMapping("/test")
     public ResponseEntity<?> testGemini(@RequestParam String prompt) {
         try {
-            String rawResponse = geminiService.callGeminiTextAPI(prompt);
+            String textResponse = geminiService.callSimpleTextAPI(prompt);
 
-            Map<String, Object> jsonResponse = objectMapper.readValue(rawResponse,
-                    new TypeReference<Map<String, Object>>() {});
-
-            if (jsonResponse.containsKey("error")) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(jsonResponse);
+            if (textResponse.trim().startsWith("{\"error\":")) {
+                try {
+                    Map<String, Object> errorJson = objectMapper.readValue(textResponse,
+                            new TypeReference<Map<String, Object>>() {});
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorJson);
+                } catch (JsonProcessingException jsonEx) {
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body(Map.of("error", "Gemini service returned an unparsable error",
+                                    "details", textResponse));
+                }
             }
 
-            return ResponseEntity.ok(jsonResponse);
-        } catch (JsonProcessingException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Invalid JSON response format received from service",
-                            "details", e.getMessage()));
+            return ResponseEntity.ok(Map.of("response", textResponse));
+
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    Map.of("error", "Error calling Gemini service", "details", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error",
+                    "Error processing Gemini request in controller", "details", e.getMessage()));
         }
     }
 }

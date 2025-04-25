@@ -49,6 +49,8 @@ android {
 }
 
 dependencies {
+    implementation("com.github.jeziellago:compose-markdown:0.5.7")
+
     val room_version = "2.7.1"
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")

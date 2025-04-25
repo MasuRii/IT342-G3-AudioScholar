@@ -92,6 +92,54 @@ public class FirebaseService {
         return firebaseApp;
     }
 
+    public AudioMetadata getAudioMetadataByRecordingId(String recordingId)
+            throws FirestoreInteractionException {
+        if (!StringUtils.hasText(recordingId)) {
+            log.warn("Attempted to get AudioMetadata with blank recordingId.");
+            return null;
+        }
+        log.debug("Querying {} collection for recordingId: {}", audioMetadataCollectionName,
+                recordingId);
+        try {
+            Firestore firestore = getFirestore();
+            CollectionReference colRef = firestore.collection(audioMetadataCollectionName);
+            Query query = colRef.whereEqualTo("recordingId", recordingId).limit(1);
+
+            ApiFuture<QuerySnapshot> future = query.get();
+            List<QueryDocumentSnapshot> documents = future.get().getDocuments();
+
+            if (documents.isEmpty()) {
+                log.warn("No AudioMetadata document found with recordingId: {}", recordingId);
+                return null;
+            } else {
+                if (documents.size() > 1) {
+                    log.warn(
+                            "Multiple AudioMetadata documents found for recordingId: {}. Returning the first one.",
+                            recordingId);
+                }
+                DocumentSnapshot document = documents.get(0);
+                AudioMetadata metadata = fromDocumentSnapshot(document);
+                if (metadata != null) {
+                    log.info("Retrieved AudioMetadata document {} with recordingId: {}",
+                            metadata.getId(), recordingId);
+                } else {
+                    log.error("Mapping failed for document {} found via recordingId: {}",
+                            document.getId(), recordingId);
+                }
+                return metadata;
+            }
+        } catch (ExecutionException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Error querying AudioMetadata by recordingId: {}", recordingId, e);
+            throw new FirestoreInteractionException(
+                    "Failed to retrieve AudioMetadata by recordingId " + recordingId, e);
+        } catch (Exception e) {
+            log.error("Unexpected error querying AudioMetadata by recordingId: {}", recordingId, e);
+            throw new FirestoreInteractionException(
+                    "Unexpected error retrieving AudioMetadata by recordingId " + recordingId, e);
+        }
+    }
+
     public GoogleIdToken verifyGoogleIdToken(String googleIdTokenString)
             throws GeneralSecurityException, IOException, IllegalArgumentException {
         if (googleIdTokenString == null || googleIdTokenString.isBlank()) {
@@ -636,9 +684,9 @@ public class FirebaseService {
             metadata.setNhostFileId(getString(data, "nhostFileId", document.getId()));
             metadata.setStorageUrl(getString(data, "storageUrl", document.getId()));
             metadata.setUploadTimestamp(getTimestamp(data, "uploadTimestamp", document.getId()));
-
             metadata.setRecordingId(getString(data, "recordingId", document.getId()));
             metadata.setSummaryId(getString(data, "summaryId", document.getId()));
+            metadata.setTranscriptText(getString(data, "transcriptText", document.getId()));
 
             String statusStr = getString(data, "status", document.getId());
             if (StringUtils.hasText(statusStr)) {

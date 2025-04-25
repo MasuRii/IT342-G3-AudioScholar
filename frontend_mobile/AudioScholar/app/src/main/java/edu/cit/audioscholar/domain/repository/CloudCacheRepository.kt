@@ -12,8 +12,8 @@ import javax.inject.Singleton
 
 interface CloudCacheRepository {
     suspend fun getCache(remoteId: String): CloudCacheEntity?
-    suspend fun saveSummaryToCache(remoteId: String, summary: SummaryResponseDto)
-    suspend fun saveRecommendationsToCache(remoteId: String, recommendations: List<RecommendationDto>)
+    suspend fun saveSummaryToCache(remoteId: String, summary: SummaryResponseDto, timestampMillis: Long = System.currentTimeMillis())
+    suspend fun saveRecommendationsToCache(remoteId: String, recommendations: List<RecommendationDto>, timestampMillis: Long = System.currentTimeMillis())
     suspend fun deleteCache(remoteId: String)
     fun parseRecommendations(json: String?): List<RecommendationDto>?
     fun parseGlossary(json: String?): List<GlossaryItemDto>?

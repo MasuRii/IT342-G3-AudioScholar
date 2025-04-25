@@ -135,6 +135,18 @@ fun RecordingDetailsScreen(
         }
     }
 
+    LaunchedEffect(uiState.textToCopy) {
+        uiState.textToCopy?.let { text ->
+            Log.d("RecordingDetailsScreen", "textToCopy state observed with text. Copying to clipboard.")
+            clipboardManager.setText(AnnotatedString(text))
+            scope.launch {
+                 snackbarHostState.showSnackbar(uiState.infoMessage ?: "Copied to clipboard!")
+            }
+            viewModel.consumeTextToCopy()
+            viewModel.consumeInfoMessage()
+        }
+    }
+
     LaunchedEffect(uiState.filePath, uiState.remoteRecordingId, uiState.isLoading, uiState.isDeleting, uiState.error) {
         val localFileDeleted = uiState.filePath.isEmpty() && !uiState.isLoading && !uiState.isDeleting && !uiState.isCloudSource
         val criticalLoadError = uiState.filePath.isEmpty() && uiState.remoteRecordingId == null && !uiState.isLoading && uiState.error != null
@@ -422,11 +434,49 @@ fun RecordingDetailsScreen(
                                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
                             ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    uiState.glossaryItems.forEachIndexed { index, item ->
-                                        GlossaryItemView(item = item)
-                                        if (index < uiState.glossaryItems.lastIndex) {
-                                            Spacer(modifier = Modifier.height(8.dp))
+                                Box(modifier = Modifier.padding(16.dp).fillMaxWidth().defaultMinSize(minHeight = 50.dp)) {
+                                    when (uiState.summaryStatus) {
+                                        SummaryStatus.PROCESSING -> {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "Generating notes...",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = LocalContentColor.current.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                        SummaryStatus.READY -> {
+                                            if (uiState.glossaryItems.isNotEmpty()) {
+                                                Column {
+                                                    uiState.glossaryItems.forEachIndexed { index, item ->
+                                                        GlossaryItemView(item = item)
+                                                        if (index < uiState.glossaryItems.lastIndex) {
+                                                            Spacer(modifier = Modifier.height(8.dp))
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                Text(
+                                                    text = stringResource(R.string.details_notes_placeholder),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = LocalContentColor.current.copy(alpha = 0.5f),
+                                                    modifier = Modifier.align(Alignment.Center)
+                                                )
+                                            }
+                                        }
+                                        SummaryStatus.FAILED -> {
+                                            Text(
+                                                text = stringResource(R.string.details_notes_failed),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.align(Alignment.Center)
+                                            )
+                                        }
+                                        SummaryStatus.IDLE -> {
                                         }
                                     }
                                 }

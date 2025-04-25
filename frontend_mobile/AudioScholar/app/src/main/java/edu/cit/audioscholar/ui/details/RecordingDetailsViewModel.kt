@@ -333,8 +333,8 @@ class RecordingDetailsViewModel @Inject constructor(
                     intervalMs = POLLING_INTERVAL_MS,
                     fetchAction = { remoteAudioRepository.getSummary(remoteId) },
                     onSuccess = { summaryDto ->
-                        Log.i("DetailsViewModel", "Summary polling successful. Updating UI state & saving to cloud cache.")
-                        _uiState.update {
+                        Log.i("DetailsViewModel", "Summary polling successful.")
+                        val updatedState = _uiState.updateAndGet {
                             it.copy(
                                 summaryStatus = SummaryStatus.READY,
                                 summaryText = summaryDto.formattedSummaryText ?: "",
@@ -342,8 +342,30 @@ class RecordingDetailsViewModel @Inject constructor(
                                 error = null
                             )
                         }
-                        viewModelScope.launch(Dispatchers.IO) {
-                            cloudCacheRepository.saveSummaryToCache(remoteId, summaryDto)
+                        val cacheTimestamp = System.currentTimeMillis()
+                        if (!updatedState.isCloudSource) {
+                            currentMetadata?.let { localMeta ->
+                                val updatedMeta = localMeta.copy(
+                                    cachedSummaryText = summaryDto.formattedSummaryText,
+                                    cachedGlossaryItems = summaryDto.glossary,
+                                    cacheTimestampMillis = cacheTimestamp
+                                )
+                                Log.d("DetailsViewModel", "Saving fetched summary data to local cache for ${localMeta.filePath}")
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    val saveSuccess = localAudioRepository.saveMetadata(updatedMeta)
+                                    if (saveSuccess) {
+                                        currentMetadata = updatedMeta
+                                        Log.i("DetailsViewModel", "Local summary cache saved successfully.")
+                                    } else {
+                                        Log.e("DetailsViewModel", "Failed to save summary data to local cache.")
+                                    }
+                                }
+                            } ?: Log.w("DetailsViewModel", "Summary fetched for local source, but currentMetadata is null!")
+                        } else {
+                            Log.d("DetailsViewModel", "Saving fetched summary data to cloud cache for $remoteId")
+                            viewModelScope.launch(Dispatchers.IO) {
+                                cloudCacheRepository.saveSummaryToCache(remoteId, summaryDto, cacheTimestamp)
+                            }
                         }
                     },
                     onFailure = { errorMsg ->
@@ -367,16 +389,37 @@ class RecordingDetailsViewModel @Inject constructor(
                     intervalMs = POLLING_INTERVAL_MS,
                     fetchAction = { remoteAudioRepository.getRecommendations(remoteId) },
                     onSuccess = { recommendationsList ->
-                        Log.i("DetailsViewModel", "Recommendations polling successful. Updating UI state & saving to cloud cache.")
-                        _uiState.update {
+                        Log.i("DetailsViewModel", "Recommendations polling successful.")
+                        val updatedState = _uiState.updateAndGet {
                             it.copy(
                                 recommendationsStatus = RecommendationsStatus.READY,
                                 youtubeRecommendations = recommendationsList,
                                 error = null
                             )
                         }
-                        viewModelScope.launch(Dispatchers.IO) {
-                            cloudCacheRepository.saveRecommendationsToCache(remoteId, recommendationsList)
+                        val cacheTimestamp = System.currentTimeMillis()
+                        if (!updatedState.isCloudSource) {
+                            currentMetadata?.let { localMeta ->
+                                val updatedMeta = localMeta.copy(
+                                    cachedRecommendations = recommendationsList,
+                                    cacheTimestampMillis = cacheTimestamp
+                                )
+                                Log.d("DetailsViewModel", "Saving fetched recommendations data to local cache for ${localMeta.filePath}")
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    val saveSuccess = localAudioRepository.saveMetadata(updatedMeta)
+                                    if (saveSuccess) {
+                                        currentMetadata = updatedMeta
+                                        Log.i("DetailsViewModel", "Local recommendations cache saved successfully.")
+                                    } else {
+                                        Log.e("DetailsViewModel", "Failed to save recommendations data to local cache.")
+                                    }
+                                }
+                            } ?: Log.w("DetailsViewModel", "Recommendations fetched for local source, but currentMetadata is null!")
+                        } else {
+                            Log.d("DetailsViewModel", "Saving fetched recommendations data to cloud cache for $remoteId")
+                            viewModelScope.launch(Dispatchers.IO) {
+                                cloudCacheRepository.saveRecommendationsToCache(remoteId, recommendationsList, cacheTimestamp)
+                            }
                         }
                     },
                     onFailure = { errorMsg ->

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 // Import the base API URL from your auth service file
-import { API_BASE_URL } from 'C:/Users/Terence/Documents/GitHub/IT342-G3-AudioScholar/frontend_web/audioscholar-app/src/services/authService.js'; // <--- Assuming you export API_BASE_URL from here
+import { API_BASE_URL } from '../services/authService'; // <--- Assuming you export API_BASE_URL from here
 
 // --- Define ALLOWED types/extensions OUTSIDE the component ---
 // Moved these definitions outside the component function scope
@@ -32,7 +32,7 @@ const Uploading = () => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    localStorage.removeItem('apiAuthToken');
+    localStorage.removeItem('AuthToken');
     localStorage.removeItem('userId');
     navigate('/');
   };
@@ -89,9 +89,10 @@ const Uploading = () => {
 
      setLoading(true);
 
-     const apiAuthToken = localStorage.getItem('apiAuthToken');
+     // Retrieve the token using the correct key
+     const AuthToken = localStorage.getItem('AuthToken');
 
-     if (!apiAuthToken) {
+     if (!AuthToken) {
        setError('Authentication token not found. Please sign in again.');
        setLoading(false);
        navigate('/signin');
@@ -117,7 +118,8 @@ const Uploading = () => {
        const response = await fetch(UPLOAD_URL, {
          method: 'POST',
          headers: {
-           'Authorization': `Bearer ${apiAuthToken}`,
+           // Use the correct token variable
+           'Authorization': `Bearer ${AuthToken}`,
          },
          body: formData,
        });
@@ -134,7 +136,8 @@ const Uploading = () => {
          setError(errorMsg);
          if (response.status === 401) {
               console.log("Token expired or invalid, redirecting to sign in.");
-             localStorage.removeItem('apiAuthToken');
+             // Remove the correct token key
+             localStorage.removeItem('AuthToken');
              localStorage.removeItem('userId');
               navigate('/signin');
          }

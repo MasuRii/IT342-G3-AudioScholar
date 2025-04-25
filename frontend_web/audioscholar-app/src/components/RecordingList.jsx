@@ -223,6 +223,7 @@ const RecordingList = () => {
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">View Data</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
                     </thead>
@@ -232,8 +233,10 @@ const RecordingList = () => {
                         // Use recording.id as the key
                         <tr key={recording.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {/* Display title from backend data */}
-                            <div className="text-sm font-medium text-gray-900">{recording.title || 'Untitled Recording'}</div>
+                            {/* Display title as simple text */}
+                            <div className="text-sm font-medium text-gray-900">
+                                {recording.title || 'Untitled Recording'}
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {/* Display date from backend data (assuming it's in a format Date can parse) */}
@@ -256,16 +259,13 @@ const RecordingList = () => {
                               {recording.status || 'Unknown'}
                             </span>
                           </td>
+                          {/* Add new Cell for View Data Link */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            {/* Link to view details - use recording.id */}
-                            {/* Only link to view if status is 'Processed' */}
-                            {recording.status === 'Processed' ? (
-                                <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b] mr-4">View</Link>
-                            ) : (
-                                <span className="text-gray-400 cursor-not-allowed mr-4">View</span> // Disable link if not processed
-                            )}
-
-
+                              <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b]">
+                                  View Data
+                              </Link>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             {/* Delete button - add onClick handler */}
                             <button
                               onClick={() => handleDelete(recording.id)} // Call handleDelete with the recording's ID

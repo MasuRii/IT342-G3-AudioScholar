@@ -12,6 +12,7 @@ import Uploading from './components/Uploading';
 import Dashboard from './components/dashboard';
 import RecordingList from './components/RecordingList';
 import UserProfile from './components/UserProfile';
+import RecordingData from './components/RecordingData';
 
 function App() {
   return (
@@ -51,6 +52,9 @@ function App() {
           
           {/* Recording List route */}
           <Route path="/recordings" element={<RecordingList />} />
+
+          {/* Recording Data (Detail) route */}
+          <Route path="/recordings/:id" element={<RecordingData />} />
 
           {/* User Profile route */}
           <Route path="/profile" element={<UserProfile />} />

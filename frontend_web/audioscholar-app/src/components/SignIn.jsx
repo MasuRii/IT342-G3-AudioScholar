@@ -3,9 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from 'firebase/auth'; // Import Firebase Auth functions
 import { FcGoogle } from 'react-icons/fc'; // Using react-icons for Google icon
 // Import your Firebase app configuration (ensure this file exists and is configured)
-import { firebaseApp } from 'C:/Users/Terence/Documents/GitHub/IT342-G3-AudioScholar/frontend_web/audioscholar-app/src/config/firebaseConfig.js'; // Adjust path if necessary
+import { firebaseApp } from '../config/firebaseConfig'; // Adjust path if necessary
 // Import the service function to call your backend
-import { verifyFirebaseTokenWithBackend } from 'C:/Users/Terence/Documents/GitHub/IT342-G3-AudioScholar/frontend_web/audioscholar-app/src/services/authService.js'; // Adjust path if necessary
+import { verifyFirebaseTokenWithBackend } from '../services/authService'; // Adjust path if necessary
 
 const SignIn = () => {
     const [email, setEmail] = useState('');

@@ -43,8 +43,8 @@ private fun formatTimestampMillis(timestampMillis: Long): String {
     return format.format(date)
 }
 
-private const val POLLING_INTERVAL_MS = 5000L
-private const val POLLING_TIMEOUT_MS = 60000L
+private const val POLLING_INTERVAL_MS = 10000L
+private const val POLLING_TIMEOUT_MS = 120000L
 private const val CACHE_VALIDITY_MS = 24 * 60 * 60 * 1000
 
 @HiltViewModel

@@ -2,8 +2,12 @@ package edu.cit.audioscholar.service;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Base64;
 import java.util.List;
 import java.util.logging.Level;
@@ -25,7 +29,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class NhostStorageService {
-
     private static final Logger LOGGER = Logger.getLogger(NhostStorageService.class.getName());
 
     private final RestTemplate restTemplate;
@@ -57,7 +60,6 @@ public class NhostStorageService {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class NhostErrorResponse {
-        public int status;
         public String message;
         public String error;
     }
@@ -68,14 +70,12 @@ public class NhostStorageService {
             throw new IOException("File is null, does not exist, or cannot be read: "
                     + (file != null ? file.getAbsolutePath() : "null"));
         }
-
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
         headers.set("x-hasura-admin-secret", nhostAdminSecret);
 
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         FileSystemResource resource = new FileSystemResource(file);
-
         body.add("file", resource);
 
         HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
@@ -89,9 +89,7 @@ public class NhostStorageService {
         try {
             ResponseEntity<String> rawResponse = restTemplate.exchange(nhostStorageUrl,
                     HttpMethod.POST, requestEntity, String.class);
-
             return handleNhostResponse(rawResponse);
-
         } catch (HttpClientErrorException | HttpServerErrorException e) {
             handleNhostError(e);
             return null;
@@ -107,7 +105,6 @@ public class NhostStorageService {
                     "An unexpected error occurred during Nhost file upload processing.", e);
         }
     }
-
 
     @Deprecated
     public String uploadFile(MultipartFile file) throws IOException {
@@ -157,8 +154,9 @@ public class NhostStorageService {
         try {
             NhostErrorResponse errorResponse =
                     objectMapper.readValue(errorBody, NhostErrorResponse.class);
-            errorMessage +=
-                    ", Error: " + errorResponse.error + ", Message: " + errorResponse.message;
+            errorMessage += ", Error: "
+                    + (errorResponse.error != null ? errorResponse.error : "N/A") + ", Message: "
+                    + (errorResponse.message != null ? errorResponse.message : "N/A");
         } catch (Exception parseException) {
             errorMessage += ", Response Body: " + errorBody;
         }
@@ -166,20 +164,82 @@ public class NhostStorageService {
         throw new RuntimeException(errorMessage, e);
     }
 
+    public void downloadFileToPath(String fileId, Path targetPath) throws IOException {
+        if (fileId == null || fileId.isEmpty()) {
+            LOGGER.log(Level.SEVERE, "Cannot download file with null or empty fileId.");
+            throw new IllegalArgumentException("File ID cannot be null or empty.");
+        }
+        if (targetPath == null) {
+            LOGGER.log(Level.SEVERE, "Cannot download file to a null target path.");
+            throw new IllegalArgumentException("Target path cannot be null.");
+        }
 
+        String downloadUrl = getPublicUrl(fileId);
+        LOGGER.log(Level.INFO,
+                "Attempting to stream download PUBLIC file from Nhost URL: {0} to path: {1}",
+                new Object[] {downloadUrl, targetPath.toAbsolutePath()});
 
+        try {
+            restTemplate.execute(new URI(downloadUrl), HttpMethod.GET, null, clientHttpResponse -> {
+                HttpStatusCode statusCode = clientHttpResponse.getStatusCode();
+                if (statusCode == HttpStatus.OK) {
+                    try (InputStream inputStream = clientHttpResponse.getBody()) {
+                        if (inputStream == null) {
+                            throw new IOException(
+                                    "Received null input stream from Nhost response for file ID: "
+                                            + fileId);
+                        }
+                        long bytesCopied = Files.copy(inputStream, targetPath,
+                                StandardCopyOption.REPLACE_EXISTING);
+                        LOGGER.log(Level.INFO,
+                                "Successfully downloaded and saved {0} bytes to {1} for file ID: {2}",
+                                new Object[] {bytesCopied, targetPath.toAbsolutePath(), fileId});
+                        return bytesCopied;
+                    } catch (IOException e) {
+                        LOGGER.log(Level.SEVERE, "Failed to save downloaded stream to path "
+                                + targetPath.toAbsolutePath(), e);
+                        throw new IOException(
+                                "Failed to save downloaded file to " + targetPath.toAbsolutePath(),
+                                e);
+                    }
+                } else {
+                    handleDownloadErrorResponse(statusCode, fileId);
+                    return null;
+                }
+            });
+        } catch (URISyntaxException e) {
+            LOGGER.log(Level.SEVERE, "Invalid URI syntax for download URL: " + downloadUrl, e);
+            throw new RuntimeException("Failed to create download URI.", e);
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            handleDownloadErrorResponse(e.getStatusCode(), fileId);
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.SEVERE,
+                    "Runtime exception during Nhost file download/saving for file ID: " + fileId
+                            + " to path: " + targetPath.toAbsolutePath(),
+                    e);
+            throw e;
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE,
+                    "An unexpected error occurred during Nhost file download/saving for file ID: "
+                            + fileId + " to path: " + targetPath.toAbsolutePath(),
+                    e);
+            throw new RuntimeException(
+                    "An unexpected error occurred during Nhost file download/saving.", e);
+        }
+    }
+
+    @Deprecated
     public String downloadFileAsBase64(String fileId) throws IOException {
         if (fileId == null || fileId.isEmpty()) {
             LOGGER.log(Level.SEVERE, "Cannot download file with null or empty fileId.");
             throw new IllegalArgumentException("File ID cannot be null or empty.");
         }
         String downloadUrl = getPublicUrl(fileId);
-        LOGGER.log(Level.INFO, "Attempting to download PUBLIC file from Nhost URL: {0}",
+        LOGGER.log(Level.INFO,
+                "[Deprecated Method] Attempting to download PUBLIC file from Nhost URL: {0}",
                 downloadUrl);
-
         HttpHeaders headers = new HttpHeaders();
         headers.setAccept(List.of(MediaType.APPLICATION_OCTET_STREAM));
-
         RequestEntity<Void> requestEntity;
         try {
             requestEntity = RequestEntity.get(new URI(downloadUrl)).headers(headers).build();
@@ -187,13 +247,12 @@ public class NhostStorageService {
             LOGGER.log(Level.SEVERE, "Invalid URI syntax for download URL: " + downloadUrl, e);
             throw new RuntimeException("Failed to create download URI.", e);
         }
-
         try {
             ResponseEntity<byte[]> response = restTemplate.exchange(requestEntity, byte[].class);
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 byte[] fileBytes = response.getBody();
                 LOGGER.log(Level.INFO,
-                        "Successfully downloaded {0} bytes from Nhost for file ID: {1}",
+                        "[Deprecated Method] Successfully downloaded {0} bytes from Nhost for file ID: {1}",
                         new Object[] {fileBytes.length, fileId});
                 return Base64.getEncoder().encodeToString(fileBytes);
             } else {
@@ -205,7 +264,7 @@ public class NhostStorageService {
             return null;
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE,
-                    "An unexpected error occurred during Nhost file download for file ID: "
+                    "[Deprecated Method] An unexpected error occurred during Nhost file download for file ID: "
                             + fileId,
                     e);
             throw new RuntimeException("An unexpected error occurred during Nhost file download.",
@@ -214,20 +273,20 @@ public class NhostStorageService {
     }
 
     private void handleDownloadErrorResponse(HttpStatusCode statusCode, String fileId) {
+        String errorMessage;
         if (statusCode == HttpStatus.FORBIDDEN) {
-            LOGGER.log(Level.SEVERE,
+            errorMessage =
                     "Failed to download file from Nhost (Status: 403 FORBIDDEN). Ensure 'public' role has 'select' permission on storage.files table in Nhost for file ID: "
-                            + fileId);
-            throw new RuntimeException(
-                    "Failed to download file from Nhost (403 Forbidden). Check public permissions.");
+                            + fileId;
+            LOGGER.log(Level.SEVERE, errorMessage);
+            throw new RuntimeException(errorMessage);
         } else {
-            LOGGER.log(Level.SEVERE,
-                    "Failed to download file from Nhost. Status: {0} for file ID: {1}",
-                    new Object[] {statusCode, fileId});
-            throw new RuntimeException("Failed to download file from Nhost. Status: " + statusCode);
+            errorMessage = "Failed to download file from Nhost. Status: " + statusCode
+                    + " for file ID: " + fileId;
+            LOGGER.log(Level.SEVERE, errorMessage);
+            throw new RuntimeException(errorMessage);
         }
     }
-
 
     public String getPublicUrl(String fileId) {
         if (fileId == null || fileId.isEmpty()) {

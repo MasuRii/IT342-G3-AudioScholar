@@ -8,9 +8,11 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.*;
+import org.springframework.web.util.UriComponentsBuilder;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,19 +25,16 @@ public class GeminiService {
         @Value("${google.ai.api.key}")
         private String apiKey;
 
-        private static final String API_BASE_URL =
-                        "https://generativelanguage.googleapis.com/v1beta/models/";
+        private static final String API_BASE_URL = "https://generativelanguage.googleapis.com";
+        private static final String FILES_API_UPLOAD_PATH = "/upload/v1beta/files";
+        private static final String FILES_API_BASE_URL = API_BASE_URL;
         private static final String TRANSCRIPTION_MODEL_NAME = "gemini-2.0-flash";
         private static final String SUMMARIZATION_MODEL_NAME = "gemini-2.5-pro-exp-03-25";
-
-        private static final String TRANSCRIPTION_API_URL =
-                        API_BASE_URL + TRANSCRIPTION_MODEL_NAME + ":generateContent";
-        private static final String SUMMARIZATION_API_URL =
-                        API_BASE_URL + SUMMARIZATION_MODEL_NAME + ":generateContent";
+        private static final String GENERATE_CONTENT_PATH =
+                        "/v1beta/models/{modelName}:generateContent";
 
         private static final int MAX_RETRIES = 3;
         private static final long RETRY_DELAY_MS = 1000;
-
         private static final int MAX_OUTPUT_TOKENS_TRANSCRIPTION = 8192;
         private static final int MAX_OUTPUT_TOKENS_SUMMARIZATION = 65536;
 
@@ -73,7 +72,6 @@ public class GeminiService {
                 return Collections.unmodifiableMap(schema);
         }
 
-
         public String callGeminiTranscriptionAPI(Path audioFilePath, String fileName)
                         throws IOException {
                 if (audioFilePath == null || !Files.exists(audioFilePath)) {
@@ -82,137 +80,227 @@ public class GeminiService {
                                         + audioFilePath);
                 }
 
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.APPLICATION_JSON);
-
-                String promptText =
-                                "Transcribe the following audio content accurately. Output only the spoken text.";
-                Map<String, Object> textPart = Map.of("text", promptText);
-
-                byte[] audioBytes;
-                try {
-                        log.debug("Reading audio file bytes from: {}",
-                                        audioFilePath.toAbsolutePath());
-                        audioBytes = Files.readAllBytes(audioFilePath);
-                        log.debug("Read {} bytes from audio file.", audioBytes.length);
-                } catch (IOException e) {
-                        log.error("Failed to read audio file: {}", audioFilePath.toAbsolutePath(),
-                                        e);
-                        throw e;
-                } catch (OutOfMemoryError oom) {
-                        log.error("OutOfMemoryError reading audio file ({} bytes) into byte array: {}",
-                                        (Files.exists(audioFilePath) ? Files.size(audioFilePath)
-                                                        : "unknown size"),
-                                        audioFilePath.toAbsolutePath(), oom);
-                        return createErrorResponse("Memory Error Reading File",
-                                        "File too large to read into memory for Base64 encoding.");
-                }
-
-                String base64Audio = Base64.getEncoder().encodeToString(audioBytes);
-
                 String mimeType = getAudioMimeType(fileName);
-                Map<String, Object> audioPart = Map.of("inline_data",
-                                Map.of("mime_type", mimeType, "data", base64Audio));
+                long fileSize = Files.size(audioFilePath);
+                String displayName = fileName;
 
-                List<Object> parts = List.of(textPart, audioPart);
-                Map<String, Object> content = Map.of("parts", parts);
-                List<Object> contents = List.of(content);
+                try {
+                        String fileUri = uploadFile(audioFilePath, mimeType, fileSize, displayName);
+                        log.info("File uploaded successfully. URI: {}", fileUri);
 
-                Map<String, Object> generationConfig = new HashMap<>();
-                generationConfig.put("temperature", 0.2);
-                generationConfig.put("maxOutputTokens", MAX_OUTPUT_TOKENS_TRANSCRIPTION);
+                        HttpHeaders generateHeaders = new HttpHeaders();
+                        generateHeaders.setContentType(MediaType.APPLICATION_JSON);
 
-                Map<String, Object> requestBody = new HashMap<>();
-                requestBody.put("contents", contents);
-                requestBody.put("generationConfig", generationConfig);
+                        String promptText =
+                                        "Transcribe the following audio content accurately. Output only the spoken text.";
+                        Map<String, Object> textPart = Map.of("text", promptText);
+                        Map<String, Object> fileDataPart = Map.of("file_data",
+                                        Map.of("mime_type", mimeType, "file_uri", fileUri));
 
-                HttpEntity<Map<String, Object>> requestEntity =
-                                new HttpEntity<>(requestBody, headers);
+                        List<Object> parts = List.of(textPart, fileDataPart);
+                        Map<String, Object> content = Map.of("parts", parts);
+                        List<Object> contents = List.of(content);
 
-                String url = TRANSCRIPTION_API_URL + "?key=" + apiKey;
-                log.info("Calling Gemini Transcription API (Model: {}) using file: {}",
-                                TRANSCRIPTION_MODEL_NAME, audioFilePath.getFileName());
+                        Map<String, Object> generationConfig = new HashMap<>();
+                        generationConfig.put("temperature", 0.2);
+                        generationConfig.put("maxOutputTokens", MAX_OUTPUT_TOKENS_TRANSCRIPTION);
 
-                for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                        try {
-                                ResponseEntity<String> response = restTemplate.exchange(url,
-                                                HttpMethod.POST, requestEntity, String.class);
+                        Map<String, Object> requestBody = new HashMap<>();
+                        requestBody.put("contents", contents);
+                        requestBody.put("generationConfig", generationConfig);
 
-                                log.info("Gemini Transcription API call successful on attempt {} using model {}. Status: {}",
-                                                attempt, TRANSCRIPTION_MODEL_NAME,
-                                                response.getStatusCode());
+                        HttpEntity<Map<String, Object>> requestEntity =
+                                        new HttpEntity<>(requestBody, generateHeaders);
 
-                                String responseBody = response.getBody();
-                                if (responseBody == null || responseBody.isBlank()) {
-                                        log.warn("Gemini Transcription API returned successful status ({}) but empty body.",
+                        String generateContentUrl = UriComponentsBuilder
+                                        .fromUriString(API_BASE_URL + GENERATE_CONTENT_PATH)
+                                        .queryParam("key", apiKey)
+                                        .buildAndExpand(TRANSCRIPTION_MODEL_NAME).toUriString();
+
+                        log.info("Calling Gemini Transcription API (Model: {}) using file URI: {}",
+                                        TRANSCRIPTION_MODEL_NAME, fileUri);
+
+                        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                                try {
+                                        ResponseEntity<String> response = restTemplate.exchange(
+                                                        generateContentUrl, HttpMethod.POST,
+                                                        requestEntity, String.class);
+                                        log.info("Gemini Transcription API (generateContent) call successful on attempt {} using model {}. Status: {}",
+                                                        attempt, TRANSCRIPTION_MODEL_NAME,
                                                         response.getStatusCode());
-                                        return createErrorResponse("Empty Response",
-                                                        "API returned success status but no content.");
-                                }
 
-                                String extractedText =
-                                                extractTextFromStandardResponse(responseBody);
+                                        String responseBody = response.getBody();
+                                        if (responseBody == null || responseBody.isBlank()) {
+                                                log.warn("Gemini Transcription API (generateContent) returned successful status ({}) but empty body.",
+                                                                response.getStatusCode());
+                                                if (attempt == MAX_RETRIES) {
+                                                        return createErrorResponse("Empty Response",
+                                                                        "API returned success status but no content after retries.");
+                                                }
+                                                sleepForRetry(attempt);
+                                                continue;
+                                        }
 
-                                if (extractedText.isBlank()
-                                                && !responseBody.contains("promptFeedback")
-                                                && !responseBody.contains("finishReason")) {
-                                        log.warn("Could not extract text content from Gemini transcription response structure. Body: {}",
+                                        String extractedText = extractTextFromStandardResponse(
                                                         responseBody);
-                                        return createErrorResponse("Extraction Error",
-                                                        "Failed to extract transcript text from API response structure.");
-                                }
+                                        log.info("Successfully extracted transcript text (length: {}).",
+                                                        extractedText.length());
+                                        return extractedText;
 
-                                log.info("Successfully extracted transcript text (length: {}).",
-                                                extractedText.length());
-                                return extractedText;
-
-                        } catch (HttpServerErrorException | ResourceAccessException e) {
-                                log.warn("Gemini Transcription API call failed on attempt {}/{} with retryable error: {}. Retrying...",
-                                                attempt, MAX_RETRIES, e.getMessage());
-                                if (attempt == MAX_RETRIES) {
-                                        log.error("Gemini Transcription API call failed after {} attempts.",
-                                                        MAX_RETRIES, e);
+                                } catch (ApiException e) {
+                                        log.error("Gemini Transcription API Error on attempt {}: {}",
+                                                        attempt, e.getMessage(), e);
+                                        return createErrorResponse("Transcription API Error",
+                                                        e.getMessage());
+                                } catch (HttpServerErrorException | ResourceAccessException e) {
+                                        log.warn("Gemini Transcription API (generateContent) call failed on attempt {}/{} with retryable error: {}. Retrying...",
+                                                        attempt, MAX_RETRIES, e.getMessage());
+                                        if (attempt == MAX_RETRIES) {
+                                                log.error("Gemini Transcription API (generateContent) call failed after {} attempts.",
+                                                                MAX_RETRIES, e);
+                                                return createErrorResponse(
+                                                                "API Request Failed (Server/Network)",
+                                                                e.getMessage());
+                                        }
+                                        sleepForRetry(attempt);
+                                } catch (HttpClientErrorException e) {
+                                        log.error("Gemini Transcription API (generateContent) client error: {} - {}",
+                                                        e.getStatusCode(),
+                                                        e.getResponseBodyAsString(), e);
+                                        String details = parseErrorDetails(e);
                                         return createErrorResponse(
-                                                        "API Request Failed (Server/Network)",
+                                                        "API Client Error: " + e.getStatusCode(),
+                                                        details);
+                                } catch (RestClientResponseException e) {
+                                        log.error("Gemini Transcription API (generateContent) REST client error: Status {}, Body: {}",
+                                                        e.getStatusCode(),
+                                                        e.getResponseBodyAsString(), e);
+                                        return createErrorResponse(
+                                                        "API Request Failed (REST Client)",
+                                                        e.getMessage());
+                                } catch (JsonProcessingException e) {
+                                        log.error("Error parsing successful Gemini Transcription response JSON on attempt {}: {}",
+                                                        attempt, e.getMessage(), e);
+                                        return createErrorResponse("Response Parsing Error",
+                                                        e.getMessage());
+                                } catch (RuntimeException e) {
+                                        log.error("Unexpected runtime error during Gemini Transcription API (generateContent) processing on attempt {}: {}",
+                                                        attempt, e.getMessage(), e);
+                                        return createErrorResponse("Transcription Processing Error",
                                                         e.getMessage());
                                 }
-                                try {
-                                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        log.error("API call interrupted during retry wait.", ie);
-                                        return createErrorResponse("API call interrupted",
-                                                        ie.getMessage());
-                                }
-                        } catch (HttpClientErrorException e) {
-                                log.error("Gemini Transcription API client error: {} - {}",
-                                                e.getStatusCode(), e.getResponseBodyAsString(), e);
-                                String details = parseErrorDetails(e);
-                                return createErrorResponse("API Client Error: " + e.getStatusCode(),
-                                                details);
-                        } catch (RestClientResponseException e) {
-                                log.error("Gemini Transcription API REST client error: Status {}, Body: {}",
-                                                e.getStatusCode(), e.getResponseBodyAsString(), e);
-                                return createErrorResponse("API Request Failed (REST Client)",
-                                                e.getMessage());
-                        } catch (RuntimeException e) {
-                                log.error("Runtime error during Gemini Transcription API processing on attempt {}: {}",
-                                                attempt, e.getMessage(), e);
-                                return createErrorResponse("Transcription API Processing Error",
-                                                e.getMessage());
-                        } catch (Exception e) {
-                                log.error("Unexpected error during Gemini Transcription API call or processing on attempt {}",
-                                                attempt, e);
-                                return createErrorResponse(
-                                                "Transcription API Request/Processing Failed",
-                                                e.getMessage());
                         }
-                }
+                        return createErrorResponse("API Request Failed",
+                                        "Max retries reached for generateContent or unexpected flow.");
 
-                return createErrorResponse("API Request Failed",
-                                "Max retries reached or unexpected flow.");
+                } catch (IOException e) {
+                        log.error("IOException during file handling or upload: {}", e.getMessage(),
+                                        e);
+                        throw e;
+                } catch (ApiException e) {
+                        log.error("File Upload API call failed: {}", e.getMessage(), e);
+                        return createErrorResponse("File Upload Failed", e.getMessage());
+                } catch (Exception e) {
+                        log.error("Unexpected error during transcription process: {}",
+                                        e.getMessage(), e);
+                        return createErrorResponse("Unexpected Transcription Error",
+                                        e.getMessage());
+                }
         }
 
+        private String uploadFile(Path filePath, String mimeType, long fileSize, String displayName)
+                        throws IOException, ApiException {
+                String initiateUrl = UriComponentsBuilder
+                                .fromUriString(FILES_API_BASE_URL + FILES_API_UPLOAD_PATH)
+                                .queryParam("key", apiKey).toUriString();
+
+                HttpHeaders initiateHeaders = new HttpHeaders();
+                initiateHeaders.set("X-Goog-Upload-Protocol", "resumable");
+                initiateHeaders.set("X-Goog-Upload-Command", "start");
+                initiateHeaders.set("X-Goog-Upload-Header-Content-Length",
+                                String.valueOf(fileSize));
+                initiateHeaders.set("X-Goog-Upload-Header-Content-Type", mimeType);
+                initiateHeaders.setContentType(MediaType.APPLICATION_JSON);
+
+                Map<String, Object> fileMetadata = Map.of("display_name", displayName);
+                Map<String, Object> initiateBodyMap = Map.of("file", fileMetadata);
+                HttpEntity<Map<String, Object>> initiateRequestEntity =
+                                new HttpEntity<>(initiateBodyMap, initiateHeaders);
+                String uploadUrl;
+
+                log.info("Initiating file upload for: {}", displayName);
+                try {
+                        ResponseEntity<String> initiateResponse = restTemplate.exchange(initiateUrl,
+                                        HttpMethod.POST, initiateRequestEntity, String.class);
+                        uploadUrl = initiateResponse.getHeaders().getFirst("X-Goog-Upload-Url");
+
+                        if (uploadUrl == null || uploadUrl.isBlank()) {
+                                log.error("Failed to get upload URL from initiation response. Status: {}, Body: {}",
+                                                initiateResponse.getStatusCode(),
+                                                initiateResponse.getBody());
+                                throw new ApiException(
+                                                "Failed to get upload URL from initiation response.");
+                        }
+                        log.info("Upload initiated. Got upload URL.");
+                        log.debug("Upload URL: {}", uploadUrl);
+
+                } catch (RestClientException e) {
+                        log.error("Error initiating file upload: {}", e.getMessage(), e);
+                        throw new ApiException("Error initiating file upload: " + e.getMessage(),
+                                        e);
+                }
+
+                HttpHeaders uploadHeaders = new HttpHeaders();
+                uploadHeaders.setContentType(MediaType.parseMediaType(mimeType));
+                uploadHeaders.set("X-Goog-Upload-Offset", "0");
+                uploadHeaders.set("X-Goog-Upload-Command", "upload, finalize");
+
+                FileSystemResource fileResource = new FileSystemResource(filePath);
+                HttpEntity<FileSystemResource> uploadRequestEntity =
+                                new HttpEntity<>(fileResource, uploadHeaders);
+
+                log.info("Uploading file bytes to: {}", uploadUrl);
+                try {
+                        ResponseEntity<String> uploadResponse = restTemplate.exchange(uploadUrl,
+                                        HttpMethod.POST, uploadRequestEntity, String.class);
+
+                        log.info("File upload completed. Status: {}",
+                                        uploadResponse.getStatusCode());
+                        String responseBody = uploadResponse.getBody();
+
+                        if (responseBody == null) {
+                                throw new ApiException(
+                                                "Upload completed but received null response body.");
+                        }
+
+                        JsonNode responseNode = objectMapper.readTree(responseBody);
+                        if (responseNode.has("file") && responseNode.get("file").has("uri")) {
+                                String fileUri = responseNode.get("file").get("uri").asText();
+                                if (fileUri != null && !fileUri.isBlank()) {
+                                        log.debug("Extracted file URI: {}", fileUri);
+                                        return fileUri;
+                                }
+                        }
+                        log.error("Upload response did not contain expected file URI. Body: {}",
+                                        responseBody);
+                        throw new ApiException(
+                                        "Upload response did not contain expected file URI.");
+
+                } catch (RestClientException e) {
+                        log.error("Error uploading file bytes: {}", e.getMessage(), e);
+                        if (e instanceof HttpStatusCodeException) {
+                                String errorBody = ((HttpStatusCodeException) e)
+                                                .getResponseBodyAsString();
+                                log.error("API Error Response Body: {}", errorBody);
+                                throw new ApiException("Error uploading file bytes: "
+                                                + parseErrorDetailsFromString(errorBody), e);
+                        }
+                        throw new ApiException("Error uploading file bytes: " + e.getMessage(), e);
+                } catch (JsonProcessingException e) {
+                        log.error("Error parsing upload response JSON: {}", e.getMessage(), e);
+                        throw new ApiException("Error parsing upload response JSON", e);
+                }
+        }
 
         public String callGeminiSummarizationAPI(String promptText, String transcriptText) {
                 HttpHeaders headers = new HttpHeaders();
@@ -224,7 +312,6 @@ public class GeminiService {
                                 Map.of("role", "user", "parts", List.of(promptPart));
                 Map<String, Object> transcriptContent =
                                 Map.of("role", "user", "parts", List.of(transcriptPart));
-
                 List<Object> contents = List.of(promptContent, transcriptContent);
 
                 Map<String, Object> generationConfig = new HashMap<>();
@@ -242,7 +329,11 @@ public class GeminiService {
                 HttpEntity<Map<String, Object>> requestEntity =
                                 new HttpEntity<>(requestBody, headers);
 
-                String url = SUMMARIZATION_API_URL + "?key=" + apiKey;
+                String summarizationUrl = UriComponentsBuilder
+                                .fromUriString(API_BASE_URL + GENERATE_CONTENT_PATH)
+                                .queryParam("key", apiKey).buildAndExpand(SUMMARIZATION_MODEL_NAME)
+                                .toUriString();
+
                 log.info("Calling Gemini Summarization API (Model: {}, JSON Schema Mode)",
                                 SUMMARIZATION_MODEL_NAME);
                 log.trace("Summarization prompt text length: {}", promptText.length());
@@ -250,9 +341,9 @@ public class GeminiService {
 
                 for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                         try {
-                                ResponseEntity<String> response = restTemplate.exchange(url,
-                                                HttpMethod.POST, requestEntity, String.class);
-
+                                ResponseEntity<String> response = restTemplate.exchange(
+                                                summarizationUrl, HttpMethod.POST, requestEntity,
+                                                String.class);
                                 log.info("Gemini Summarization API call successful on attempt {} using model {}. Status: {}",
                                                 attempt, SUMMARIZATION_MODEL_NAME,
                                                 response.getStatusCode());
@@ -261,26 +352,25 @@ public class GeminiService {
                                 if (responseBody == null || responseBody.isBlank()) {
                                         log.warn("Gemini Summarization API returned successful status ({}) but empty body.",
                                                         response.getStatusCode());
-                                        return createErrorResponse("Empty Response",
-                                                        "API returned success status but no content.");
+                                        if (attempt == MAX_RETRIES) {
+                                                return createErrorResponse("Empty Response",
+                                                                "API returned success status but no content after retries.");
+                                        }
+                                        sleepForRetry(attempt);
+                                        continue;
                                 }
 
                                 String extractedJsonText =
                                                 extractTextFromStandardResponse(responseBody);
-
-                                if (extractedJsonText.isBlank()
-                                                && !responseBody.contains("promptFeedback")
-                                                && !responseBody.contains("finishReason")) {
-                                        log.warn("Could not extract JSON content from Gemini summarization response structure. Body: {}",
-                                                        responseBody);
-                                        return createErrorResponse("Extraction Error",
-                                                        "Failed to extract JSON summary from API response structure.");
-                                }
-
                                 log.debug("Successfully extracted JSON text from standard response structure (length: {}).",
                                                 extractedJsonText.length());
                                 return extractedJsonText;
 
+                        } catch (ApiException e) {
+                                log.error("Gemini Summarization API Error on attempt {}: {}",
+                                                attempt, e.getMessage(), e);
+                                return createErrorResponse("Summarization API Error",
+                                                e.getMessage());
                         } catch (HttpServerErrorException | ResourceAccessException e) {
                                 log.warn("Gemini Summarization API call failed on attempt {}/{} with retryable error: {}. Retrying...",
                                                 attempt, MAX_RETRIES, e.getMessage());
@@ -291,14 +381,7 @@ public class GeminiService {
                                                         "API Request Failed (Server/Network)",
                                                         e.getMessage());
                                 }
-                                try {
-                                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        log.error("API call interrupted during retry wait.", ie);
-                                        return createErrorResponse("API call interrupted",
-                                                        ie.getMessage());
-                                }
+                                sleepForRetry(attempt);
                         } catch (HttpClientErrorException e) {
                                 log.error("Gemini Summarization API client error: {} - {}",
                                                 e.getStatusCode(), e.getResponseBodyAsString(), e);
@@ -310,34 +393,31 @@ public class GeminiService {
                                                 e.getStatusCode(), e.getResponseBodyAsString(), e);
                                 return createErrorResponse("API Request Failed (REST Client)",
                                                 e.getMessage());
-                        } catch (RuntimeException e) {
-                                log.error("Runtime error during Gemini Summarization API processing on attempt {}: {}",
+                        } catch (JsonProcessingException e) {
+                                log.error("Error parsing successful Gemini Summarization response JSON on attempt {}: {}",
                                                 attempt, e.getMessage(), e);
-                                return createErrorResponse("Summarization API Processing Error",
+                                return createErrorResponse("Response Parsing Error",
                                                 e.getMessage());
-                        } catch (Exception e) {
-                                log.error("Error during Gemini Summarization API call or processing on attempt {}",
-                                                attempt, e);
-                                return createErrorResponse(
-                                                "Summarization API Request/Processing Failed",
+                        } catch (RuntimeException e) {
+                                log.error("Unexpected runtime error during Gemini Summarization API processing on attempt {}: {}",
+                                                attempt, e.getMessage(), e);
+                                return createErrorResponse("Summarization Processing Error",
                                                 e.getMessage());
                         }
                 }
                 return createErrorResponse("API Request Failed",
-                                "Max retries reached or unexpected flow.");
+                                "Max retries reached for summarization or unexpected flow.");
         }
 
-
-
         private String extractTextFromStandardResponse(String rawResponse)
-                        throws JsonProcessingException, RuntimeException {
+                        throws JsonProcessingException, ApiException {
                 JsonNode jsonNode = objectMapper.readTree(rawResponse);
 
                 if (jsonNode.has("error")) {
                         String errorMessage = jsonNode.path("error").path("message")
                                         .asText("Unknown API error");
                         log.error("Gemini API returned an error object: {}", rawResponse);
-                        throw new RuntimeException("Gemini API Error: " + errorMessage);
+                        throw new ApiException("Gemini API Error: " + errorMessage);
                 }
 
                 if (jsonNode.has("promptFeedback")
@@ -348,7 +428,7 @@ public class GeminiService {
                                         .toString();
                         log.warn("Gemini API request blocked due to prompt feedback. Reason: {}. Safety Ratings: {}",
                                         reason, safetyRatings);
-                        throw new RuntimeException(
+                        throw new ApiException(
                                         "Gemini API Error: Content Blocked (Prompt Feedback) - "
                                                         + reason);
                 }
@@ -368,7 +448,7 @@ public class GeminiService {
                                                         .toString();
                                         log.error("Gemini API generation blocked. Finish Reason: {}. Safety Ratings: {}",
                                                         reason, safetyRatings);
-                                        throw new RuntimeException(
+                                        throw new ApiException(
                                                         "Gemini API Error: Content Blocked (Finish Reason) - "
                                                                         + reason);
                                 }
@@ -386,32 +466,39 @@ public class GeminiService {
                                 } else {
                                         log.warn("First part of Gemini response candidate does not contain 'text' field. Candidate: {}",
                                                         firstCandidate.toString());
-                                        return "";
+                                        throw new ApiException(
+                                                        "No 'text' field found in the Gemini response part.");
                                 }
                         } else {
                                 log.warn("First candidate in Gemini response does not contain expected content/parts structure. Candidate: {}",
                                                 firstCandidate.toString());
-                                return "";
+                                throw new ApiException(
+                                                "Invalid response structure: Missing 'content' or 'parts' in candidate.");
                         }
                 }
 
                 log.warn("Could not extract text from Gemini standard response structure (no valid candidates found): {}",
                                 rawResponse);
-                return "";
+                throw new ApiException("No valid candidates found in Gemini response.");
         }
 
+
         private String parseErrorDetails(HttpClientErrorException e) {
+                return parseErrorDetailsFromString(e.getResponseBodyAsString());
+        }
+
+        private String parseErrorDetailsFromString(String responseBodyString) {
                 try {
-                        JsonNode errorNode = objectMapper.readTree(e.getResponseBodyAsString());
+                        JsonNode errorNode = objectMapper.readTree(responseBodyString);
                         if (errorNode.has("error") && errorNode.path("error").has("message")) {
                                 return errorNode.path("error").path("message")
-                                                .asText(e.getResponseBodyAsString());
+                                                .asText(responseBodyString);
                         }
                 } catch (JsonProcessingException jsonEx) {
                         log.warn("Could not parse Gemini error response body as JSON: {}",
                                         jsonEx.getMessage());
                 }
-                return e.getResponseBodyAsString();
+                return responseBodyString;
         }
 
         private String createErrorResponse(String errorTitle, String details) {
@@ -446,14 +533,18 @@ public class GeminiService {
                 HttpEntity<Map<String, Object>> requestEntity =
                                 new HttpEntity<>(requestBody, headers);
 
-                String url = TRANSCRIPTION_API_URL + "?key=" + apiKey;
+                String simpleTextUrl = UriComponentsBuilder
+                                .fromUriString(API_BASE_URL + GENERATE_CONTENT_PATH)
+                                .queryParam("key", apiKey).buildAndExpand(TRANSCRIPTION_MODEL_NAME)
+                                .toUriString();
+
                 log.info("Calling Gemini Simple Text API (Model: {})", TRANSCRIPTION_MODEL_NAME);
 
                 for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                         try {
-                                ResponseEntity<String> response = restTemplate.exchange(url,
-                                                HttpMethod.POST, requestEntity, String.class);
-
+                                ResponseEntity<String> response = restTemplate.exchange(
+                                                simpleTextUrl, HttpMethod.POST, requestEntity,
+                                                String.class);
                                 log.info("Gemini Simple Text API call successful on attempt {} using model {}. Status: {}",
                                                 attempt, TRANSCRIPTION_MODEL_NAME,
                                                 response.getStatusCode());
@@ -462,26 +553,24 @@ public class GeminiService {
                                 if (responseBody == null || responseBody.isBlank()) {
                                         log.warn("Gemini Simple Text API returned successful status ({}) but empty body.",
                                                         response.getStatusCode());
-                                        return createErrorResponse("Empty Response",
-                                                        "API returned success status but no content.");
+                                        if (attempt == MAX_RETRIES) {
+                                                return createErrorResponse("Empty Response",
+                                                                "API returned success status but no content after retries.");
+                                        }
+                                        sleepForRetry(attempt);
+                                        continue;
                                 }
 
                                 String extractedText =
                                                 extractTextFromStandardResponse(responseBody);
-
-                                if (extractedText.isBlank()
-                                                && !responseBody.contains("promptFeedback")
-                                                && !responseBody.contains("finishReason")) {
-                                        log.warn("Could not extract text content from Gemini simple text response structure. Body: {}",
-                                                        responseBody);
-                                        return createErrorResponse("Extraction Error",
-                                                        "Failed to extract text from API response structure.");
-                                }
-
                                 log.info("Successfully extracted simple text response (length: {}).",
                                                 extractedText.length());
                                 return extractedText;
 
+                        } catch (ApiException e) {
+                                log.error("Gemini Simple Text API Error on attempt {}: {}", attempt,
+                                                e.getMessage(), e);
+                                return createErrorResponse("Simple Text API Error", e.getMessage());
                         } catch (HttpServerErrorException | ResourceAccessException e) {
                                 log.warn("Gemini Simple Text API call failed on attempt {}/{} with retryable error: {}. Retrying...",
                                                 attempt, MAX_RETRIES, e.getMessage());
@@ -492,14 +581,7 @@ public class GeminiService {
                                                         "API Request Failed (Server/Network)",
                                                         e.getMessage());
                                 }
-                                try {
-                                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
-                                } catch (InterruptedException ie) {
-                                        Thread.currentThread().interrupt();
-                                        log.error("API call interrupted during retry wait.", ie);
-                                        return createErrorResponse("API call interrupted",
-                                                        ie.getMessage());
-                                }
+                                sleepForRetry(attempt);
                         } catch (HttpClientErrorException e) {
                                 log.error("Gemini Simple Text API client error: {} - {}",
                                                 e.getStatusCode(), e.getResponseBodyAsString(), e);
@@ -511,21 +593,20 @@ public class GeminiService {
                                                 e.getStatusCode(), e.getResponseBodyAsString(), e);
                                 return createErrorResponse("API Request Failed (REST Client)",
                                                 e.getMessage());
-                        } catch (RuntimeException e) {
-                                log.error("Runtime error during Gemini Simple Text API processing on attempt {}: {}",
+                        } catch (JsonProcessingException e) {
+                                log.error("Error parsing successful Gemini Simple Text response JSON on attempt {}: {}",
                                                 attempt, e.getMessage(), e);
-                                return createErrorResponse("Simple Text API Processing Error",
+                                return createErrorResponse("Response Parsing Error",
                                                 e.getMessage());
-                        } catch (Exception e) {
-                                log.error("Error during Gemini Simple Text API call or processing on attempt {}",
-                                                attempt, e);
-                                return createErrorResponse(
-                                                "Simple Text API Request/Processing Failed",
+                        } catch (RuntimeException e) {
+                                log.error("Unexpected runtime error during Gemini Simple Text API processing on attempt {}: {}",
+                                                attempt, e.getMessage(), e);
+                                return createErrorResponse("Simple Text Processing Error",
                                                 e.getMessage());
                         }
                 }
                 return createErrorResponse("API Request Failed",
-                                "Max retries reached or unexpected flow.");
+                                "Max retries reached for simple text or unexpected flow.");
         }
 
         private String getAudioMimeType(String fileName) {
@@ -533,32 +614,49 @@ public class GeminiService {
                         log.warn("Filename is null or empty, defaulting MIME type to audio/mpeg");
                         return "audio/mpeg";
                 }
-
                 String lowercaseFileName = fileName.toLowerCase();
-
                 if (lowercaseFileName.endsWith(".mp3"))
                         return "audio/mp3";
-                if (lowercaseFileName.endsWith(".m4a"))
-                        return "audio/m4a";
-                if (lowercaseFileName.endsWith(".mp4"))
-                        return "audio/mp4";
                 if (lowercaseFileName.endsWith(".wav"))
                         return "audio/wav";
+                if (lowercaseFileName.endsWith(".aiff") || lowercaseFileName.endsWith(".aif"))
+                        return "audio/aiff";
                 if (lowercaseFileName.endsWith(".flac"))
                         return "audio/flac";
                 if (lowercaseFileName.endsWith(".ogg"))
                         return "audio/ogg";
                 if (lowercaseFileName.endsWith(".opus"))
                         return "audio/opus";
+                if (lowercaseFileName.endsWith(".m4a"))
+                        return "audio/m4a";
+                if (lowercaseFileName.endsWith(".mp4"))
+                        return "audio/mp4";
                 if (lowercaseFileName.endsWith(".aac"))
                         return "audio/aac";
-                if (lowercaseFileName.endsWith(".aiff") || lowercaseFileName.endsWith(".aif"))
-                        return "audio/aiff";
                 if (lowercaseFileName.endsWith(".amr"))
                         return "audio/amr";
-
                 log.warn("Unknown or potentially unsupported audio file extension in '{}', defaulting MIME type to audio/mpeg. Verify Gemini API support.",
                                 fileName);
                 return "audio/mpeg";
+        }
+
+        private void sleepForRetry(int attempt) {
+                try {
+                        TimeUnit.MILLISECONDS.sleep(RETRY_DELAY_MS * attempt);
+                } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.error("API call interrupted during retry wait.", ie);
+                        throw new RuntimeException("API call interrupted during retry wait.", ie);
+                }
+        }
+
+        private static class ApiException extends Exception {
+                public ApiException(String message) {
+                        super(message);
+                }
+
+                public ApiException(String message, Throwable cause) {
+                        super(message, cause);
+                }
         }
 }

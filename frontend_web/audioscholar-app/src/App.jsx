@@ -9,7 +9,7 @@ import Footer from './components/footer';
 import SignUp from './components/SignUp';
 import SignIn from './components/SignIn';
 import Uploading from './components/Uploading';
-import Dashboard from './components/Dashboard';
+import Dashboard from './components/dashboard';
 import RecordingList from './components/RecordingList';
 import UserProfile from './components/UserProfile';
 import RecordingData from './components/RecordingData'; // Added from dataViewable-integration-orlanes

@@ -16,6 +16,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -30,7 +33,9 @@ import edu.cit.audioscholar.model.User;
 
 @Service
 public class UserService {
+
     private static final String COLLECTION_NAME = "users";
+    private static final String USER_CACHE = "usersById";
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
     private final FirebaseService firebaseService;
@@ -43,7 +48,6 @@ public class UserService {
         this.firebaseService = firebaseService;
         this.nhostStorageService = nhostStorageService;
         this.tempFileDir = Paths.get(tempFileDirStr);
-
         try {
             Files.createDirectories(this.tempFileDir);
             log.info("User service temporary file directory verified/created at: {}",
@@ -77,6 +81,7 @@ public class UserService {
         return createUser(newUser);
     }
 
+    @CachePut(value = USER_CACHE, key = "#user.userId")
     public User createUser(User user) throws FirestoreInteractionException {
         if (user.getUserId() == null || user.getUserId().isBlank()) {
             log.error("User ID cannot be null or blank when creating user profile.");
@@ -103,11 +108,14 @@ public class UserService {
                     user.setLastName(names[1]);
                 }
             }
+
             Map<String, Object> userMap = user.toMap();
             log.debug("User object map being sent to Firestore during creation for UID {}: {}",
                     user.getUserId(), userMap);
             firebaseService.saveData(COLLECTION_NAME, user.getUserId(), userMap);
             log.info("Successfully created user profile in Firestore for UID: {}",
+                    user.getUserId());
+            log.debug("User object added/updated in cache '{}' with key: {}", USER_CACHE,
                     user.getUserId());
             return user;
         } catch (Exception e) {
@@ -118,12 +126,13 @@ public class UserService {
         }
     }
 
+    @Cacheable(value = USER_CACHE, key = "#userId", unless = "#result == null")
     public User getUserById(String userId) throws FirestoreInteractionException {
         if (!StringUtils.hasText(userId)) {
             log.warn("Attempted to fetch user with null or blank ID.");
             return null;
         }
-        log.debug("Fetching user by ID: {}", userId);
+        log.info("Fetching user by ID from Firestore (cache miss): {}", userId);
         try {
             Map<String, Object> data = firebaseService.getData(COLLECTION_NAME, userId);
             if (data == null) {
@@ -138,6 +147,7 @@ public class UserService {
         }
     }
 
+    @CacheEvict(value = USER_CACHE, key = "#uid")
     public User findOrCreateUserByFirebaseDetails(@NonNull String uid, String email, String name,
             String provider, String providerId, @Nullable String photoUrl)
             throws FirestoreInteractionException {
@@ -145,8 +155,9 @@ public class UserService {
             log.error("Cannot find or create user with blank UID.");
             throw new IllegalArgumentException("Firebase UID cannot be blank.");
         }
-        log.info("Finding or creating user profile for UID: {}", uid);
+        log.info("Finding or creating user profile for UID: {} (Cache evicted)", uid);
         User existingUser = getUserById(uid);
+
         if (existingUser != null) {
             log.info("Found existing user profile for UID: {}", uid);
             boolean needsUpdate = false;
@@ -164,6 +175,7 @@ public class UserService {
                         "Keeping existing profile image URL for UID {} as it differs from provider URL '{}'.",
                         uid, photoUrl);
             }
+
             if (StringUtils.hasText(name) && !StringUtils.hasText(existingUser.getDisplayName())) {
                 log.info(
                         "Updating Firestore display name from provider for existing user {} because Firestore name was blank. New name: {}",
@@ -187,6 +199,7 @@ public class UserService {
                         "Keeping existing display name '{}' for UID {} as it differs from provider name '{}'.",
                         existingUser.getDisplayName(), uid, name);
             }
+
             if (needsUpdate) {
                 log.info(
                         "Calling updateUser for UID {} due to provider data mismatch or necessary update.",
@@ -220,6 +233,7 @@ public class UserService {
         }
     }
 
+    @CachePut(value = USER_CACHE, key = "#user.userId")
     public User updateUser(User user) throws FirestoreInteractionException {
         if (user.getUserId() == null || user.getUserId().isBlank()) {
             log.error("User ID cannot be null or blank when updating user profile.");
@@ -230,7 +244,7 @@ public class UserService {
             if (user.getRoles() == null) {
                 user.setRoles(List.of("ROLE_USER"));
             } else if (user.getRoles().isEmpty()) {
-                user.getRoles().add("ROLE_USER");
+                user.setRoles(List.of("ROLE_USER"));
             }
             if (user.getRecordingIds() == null) {
                 user.setRecordingIds(List.of());
@@ -238,6 +252,7 @@ public class UserService {
             if (user.getFavoriteRecordingIds() == null) {
                 user.setFavoriteRecordingIds(List.of());
             }
+
             Map<String, Object> userMap = user.toMap();
             log.debug("User object map being sent to Firestore during update for UID {}: {}",
                     user.getUserId(), userMap);
@@ -245,6 +260,8 @@ public class UserService {
                     userMap.get("profileImageUrl"));
             firebaseService.saveData(COLLECTION_NAME, user.getUserId(), userMap);
             log.info("Successfully updated user profile in Firestore for UID: {}",
+                    user.getUserId());
+            log.debug("User object updated in cache '{}' with key: {}", USER_CACHE,
                     user.getUserId());
             return user;
         } catch (Exception e) {
@@ -255,19 +272,22 @@ public class UserService {
         }
     }
 
+    @CacheEvict(value = USER_CACHE, key = "#userId")
     public User updateUserProfileDetails(String userId, UpdateUserProfileRequest request)
             throws FirestoreInteractionException {
         if (!StringUtils.hasText(userId)) {
             log.error("User ID cannot be null or blank when updating profile details.");
             throw new IllegalArgumentException("User ID is required to update profile details.");
         }
-        log.info("Attempting to update profile details for user ID: {}", userId);
+        log.info("Attempting to update profile details for user ID: {} (Cache evicted)", userId);
         User existingUser = getUserById(userId);
         if (existingUser == null) {
             log.warn("Cannot update profile details. User not found in Firestore for ID: {}",
                     userId);
-            throw new RuntimeException("User not found with ID: " + userId);
+            throw new FirestoreInteractionException(
+                    "User not found with ID: " + userId + " for profile update.");
         }
+
         boolean updated = false;
         if (StringUtils.hasText(request.getFirstName())
                 && !Objects.equals(request.getFirstName().trim(), existingUser.getFirstName())) {
@@ -281,23 +301,26 @@ public class UserService {
             log.debug("Updating lastName for user ID: {}", userId);
             updated = true;
         }
-        if (StringUtils.hasText(request.getDisplayName()) && !Objects
-                .equals(request.getDisplayName().trim(), existingUser.getDisplayName())) {
+        String oldDisplayName = existingUser.getDisplayName();
+        if (StringUtils.hasText(request.getDisplayName())
+                && !Objects.equals(request.getDisplayName().trim(), oldDisplayName)) {
             existingUser.setDisplayName(request.getDisplayName().trim());
             log.debug("Updating displayName explicitly for user ID: {}", userId);
             updated = true;
         } else if (!StringUtils.hasText(request.getDisplayName())
-                && (updated || !StringUtils.hasText(existingUser.getDisplayName()))) {
+                && (updated || !StringUtils.hasText(oldDisplayName))) {
             String potentialDisplayName =
                     (existingUser.getFirstName() + " " + existingUser.getLastName()).trim();
             if (StringUtils.hasText(potentialDisplayName)
-                    && !potentialDisplayName.equals(existingUser.getDisplayName())) {
+                    && !potentialDisplayName.equals(oldDisplayName)) {
                 existingUser.setDisplayName(potentialDisplayName);
                 log.debug(
                         "Auto-updating displayName based on name change or initial setup for user ID: {}",
                         userId);
+                updated = true;
             }
         }
+
         if (request.getProfileImageUrl() != null && !Objects
                 .equals(request.getProfileImageUrl().trim(), existingUser.getProfileImageUrl())) {
             String newUrl = request.getProfileImageUrl().trim();
@@ -306,6 +329,7 @@ public class UserService {
                     userId, existingUser.getProfileImageUrl());
             updated = true;
         }
+
         if (updated) {
             log.info("Saving updated profile details for user ID: {}", userId);
             return updateUser(existingUser);
@@ -317,6 +341,7 @@ public class UserService {
         }
     }
 
+    @CacheEvict(value = USER_CACHE, key = "#userId")
     public User updateUserAvatar(String userId, MultipartFile avatarFile)
             throws IOException, FirestoreInteractionException {
         if (!StringUtils.hasText(userId)) {
@@ -327,12 +352,12 @@ public class UserService {
             log.warn("Attempted to update avatar for user {} with null or empty file.", userId);
             throw new IllegalArgumentException("Avatar file cannot be empty.");
         }
-
-        log.info("Attempting to update avatar for user ID: {}", userId);
+        log.info("Attempting to update avatar for user ID: {} (Cache evicted)", userId);
         User existingUser = getUserById(userId);
         if (existingUser == null) {
             log.warn("Cannot update avatar. User not found in Firestore for ID: {}", userId);
-            throw new RuntimeException("User not found with ID: " + userId);
+            throw new FirestoreInteractionException(
+                    "User not found with ID: " + userId + " for avatar update.");
         }
 
         String originalFilename =
@@ -365,6 +390,7 @@ public class UserService {
             log.debug("Setting profileImageUrl on User object for UID {} before saving. URL: {}",
                     userId, publicUrl);
             existingUser.setProfileImageUrl(publicUrl);
+
             log.info("Saving updated user profile with new avatar URL for user ID: {}", userId);
             return updateUser(existingUser);
 
@@ -396,13 +422,13 @@ public class UserService {
         }
     }
 
-
+    @CacheEvict(value = USER_CACHE, key = "#userId")
     public void deleteUser(String userId) throws FirestoreInteractionException {
         if (userId == null || userId.isBlank()) {
             log.error("User ID cannot be null or blank when deleting user profile.");
             throw new IllegalArgumentException("User ID is required to delete profile.");
         }
-        log.warn("Deleting user profile from Firestore for userId: {}", userId);
+        log.warn("Deleting user profile from Firestore for userId: {} (Cache evicted)", userId);
         try {
             firebaseService.deleteData(COLLECTION_NAME, userId);
             log.info("Successfully deleted user profile from Firestore for UID: {}", userId);
@@ -418,7 +444,7 @@ public class UserService {
             log.warn("Attempted to find user with null or blank email.");
             return null;
         }
-        log.debug("Querying user by email: {}", email);
+        log.debug("Querying user by email (not cached): {}", email);
         try {
             List<Map<String, Object>> results =
                     firebaseService.queryCollection(COLLECTION_NAME, "email", email);

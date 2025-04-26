@@ -249,20 +249,20 @@ const RecordingList = () => {
                             <div className="text-sm text-gray-500">{recording.duration || 'N/A'}</div> {/* Assuming backend provides 'duration' */}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                             {/* Display status from backend data and apply styles */}
+                             {/* Display status from backend data and apply styles (using lowercase check) */}
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              recording.status === 'Processed'
+                              recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed' 
                                  ? 'bg-green-100 text-green-800'
-                                 : recording.status === 'Processing'
+                                 : recording.status?.toLowerCase() === 'processing'
                                    ? 'bg-yellow-100 text-yellow-800'
-                                   : 'bg-gray-100 text-gray-800' // Default color for other statuses
+                                   : 'bg-gray-100 text-gray-800' // Default color for other statuses (e.g., FAILED, UNKNOWN)
                             }`}>
                               {recording.status || 'Unknown'}
                             </span>
                           </td>
-                           {/* Add new Cell for View Data Link */}
+                           {/* Add new Cell for View Data Link (using lowercase check) */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              {recording.status === 'Processed' ? (
+                              {(recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed') ? (
                                  <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b]">
                                      View Data
                                  </Link>

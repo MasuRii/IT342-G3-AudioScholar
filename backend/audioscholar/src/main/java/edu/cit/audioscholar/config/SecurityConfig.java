@@ -20,6 +20,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -79,12 +81,28 @@ public class SecurityConfig {
         @Bean
         @Order(1)
         SecurityFilterChain statefulFilterChain(HttpSecurity http) throws Exception {
-                http.securityMatcher("/login/**", "/oauth2/**", "/error", "/api/auth/token")
-                                .authorizeHttpRequests(authz -> authz
-                                                .requestMatchers("/login/**", "/oauth2/**",
-                                                                "/error")
-                                                .permitAll().requestMatchers("/api/auth/token")
-                                                .authenticated().anyRequest().denyAll())
+                RequestMatcher statefulEndpoints = new OrRequestMatcher(
+                                AntPathRequestMatcher.antMatcher("/"),
+                                AntPathRequestMatcher.antMatcher("/images/**"),
+                                AntPathRequestMatcher.antMatcher("/css/**"),
+                                AntPathRequestMatcher.antMatcher("/favicon.ico"),
+                                AntPathRequestMatcher.antMatcher("/login/**"),
+                                AntPathRequestMatcher.antMatcher("/oauth2/**"),
+                                AntPathRequestMatcher.antMatcher("/error"),
+                                AntPathRequestMatcher.antMatcher("/api/auth/token"));
+
+                http.securityMatcher(statefulEndpoints).authorizeHttpRequests(authz -> authz
+                                .requestMatchers(AntPathRequestMatcher.antMatcher("/"),
+                                                AntPathRequestMatcher.antMatcher("/images/**"),
+                                                AntPathRequestMatcher.antMatcher("/css/**"),
+                                                AntPathRequestMatcher.antMatcher("/favicon.ico"),
+                                                AntPathRequestMatcher.antMatcher("/login/**"),
+                                                AntPathRequestMatcher.antMatcher("/oauth2/**"),
+                                                AntPathRequestMatcher.antMatcher("/error"))
+                                .permitAll()
+                                .requestMatchers(
+                                                AntPathRequestMatcher.antMatcher("/api/auth/token"))
+                                .authenticated().anyRequest().denyAll())
                                 .oauth2Login(oauth2 -> oauth2
                                                 .successHandler(oAuth2LoginSuccessHandler))
                                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))

@@ -62,9 +62,10 @@ public class SecurityConfig {
         @Bean
         CorsConfigurationSource corsConfigurationSource() {
                 CorsConfiguration configuration = new CorsConfiguration();
-                configuration.setAllowedOrigins(List.of("http://localhost:8100", "http://localhost",
-                                "capacitor://localhost", "http://192.168.1.10:8100",
-                                "http://localhost:5173"));
+                configuration.setAllowedOrigins(
+                                List.of("http://localhost:8100", "capacitor://localhost",
+                                                "http://localhost", "http://localhost:5173",
+                                                "https://it342-g3-audioscholar.onrender.com"));
                 configuration.setAllowedMethods(
                                 Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
                 configuration.setAllowedHeaders(Arrays.asList("Authorization", "Cache-Control",

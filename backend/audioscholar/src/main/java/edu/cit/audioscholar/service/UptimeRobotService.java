@@ -34,8 +34,8 @@ public class UptimeRobotService {
 
         private static final String GET_MONITORS_PATH = "/getMonitors";
         private static final String UPTIME_RATIO_DAYS = "7";
-        private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
-        private static final int MAX_RETRIES = 2;
+        private static final Duration API_TIMEOUT = Duration.ofSeconds(60);
+        private static final int MAX_RETRIES = 10;
         private static final Duration RETRY_DELAY = Duration.ofSeconds(1);
 
         public UptimeRobotService(WebClient.Builder webClientBuilder) {

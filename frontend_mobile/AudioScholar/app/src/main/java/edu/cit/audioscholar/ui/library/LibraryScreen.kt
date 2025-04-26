@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -57,7 +61,10 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -79,11 +86,19 @@ import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.data.remote.dto.TimestampDto
 import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import androidx.activity.result.ActivityResultLauncher
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import androidx.compose.runtime.rememberCoroutineScope
 
 private fun formatTimestampMillis(timestampMillis: Long): String {
     if (timestampMillis <= 0) return "Unknown date"
@@ -157,13 +172,21 @@ fun LibraryScreen(
     viewModel: LibraryViewModel = hiltViewModel(),
     navController: NavHostController,
     drawerState: DrawerState,
-    scope: CoroutineScope,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val areAllSelected by viewModel.areAllLocalRecordingsSelected.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
+    val audioPickerLauncher: ActivityResultLauncher<Array<String>> = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+        onResult = { uris: List<Uri?> ->
+            Log.d("LibraryScreen", "Audio picker result (multiple): ${uris.size} items")
+            viewModel.onAudioFilesSelected(uris)
+        }
+    )
 
     val showSnackbar: suspend (String) -> Unit = { message ->
         snackbarHostState.showSnackbar(
@@ -199,26 +222,83 @@ fun LibraryScreen(
         }
     }
 
-    LaunchedEffect(pagerState.currentPage, uiState.hasAttemptedCloudLoad) {
-        if (pagerState.currentPage == 1 && !uiState.hasAttemptedCloudLoad) {
-            Log.d(
-                "LibraryScreen",
-                "Cloud tab selected (page 1) and cloud load not attempted yet. Triggering initial load."
-            )
-            viewModel.triggerCloudLoadIfNeeded()
-        } else {
-            Log.d(
-                "LibraryScreen",
-                "Pager changed to ${pagerState.currentPage} or cloud load already attempted (${uiState.hasAttemptedCloudLoad}). Skipping initial trigger.",
-            )
+    LaunchedEffect(Unit) {
+        viewModel.eventFlow.collectLatest { event ->
+            when (event) {
+                is LibraryViewEvent.LaunchMultiFilePicker -> {
+                    Log.d("LibraryScreen", "Received LaunchMultiFilePicker event, launching picker...")
+                    try {
+                        audioPickerLauncher.launch(arrayOf("audio/*"))
+                    } catch (e: ActivityNotFoundException) {
+                        Log.e("LibraryScreen", "No activity found to handle picking audio files.", e)
+                        scope.launch { showSnackbar("Cannot open file picker. No suitable app found.") }
+                    }
+                }
+                is LibraryViewEvent.ShowSnackbar -> {
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message = event.message,
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                }
+                is LibraryViewEvent.NavigateToLocalDetails -> {
+                    navController.navigate(Screen.RecordingDetails.createLocalRoute(filePath = event.filePath))
+                }
+                is LibraryViewEvent.NavigateToCloudDetails -> {
+                    val metadataDto = AudioMetadataDto(
+                        recordingId = event.recordingId,
+                        title = event.title,
+                        fileName = event.fileName,
+                        storageUrl = event.storageUrl,
+                        uploadTimestamp = event.timestampSeconds?.let { TimestampDto(it, 0) }
+                    )
+                    val route = Screen.RecordingDetails.createCloudRoute(metadata = metadataDto)
+                    if (route != "recording_details/error") {
+                        navController.navigate(route)
+                    } else {
+                        scope.launch { showSnackbar("Error: Cannot navigate, recording ID missing.") }
+                    }
+                }
+            }
         }
     }
 
     if (uiState.showMultiDeleteConfirmation) {
-        MultiDeleteConfirmationDialog(
-            count = uiState.selectedRecordingIds.size,
-            onConfirm = viewModel::confirmMultiDelete,
-            onDismiss = viewModel::cancelMultiDelete,
+        AlertDialog(
+            onDismissRequest = viewModel::cancelMultiDelete,
+            title = { Text(stringResource(R.string.dialog_multi_delete_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.dialog_multi_delete_message,
+                        uiState.selectedRecordingIds.size
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmMultiDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.dialog_action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelMultiDelete) {
+                    Text(stringResource(R.string.dialog_action_cancel))
+                }
+            }
+        )
+    }
+
+    uiState.importDialogState?.let { dialogState ->
+        ImportAudioDialog(
+            dialogState = dialogState,
+            onDismiss = viewModel::cancelImportDialog,
+            onConfirm = { title, description ->
+                viewModel.importFiles(listOf(dialogState.fileUri), title, description)
+            }
         )
     }
 
@@ -246,54 +326,74 @@ fun LibraryScreen(
                             )
                         }
                     },
+                    actions = {
+                        if (pagerState.currentPage == 0 && !uiState.isMultiSelectActive) {
+                            IconButton(onClick = {
+                                Log.d("LibraryScreen", "Upload/Import Icon Clicked - Calling ViewModel")
+                                viewModel.onImportAudioClicked()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Filled.UploadFile,
+                                    contentDescription = stringResource(R.string.cd_import_local_audio)
+                                )
+                            }
+                        }
+                    }
                 )
             }
         },
     ) { paddingValues ->
-        Column(modifier = Modifier
-            .padding(paddingValues)
-            .fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            if (uiState.isImporting) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
             PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                 tabTitles.forEachIndexed { index, title ->
                     Tab(
                         selected = pagerState.currentPage == index,
-                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        text = { Text(title) },
+                        onClick = {
+                            scope.launch {
+                                pagerState.animateScrollToPage(index)
+                                if (index == 1) {
+                                    Log.d("LibraryScreen", "Cloud tab clicked, forcing refresh.")
+                                    viewModel.forceRefreshCloudRecordings()
+                                }
+                            }
+                        },
+                        text = { Text(text = title) }
                     )
                 }
             }
 
-            val showLoadingIndicator =
-                (pagerState.currentPage == 0 && uiState.isLoadingLocal) ||
-                        (pagerState.currentPage == 1 && uiState.isLoadingCloud)
-            if (showLoadingIndicator) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.Top
             ) { page ->
                 when (page) {
-                    0 ->
-                        LocalRecordingsTabPage(
-                            uiState = uiState,
-                            navController = navController,
-                            selectedIds = uiState.selectedRecordingIds,
-                            isMultiSelectActive = uiState.isMultiSelectActive,
-                            onItemLongClick = viewModel::enterMultiSelectMode,
-                            onItemClick = viewModel::toggleSelection,
-                        )
-
-                    1 ->
-                        CloudRecordingsTabPage(
-                            uiState = uiState,
-                            context = context,
-                            scope = scope,
-                            showSnackbar = showSnackbar,
-                        )
+                    0 -> LocalRecordingsTabPage(
+                        uiState = uiState,
+                        selectedIds = uiState.selectedRecordingIds,
+                        isMultiSelectActive = uiState.isMultiSelectActive,
+                        onItemClick = { metadata -> viewModel.onRecordingClicked(metadata) },
+                        onItemLongClick = viewModel::enterMultiSelectMode,
+                        isLoading = uiState.isLoadingLocal && !uiState.isImporting,
+                        navController = navController
+                    )
+                    1 -> CloudRecordingsTabPage(
+                        uiState = uiState,
+                        onItemClick = { metadataDto -> viewModel.onRecordingClicked(metadataDto) },
+                        isLoading = uiState.isLoadingCloud,
+                        navController = navController,
+                        context = context,
+                        scope = scope,
+                        showSnackbar = showSnackbar
+                    )
                 }
             }
         }
@@ -364,15 +464,15 @@ fun MultiSelectTopAppBar(
 @Composable
 fun LocalRecordingsTabPage(
     uiState: LibraryUiState,
-    navController: NavHostController,
     selectedIds: Set<String>,
     isMultiSelectActive: Boolean,
+    onItemClick: (RecordingMetadata) -> Unit,
     onItemLongClick: (String) -> Unit,
-    onItemClick: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    isLoading: Boolean,
+    navController: NavHostController
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
-        if (!uiState.isLoadingLocal && uiState.localRecordings.isEmpty()) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (!isLoading && uiState.localRecordings.isEmpty()) {
             Text(
                 text = stringResource(R.string.library_empty_state_local),
                 style = MaterialTheme.typography.bodyLarge,
@@ -389,29 +489,17 @@ fun LocalRecordingsTabPage(
                     val isSelected = selectedIds.contains(metadata.filePath)
                     LocalRecordingListItem(
                         metadata = metadata,
-                        navController = navController,
                         isMultiSelectActive = isMultiSelectActive,
                         isSelected = isSelected,
                         onLongClick = { onItemLongClick(metadata.filePath) },
-                        onToggleSelection = { onItemClick(metadata.filePath) },
-                        onNavigate = {
-                            if (!isMultiSelectActive) {
-                                val encodedFilePath = Uri.encode(metadata.filePath)
-                                navController.navigate(
-                                    Screen.RecordingDetails.createRoute(
-                                        encodedFilePath
-                                    )
-                                )
-                                Log.d(
-                                    "LocalRecordingListItem",
-                                    "Navigating to details for: $encodedFilePath"
-                                )
-                            }
-                        },
+                        onClick = { onItemClick(metadata) },
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                 }
             }
+        }
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
 }
@@ -419,13 +507,15 @@ fun LocalRecordingsTabPage(
 @Composable
 fun CloudRecordingsTabPage(
     uiState: LibraryUiState,
+    onItemClick: (AudioMetadataDto) -> Unit,
+    isLoading: Boolean,
+    navController: NavHostController,
     context: Context,
     scope: CoroutineScope,
-    showSnackbar: suspend (String) -> Unit,
-    modifier: Modifier = Modifier,
+    showSnackbar: suspend (String) -> Unit
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
-        if (!uiState.isLoadingCloud && uiState.cloudRecordings.isEmpty() && uiState.hasAttemptedCloudLoad) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (!isLoading && uiState.cloudRecordings.isEmpty() && uiState.hasAttemptedCloudLoad) {
             Text(
                 text = stringResource(R.string.library_empty_state_cloud),
                 style = MaterialTheme.typography.bodyLarge,
@@ -440,16 +530,27 @@ fun CloudRecordingsTabPage(
             ) {
                 items(
                     uiState.cloudRecordings,
-                    key = { it.id ?: it.fileName ?: it.hashCode() }) { metadata ->
+                    key = { it.recordingId ?: it.id ?: it.fileName ?: it.hashCode() }
+                ) { metadata ->
                     CloudRecordingListItem(
                         metadata = metadata,
-                        onItemClick = {
-                            playCloudRecording(context, it, scope, showSnackbar)
+                        onItemClick = { clickedMetadata ->
+                            val route = Screen.RecordingDetails.createCloudRoute(clickedMetadata)
+                            if (route != "recording_details/error") {
+                                navController.navigate(route)
+                                Log.d("CloudRecordingListItem", "Navigating route: $route")
+                            } else {
+                                Log.w("CloudRecordingListItem", "Cloud recording ID is missing, cannot navigate.")
+                                scope.launch { showSnackbar("Cannot open details: Recording ID missing.") }
+                            }
                         },
                     )
                     HorizontalDivider(thickness = 0.5.dp)
                 }
             }
+        }
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
 }
@@ -458,12 +559,10 @@ fun CloudRecordingsTabPage(
 @Composable
 fun LocalRecordingListItem(
     metadata: RecordingMetadata,
-    navController: NavHostController,
     isMultiSelectActive: Boolean,
     isSelected: Boolean,
     onLongClick: () -> Unit,
-    onToggleSelection: () -> Unit,
-    onNavigate: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -476,13 +575,7 @@ fun LocalRecordingListItem(
                 .fillMaxWidth()
                 .height(listItemHeight)
                 .combinedClickable(
-                    onClick = {
-                        if (isMultiSelectActive) {
-                            onToggleSelection()
-                        } else {
-                            onNavigate()
-                        }
-                    },
+                    onClick = onClick,
                     onLongClick = {
                         if (!isMultiSelectActive) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -503,7 +596,7 @@ fun LocalRecordingListItem(
             if (isMultiSelectActive) {
                 Checkbox(
                     checked = isSelected,
-                    onCheckedChange = { onToggleSelection() },
+                    onCheckedChange = { onClick() },
                 )
             }
         }
@@ -543,15 +636,14 @@ fun LocalRecordingListItem(
 @Composable
 fun CloudRecordingListItem(
     metadata: AudioMetadataDto,
-    onItemClick: (AudioMetadataDto) -> Unit,
+    onItemClick: (metadata: AudioMetadataDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable { onItemClick(metadata) }
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable { onItemClick(metadata) }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -609,36 +701,52 @@ fun CloudRecordingListItem(
 }
 
 @Composable
-fun MultiDeleteConfirmationDialog(
-    count: Int,
-    onConfirm: () -> Unit,
+fun ImportAudioDialog(
+    dialogState: ImportDialogState,
     onDismiss: () -> Unit,
+    onConfirm: (title: String, description: String) -> Unit,
 ) {
-    if (count <= 0) return
+    var title by rememberSaveable(dialogState.fileUri) { mutableStateOf("") }
+    var description by rememberSaveable(dialogState.fileUri) { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.dialog_multi_delete_title)) },
+        title = { Text(stringResource(R.string.dialog_import_details_title)) },
         text = {
-            Text(
-                stringResource(
-                    R.string.dialog_multi_delete_message,
-                    count,
-                ),
-            )
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(R.string.dialog_import_selected_file, dialogState.originalFileName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text(stringResource(R.string.dialog_import_field_title)) },
+                    placeholder = { Text(stringResource(R.string.dialog_import_field_title_placeholder)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text(stringResource(R.string.dialog_import_field_description)) },
+                    placeholder = { Text(stringResource(R.string.dialog_import_field_description_placeholder)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+            }
         },
         confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-            ) {
-                Text(stringResource(R.string.dialog_action_delete))
+            Button(onClick = { onConfirm(title.trim(), description.trim()) }) {
+                Text(stringResource(R.string.dialog_action_import))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.dialog_action_cancel))
             }
-        },
+        }
     )
 }

@@ -22,7 +22,6 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -427,7 +426,7 @@ class AuthRepositoryImpl @Inject constructor(
                 Resource.Error(finalMessage)
             }
         } catch (e: IOException) {
-            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e); Resource.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Could not read image file"))
+            Log.e(TAG_AUTH_REPO, "IOException during avatar upload preparation/call: ${e.message}", e); Resource.Error(application.getString(R.string.error_unexpected, e.message ?: "Could not read image file"))
         } catch (e: HttpException) {
             Log.e(TAG_AUTH_REPO, "HTTP exception during avatar upload: ${e.code()} - ${e.message()}", e); val finalMessage = if (e.code() == 401 || e.code() == 403) { application.getString(R.string.error_unauthorized) } else { "HTTP Error during avatar upload: ${e.code()} ${e.message()}" }; Resource.Error(finalMessage)
         } catch (e: Exception) {
@@ -472,6 +471,36 @@ class AuthRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG_AUTH_REPO, "Unexpected exception during change password: ${e.message}", e)
             Resource.Error(application.getString(R.string.error_unexpected_change_password, e.message ?: "Unknown error"))
+        }
+    }
+
+    override suspend fun logout(): SimpleResult {
+        return try {
+            Log.d(TAG_AUTH_REPO, "Attempting API logout call.")
+            val response = apiService.logout()
+
+            if (response.isSuccessful) {
+                Log.i(TAG_AUTH_REPO, "API logout successful (Code: ${response.code()}).")
+                Resource.Success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error during logout"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.w(TAG_AUTH_REPO, "API logout failed (Code: ${response.code()}): $errorMessage")
+                Resource.Error("API Logout Failed: ${response.code()} - $errorMessage")
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_AUTH_REPO, "Network/IO exception during logout: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_AUTH_REPO, "HTTP exception during logout: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error during logout: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during logout: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected, e.message ?: "Unknown error"))
         }
     }
 

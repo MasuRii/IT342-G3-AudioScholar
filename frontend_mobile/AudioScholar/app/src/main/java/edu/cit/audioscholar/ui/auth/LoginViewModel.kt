@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import android.util.Patterns
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
@@ -25,12 +26,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import javax.inject.Inject
+
+enum class WelcomeMessageType {
+    NEW_AFTER_ONBOARDING,
+    RETURNING // Covers both returning from logout and app restart
+}
 
 data class LoginUiState(
     val email: String = "",
@@ -40,7 +45,10 @@ data class LoginUiState(
     val isGitHubLoginLoading: Boolean = false,
     val errorMessage: String? = null,
     val infoMessage: String? = null,
-    val navigateToRecordScreen: Boolean = false
+    val navigateToRecordScreen: Boolean = false,
+    val isFromOnboarding: Boolean = false,
+    val isFromLogout: Boolean = false,
+    val welcomeType: WelcomeMessageType = WelcomeMessageType.RETURNING // Default to returning
 ) {
     val isAnyLoading: Boolean
         get() = isEmailLoginLoading || isGoogleLoginLoading || isGitHubLoginLoading
@@ -57,7 +65,8 @@ class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val prefs: SharedPreferences,
     private val firebaseAuth: FirebaseAuth,
-    @ApplicationScope private val applicationScope: CoroutineScope
+    @ApplicationScope private val applicationScope: CoroutineScope,
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -75,9 +84,11 @@ class LoginViewModel @Inject constructor(
 
 
     companion object {
-        private const val KEY_GITHUB_AUTH_STATE = "github_auth_state"
+        const val KEY_GITHUB_AUTH_STATE = "github_auth_state"
         const val KEY_AUTH_TOKEN = "auth_token"
-        private const val TAG = "LoginViewModel"
+        const val TAG = "LoginViewModel"
+        const val KEY_FROM_ONBOARDING = "from_onboarding"
+        const val KEY_HAS_EVER_LOGGED_IN = "has_ever_logged_in"
 
         private const val DEV_EMAIL = "testingdev@gmail.com"
         private const val DEV_PASSWORD = "testingdev"
@@ -89,6 +100,48 @@ class LoginViewModel @Inject constructor(
         private const val GITHUB_REDIRECT_URI = "audioscholar://github-callback"
         private const val GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
         private const val GITHUB_SCOPE = "read:user user:email"
+    }
+
+    init {
+        val isFirstLoginArg = savedStateHandle.get<Boolean>("isFirstLogin") ?: false
+        val isFromLogoutArg = savedStateHandle.get<Boolean>("fromLogout") ?: false
+        val determinedWelcomeType: WelcomeMessageType
+
+        if (isFirstLoginArg) {
+            // Came directly from Onboarding - ALWAYS show "New"
+            determinedWelcomeType = WelcomeMessageType.NEW_AFTER_ONBOARDING
+            Log.d(TAG, "ViewModel init: Detected isFirstLogin=true argument. Setting WelcomeType to NEW.")
+            // Mark onboarding as complete in preferences NOW
+            prefs.edit().putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true).apply()
+            Log.d(TAG, "ViewModel init: Marked onboarding as complete in preferences.")
+
+        } else if (isFromLogoutArg) {
+            // Came directly from Logout button - ALWAYS show "Returning"
+            determinedWelcomeType = WelcomeMessageType.RETURNING
+            Log.d(TAG, "ViewModel init: Detected fromLogout=true argument. Setting WelcomeType to RETURNING.")
+
+        } else {
+            // Neither argument is true - implies app restart
+            // Check if onboarding is done AND if they have ever logged in before
+            val onboardingCompleted = prefs.getBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, false)
+            val hasEverLoggedIn = prefs.getBoolean(KEY_HAS_EVER_LOGGED_IN, false)
+
+            if (onboardingCompleted && hasEverLoggedIn) {
+                 // They completed onboarding previously AND have logged in at least once
+                 determinedWelcomeType = WelcomeMessageType.RETURNING
+                 Log.d(TAG, "ViewModel init: No args, onboarding complete AND hasEverLoggedIn is true. Setting WelcomeType to RETURNING.")
+            } else {
+                 // Onboarding might be complete, but they never successfully logged in OR onboarding isn't complete yet
+                 determinedWelcomeType = WelcomeMessageType.NEW_AFTER_ONBOARDING // Treat as "New" needing first login
+                 Log.d(TAG, "ViewModel init: No args, hasEverLoggedIn is false OR onboarding incomplete. Setting WelcomeType to NEW.")
+                 // Ensure onboarding complete is marked if needed (safety check)
+                 if (!onboardingCompleted) {
+                     prefs.edit().putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true).apply()
+                 }
+            }
+        }
+
+        _uiState.update { it.copy(welcomeType = determinedWelcomeType) }
     }
 
     private fun triggerProfilePrefetch() {
@@ -131,6 +184,7 @@ class LoginViewModel @Inject constructor(
                 with(prefs.edit()) {
                     putString(KEY_AUTH_TOKEN, DEV_OFFLINE_TOKEN)
                     putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
+                    putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
                     apply()
                 }
                 _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
@@ -181,6 +235,7 @@ class LoginViewModel @Inject constructor(
                             with(prefs.edit()) {
                                 putString(KEY_AUTH_TOKEN, apiJwt)
                                 putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
+                                putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
                                 apply()
                             }
                             _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
@@ -254,6 +309,7 @@ class LoginViewModel @Inject constructor(
                                 with(prefs.edit()) {
                                     putString(KEY_AUTH_TOKEN, apiJwt)
                                     putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
+                                    putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
                                     apply()
                                 }
                                 Log.d(TAG, "[GoogleSignIn] Prefs saved.")
@@ -363,6 +419,7 @@ class LoginViewModel @Inject constructor(
                             with(prefs.edit()) {
                                 putString(KEY_AUTH_TOKEN, apiJwt)
                                 putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
+                                putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
                                 apply()
                             }
                             Log.d(TAG, "[GitHubRedirect] Prefs saved.")

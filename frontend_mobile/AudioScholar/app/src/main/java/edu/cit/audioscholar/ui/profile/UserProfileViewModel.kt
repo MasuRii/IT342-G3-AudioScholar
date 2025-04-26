@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -97,7 +96,6 @@ class UserProfileViewModel @Inject constructor(
                         }
                         is Resource.Error -> {
                             Log.e("UserProfileViewModel", "Error loading profile: ${result.message}")
-                            val currentData = _uiState.value
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
@@ -107,7 +105,7 @@ class UserProfileViewModel @Inject constructor(
                             if (result.message?.contains("Unauthorized", ignoreCase = true) == true ||
                                 result.message?.contains("401", ignoreCase = true) == true ||
                                 result.message?.contains("403", ignoreCase = true) == true) {
-                                Log.w("UserProfileViewModel", "Unauthorized error detected, clearing session and navigating to login.")
+                                Log.w("UserProfileViewModel", "Unauthorized error detected during profile load, clearing session and navigating to login.")
                                 clearSessionAndNavigateToLogin()
                             }
                         }
@@ -139,14 +137,31 @@ class UserProfileViewModel @Inject constructor(
 
     fun logout() {
         viewModelScope.launch {
-            Log.d("UserProfileViewModel", "Logout initiated by user")
-            authRepository.clearLocalUserCache()
+            Log.d("UserProfileViewModel", "Logout initiated by user. Calling API.")
+
+            val result = authRepository.logout()
+
+            when (result) {
+                is Resource.Success -> {
+                    Log.i("UserProfileViewModel", "API logout successful.")
+                }
+                is Resource.Error -> {
+                    Log.w("UserProfileViewModel", "API logout failed: ${result.message}. Proceeding with local logout.")
+                }
+                is Resource.Loading -> {
+                }
+            }
+
+            Log.d("UserProfileViewModel", "Proceeding to clear local session data.")
             clearSessionAndNavigateToLogin()
         }
     }
 
     private fun clearSessionAndNavigateToLogin() {
         viewModelScope.launch {
+            Log.d("UserProfileViewModel", "Clearing local user cache (DataStore).")
+            authRepository.clearLocalUserCache()
+
             Log.d("UserProfileViewModel", "Clearing local session data (Prefs).")
             with(prefs.edit()) {
                 remove(LoginViewModel.KEY_AUTH_TOKEN)

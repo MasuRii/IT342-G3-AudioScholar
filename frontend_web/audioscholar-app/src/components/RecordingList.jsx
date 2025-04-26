@@ -56,7 +56,7 @@ const RecordingList = () => {
           // Handle specific HTTP errors from the backend
           if (err.response.status === 401 || err.response.status === 403) {
               setError("Session expired or not authorized. Please log in again.");
-               // Clear invalid token if stored
+              // Clear invalid token if stored
               localStorage.removeItem('AuthToken'); // <-- Corrected key
               navigate('/signin'); // <-- Corrected redirect path to /signin
           } else {
@@ -67,7 +67,7 @@ const RecordingList = () => {
            setError("Network error: Could not reach the server.");
       } else {
           // Something happened in setting up the request that triggered an Error
-          setError("An unexpected error occurred.");
+           setError("An unexpected error occurred.");
       }
     } finally {
       setLoading(false); // Set loading to false after fetching (success or failure)
@@ -82,7 +82,7 @@ const RecordingList = () => {
   // Add handleLogout function
   const handleLogout = () => {
     // Add any logout logic here (e.g., clearing authentication token)
-    localStorage.removeItem('authToken'); // Example: Clear token from local storage
+    // localStorage.removeItem('authToken'); // Example: Clear token from local storage - Removed duplicate/incorrect key
     localStorage.removeItem('AuthToken'); // <-- Corrected key
     navigate('/'); // Redirect to landing page
   };
@@ -107,9 +107,9 @@ const RecordingList = () => {
         // Send DELETE request to the backend endpoint
         await axios.delete(deleteUrl, { // <-- Use the full URL
              headers: {
-                'Authorization': `Bearer ${token}` // Include auth token
+                 'Authorization': `Bearer ${token}` // Include auth token
              }
-        });
+         });
 
         // If the request is successful (backend returns 204 No Content),
         // update the state to remove the deleted item from the list
@@ -151,7 +151,7 @@ const RecordingList = () => {
                  // Added icon and adjusted classes
               className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10"
             >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                </svg>
                <span className="hidden sm:inline">Dashboard</span> {/* Adjusted text */}
@@ -193,7 +193,7 @@ const RecordingList = () => {
                 to="/upload"
                 className="bg-[#2D8A8A] text-white py-2 px-4 rounded-lg font-medium hover:bg-[#236b6b] transition flex items-center" // Added flex items-center
               >
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"> {/* Added Icon */}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"> {/* Added Icon */}
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 12v6m0 0l-3-3m3 3l3-3" />
                  </svg>
                  New Upload {/* Removed + sign */}
@@ -223,6 +223,7 @@ const RecordingList = () => {
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                         {/* Added View Data header */}
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">View Data</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                       </tr>
@@ -251,20 +252,26 @@ const RecordingList = () => {
                              {/* Display status from backend data and apply styles */}
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                               recording.status === 'Processed'
-                                ? 'bg-green-100 text-green-800'
-                                : recording.status === 'Processing'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-gray-100 text-gray-800' // Default color for other statuses
+                                 ? 'bg-green-100 text-green-800'
+                                 : recording.status === 'Processing'
+                                   ? 'bg-yellow-100 text-yellow-800'
+                                   : 'bg-gray-100 text-gray-800' // Default color for other statuses
                             }`}>
                               {recording.status || 'Unknown'}
                             </span>
                           </td>
-                          {/* Add new Cell for View Data Link */}
+                           {/* Add new Cell for View Data Link */}
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b]">
-                                  View Data
-                              </Link>
-                          </td>
+                              {recording.status === 'Processed' ? (
+                                 <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b]">
+                                     View Data
+                                 </Link>
+                              ) : (
+                                 <span className="text-gray-400 cursor-not-allowed">
+                                     View Data
+                                 </span>
+                              )}
+                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             {/* Delete button - add onClick handler */}
                             <button

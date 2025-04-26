@@ -49,8 +49,16 @@ android {
 }
 
 dependencies {
-    implementation("androidx.datastore:datastore-preferences:1.1.4")
+    implementation("com.github.jeziellago:compose-markdown:0.5.7")
+
+    val room_version = "2.7.1"
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    kapt("androidx.room:room-compiler:$room_version")
+
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    implementation("androidx.datastore:datastore-preferences:1.1.4")
 
     implementation(platform("com.google.firebase:firebase-bom:33.12.0"))
     implementation(libs.firebase.auth.ktx)

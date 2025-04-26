@@ -28,6 +28,9 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.Date
 
 data class RecordingUiState(
     val isRecording: Boolean = false,
@@ -312,13 +315,29 @@ class RecordingViewModel @Inject constructor(
 
         val savedFileName = savedFile.name
         val timestamp = System.currentTimeMillis()
+        
+        // Generate default title if none provided
+        val finalTitle = title ?: run {
+            val dateFormat = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
+            "Recording ${dateFormat.format(Date(timestamp))}"
+        }
+
+        // Ensure description is handled (assuming null if not passed)
+        val description: String? = null // Or get from UI if you add a description field
 
         val metadata = RecordingMetadata(
             filePath = savedFilePath,
             fileName = savedFileName,
-            title = title?.takeIf { it.isNotBlank() },
+            title = finalTitle,
+            description = description, // Add description field
             timestampMillis = timestamp,
-            durationMillis = finishedRecordingDuration
+            durationMillis = finishedRecordingDuration,
+            // Initialize new cache fields to null for a fresh recording
+            remoteRecordingId = null,
+            cachedSummaryText = null,
+            cachedGlossaryItems = null,
+            cachedRecommendations = null,
+            cacheTimestampMillis = null
         )
 
         Log.d("RecordingViewModel", "Finalizing recording metadata: $metadata")

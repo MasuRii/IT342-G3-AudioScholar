@@ -2,6 +2,7 @@ package edu.cit.audioscholar.ui.main
 
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -26,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Mic
@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -69,9 +70,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.data.remote.dto.UserProfileDto
+import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
@@ -87,64 +92,101 @@ import edu.cit.audioscholar.ui.recording.RecordingScreen
 import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
-import edu.cit.audioscholar.ui.upload.UploadScreen
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
     object Record : Screen("record", R.string.nav_record, Icons.Filled.Mic)
     object Library : Screen("library", R.string.nav_library, Icons.AutoMirrored.Filled.List)
-    object Upload : Screen("upload", R.string.nav_upload, Icons.Filled.CloudUpload)
     object Settings : Screen("settings", R.string.nav_settings, Icons.Filled.Settings)
     object Profile : Screen("profile", R.string.nav_profile, Icons.Filled.AccountCircle)
     object EditProfile : Screen("edit_profile", R.string.nav_edit_profile, Icons.Filled.Edit)
     object About : Screen("about", R.string.nav_about, Icons.Filled.Info)
-    object Login : Screen("login", R.string.nav_login, Icons.AutoMirrored.Filled.Login)
+    object Login : Screen("login?fromLogout={fromLogout}&isFirstLogin={isFirstLogin}", R.string.nav_login, Icons.AutoMirrored.Filled.Login) {
+        fun createRoute(fromLogout: Boolean = false, isFirstLogin: Boolean = false) =
+            "login?fromLogout=$fromLogout&isFirstLogin=$isFirstLogin"
+    }
     object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
 
-    object RecordingDetails : Screen("recording_details/{recordingId}", R.string.nav_recording_details) {
-        fun createRoute(recordingId: String) = "recording_details/$recordingId"
+    object RecordingDetails : Screen("recording_details", R.string.nav_recording_details) {
+        const val ARG_LOCAL_FILE_PATH = "localFilePath"
+        const val ARG_CLOUD_RECORDING_ID = "cloudRecordingId"
+        const val ARG_CLOUD_TITLE = "cloudTitle"
+        const val ARG_CLOUD_FILENAME = "cloudFileName"
+        const val ARG_CLOUD_TIMESTAMP_SECONDS = "cloudTimestampSeconds"
+        const val ARG_CLOUD_STORAGE_URL = "cloudStorageUrl"
+
+        const val ROUTE_PATTERN = "recording_details" +
+                "?$ARG_LOCAL_FILE_PATH={$ARG_LOCAL_FILE_PATH}" +
+                "&$ARG_CLOUD_RECORDING_ID={$ARG_CLOUD_RECORDING_ID}" +
+                "&$ARG_CLOUD_TITLE={$ARG_CLOUD_TITLE}" +
+                "&$ARG_CLOUD_FILENAME={$ARG_CLOUD_FILENAME}" +
+                "&$ARG_CLOUD_TIMESTAMP_SECONDS={$ARG_CLOUD_TIMESTAMP_SECONDS}" +
+                "&$ARG_CLOUD_STORAGE_URL={$ARG_CLOUD_STORAGE_URL}"
+
+        fun createLocalRoute(filePath: String): String {
+            return "recording_details?$ARG_LOCAL_FILE_PATH=${Uri.encode(filePath)}"
+        }
+
+        fun createCloudRoute(metadata: AudioMetadataDto): String {
+            val recordingId = metadata.recordingId
+            if (recordingId.isNullOrBlank()) {
+                Log.e("Screen.RecordingDetails", "Cannot create cloud route, recordingId is null or blank in metadata: $metadata")
+                return "recording_details/error"
+            }
+
+            val title = Uri.encode(metadata.title ?: metadata.fileName ?: "Cloud Recording")
+            val fileName = Uri.encode(metadata.fileName ?: "Unknown Filename")
+            val timestamp = metadata.uploadTimestamp?.seconds ?: 0L
+            val storageUrl = Uri.encode(metadata.storageUrl ?: "")
+
+            return "recording_details?$ARG_CLOUD_RECORDING_ID=$recordingId" +
+                    "&$ARG_CLOUD_TITLE=$title" +
+                    "&$ARG_CLOUD_FILENAME=$fileName" +
+                    "&$ARG_CLOUD_TIMESTAMP_SECONDS=$timestamp" +
+                    "&$ARG_CLOUD_STORAGE_URL=$storageUrl"
+        }
     }
 }
 
 val screensWithDrawer = listOf(
     Screen.Record.route,
     Screen.Library.route,
-    Screen.Upload.route,
     Screen.Settings.route,
     Screen.Profile.route,
     Screen.About.route,
     Screen.ChangePassword.route
 )
 
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var prefs: SharedPreferences
+
     private val settingsViewModel: SettingsViewModel by viewModels()
     private val loginViewModel: LoginViewModel by viewModels()
+    private val mainViewModel: MainViewModel by viewModels()
+
     private lateinit var navController: NavHostController
 
     private val onOnboardingCompleteAction: () -> Unit = {
-        with(prefs.edit()) {
-            putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true)
-            apply()
-        }
         if (::navController.isInitialized) {
-            navController.navigate(Screen.Login.route) {
+            navController.navigate(Screen.Login.createRoute(isFirstLogin = true)) {
                 popUpTo(Screen.Onboarding.route) { inclusive = true }
                 launchSingleTop = true
             }
-            Log.d("MainActivity", "Onboarding complete. Navigating to Login screen.")
+            Log.d("MainActivity", "Onboarding complete. Navigating to Login screen (isFirstLogin=true).")
         } else {
             Log.e("MainActivity", "Onboarding complete called but NavController not ready.")
         }
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -222,8 +264,8 @@ class MainActivity : ComponentActivity() {
                     navController = navController,
                     startDestination = startDestination,
                     onOnboardingComplete = onOnboardingCompleteAction,
-                    prefs = prefs,
-                    loginViewModel = loginViewModel
+                    loginViewModel = loginViewModel,
+                    mainViewModel = mainViewModel
                 )
             }
         }
@@ -253,7 +295,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-
     private fun handleGitHubRedirectIntent(intent: Intent?, source: String): Boolean {
         if (intent?.action == Intent.ACTION_VIEW && intent.data != null) {
             val uri = intent.data
@@ -270,7 +311,6 @@ class MainActivity : ComponentActivity() {
         }
         return false
     }
-
 
     @Suppress("DEPRECATION")
     private fun logIntentExtras(source: String, intent: Intent?) {
@@ -294,38 +334,21 @@ class MainActivity : ComponentActivity() {
         logIntentExtras("handleNavigationIntent", intent)
 
         if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == LoginViewModel.GITHUB_REDIRECT_URI_SCHEME) {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping standard navigation handling.")
+            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping.")
             return
         }
 
         val navigateTo = intent?.getStringExtra(NAVIGATE_TO_EXTRA)
         Log.d("MainActivity", "[handleNavigationIntent] Value from getExtra(NAVIGATE_TO_EXTRA): $navigateTo")
 
-        val currentRoute = navController.currentBackStackEntry?.destination?.route
-        val isAuthScreen = currentRoute == Screen.Login.route ||
-                currentRoute == Screen.Registration.route ||
-                currentRoute == Screen.Onboarding.route
-
         if (navigateTo == UPLOAD_SCREEN_VALUE) {
-            if (!isAuthScreen) {
-                if (currentRoute != Screen.Upload.route) {
-                    Log.d("MainActivity", "Navigating to Upload screen via intent.")
-                    navController.navigate(Screen.Upload.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                } else {
-                    Log.d("MainActivity", "Already on Upload screen, no navigation needed from intent.")
-                }
-            } else {
-                Log.d("MainActivity", "Intent requests Upload screen, but currently on Auth/Onboarding. Ignoring.")
-            }
+            Log.w("MainActivity", "[handleNavigationIntent] Intent requested navigation to removed Upload screen. Ignoring.")
+            intent?.removeExtra(NAVIGATE_TO_EXTRA)
+        } else if (navigateTo != null) {
+            Log.d("MainActivity", "[handleNavigationIntent] Received navigation intent for target: $navigateTo (not implemented or handled elsewhere).")
             intent?.removeExtra(NAVIGATE_TO_EXTRA)
         } else {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent does not specify navigation to Upload screen or currently on Auth.")
+            Log.d("MainActivity", "[handleNavigationIntent] No specific navigation target in intent extras.")
         }
     }
 }
@@ -337,8 +360,8 @@ fun MainAppScreen(
     navController: NavHostController,
     startDestination: String,
     onOnboardingComplete: () -> Unit,
-    prefs: SharedPreferences,
-    loginViewModel: LoginViewModel
+    loginViewModel: LoginViewModel,
+    mainViewModel: MainViewModel
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -347,6 +370,25 @@ fun MainAppScreen(
     val currentRoute = navBackStackEntry?.destination?.route
 
     val gesturesEnabled = currentRoute in screensWithDrawer
+
+    val userProfileState by mainViewModel.userProfileState.collectAsStateWithLifecycle()
+
+    val userProfile: UserProfileDto? = if (userProfileState is Resource.Success) {
+        userProfileState.data
+    } else {
+        (userProfileState as? Resource.Loading)?.data ?: (userProfileState as? Resource.Error)?.data
+    }
+
+    LaunchedEffect(Unit) {
+        mainViewModel.logoutCompleteEventFlow.collectLatest {
+            Log.d("MainAppScreen", "Logout complete event received. Navigating to Login with fromLogout=true.")
+            navController.navigate(Screen.Login.createRoute(fromLogout = true, isFirstLogin = false)) {
+                popUpTo(navController.graph.id) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -373,24 +415,46 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != Screen.Profile.route) {
                                     navController.navigate(Screen.Profile.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true; restoreState = true
+                                        popUpTo(navController.graph.id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             }
                             .padding(vertical = 8.dp)
                     ) {
-                        Image(painterResource(id = R.drawable.avatar_placeholder), null, Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentScale = ContentScale.Crop)
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(userProfile?.profileImageUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = stringResource(R.string.desc_user_avatar),
+                            placeholder = painterResource(id = R.drawable.avatar_placeholder),
+                            error = painterResource(id = R.drawable.avatar_placeholder),
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.secondaryContainer),
+                            contentScale = ContentScale.Crop
+                        )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("User Name", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-                            Text("user.email@example.com", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                text = userProfile?.displayName ?: stringResource(R.string.placeholder_username),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = userProfile?.email ?: stringResource(R.string.placeholder_email),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
                 HorizontalDivider()
 
-                val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Upload, Screen.Settings, Screen.About)
+                val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Settings, Screen.About)
                 Spacer(Modifier.height(12.dp))
                 mainNavItems.forEach { screen ->
                     screen.icon?.let { icon ->
@@ -402,8 +466,9 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != screen.route) {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true; restoreState = true
+                                        popUpTo(navController.graph.id) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
                                 }
                             },
@@ -414,23 +479,15 @@ fun MainAppScreen(
 
                 Spacer(Modifier.weight(1f))
                 HorizontalDivider()
-
                 NavigationDrawerItem(
                     icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null) },
                     label = { Text(stringResource(R.string.nav_logout)) },
                     selected = false,
                     onClick = {
-                        scope.launch { drawerState.close() }
-                        Log.d("DrawerFooter", "Logout clicked - Clearing login state and Navigating to Login")
-                        with(prefs.edit()) {
-                            putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
-                            remove(LoginViewModel.KEY_AUTH_TOKEN)
-                            apply()
-                        }
-
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(navController.graph.id) { inclusive = true }
-                            launchSingleTop = true
+                        scope.launch {
+                            drawerState.close()
+                            Log.d("DrawerFooter", "Logout clicked - Calling ViewModel performLogout.")
+                            mainViewModel.performLogout()
                         }
                     },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
@@ -439,91 +496,108 @@ fun MainAppScreen(
             }
         }
     ) { Scaffold { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = startDestination,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            composable(Screen.Onboarding.route) {
+                OnboardingScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    onOnboardingComplete = onOnboardingComplete
+                )
+            }
+            composable(Screen.Record.route) {
+                RecordingScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Library.route) {
+                LibraryScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                )
+            }
+            composable(Screen.Settings.route) {
+                edu.cit.audioscholar.ui.settings.SettingsScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.Profile.route) {
+                UserProfileScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(Screen.EditProfile.route) {
+                EditProfileScreen(
+                    navController = navController
+                )
+            }
+            composable(Screen.About.route) {
+                AboutScreen(
+                    navController = navController,
+                    drawerState = drawerState,
+                    scope = scope
+                )
+            }
+            composable(
+                route = Screen.Login.route,
+                arguments = listOf(
+                    navArgument("fromLogout") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
+                    navArgument("isFirstLogin") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    }
+                )
             ) {
-                composable(Screen.Onboarding.route) {
-                    OnboardingScreen(
-                        modifier = Modifier.fillMaxSize(),
-                        onOnboardingComplete = onOnboardingComplete
-                    )
-                }
-                composable(Screen.Record.route) {
-                    RecordingScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Library.route) {
-                    LibraryScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Upload.route) {
-                    UploadScreen(
-                        onNavigateToRecording = {
-                            navController.navigate(Screen.Record.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true; restoreState = true
-                            }
-                        },
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Settings.route) {
-                    edu.cit.audioscholar.ui.settings.SettingsScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Profile.route) {
-                    UserProfileScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.EditProfile.route) {
-                    EditProfileScreen(
-                        navController = navController
-                    )
-                }
-                composable(Screen.About.route) {
-                    AboutScreen(
-                        navController = navController,
-                        drawerState = drawerState,
-                        scope = scope
-                    )
-                }
-                composable(Screen.Login.route) {
-                    LoginScreen(navController = navController)
-                }
-                composable(Screen.Registration.route) {
-                    RegistrationScreen(navController = navController)
-                }
-                composable(Screen.ChangePassword.route) {
-                    edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
-                        navController = navController
-                    )
-                }
-                composable(
-                    route = Screen.RecordingDetails.route,
-                    arguments = listOf(navArgument("recordingId") { type = NavType.StringType })
-                ) { backStackEntry ->
-                    RecordingDetailsScreen(
-                        navController = navController
-                    )
+                LoginScreen(navController = navController)
+            }
+            composable(Screen.Registration.route) {
+                RegistrationScreen(navController = navController)
+            }
+            composable(Screen.ChangePassword.route) {
+                edu.cit.audioscholar.ui.settings.ChangePasswordScreen(
+                    navController = navController
+                )
+            }
+            composable(
+                route = Screen.RecordingDetails.ROUTE_PATTERN,
+                arguments = listOf(
+                    navArgument(Screen.RecordingDetails.ARG_LOCAL_FILE_PATH) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_RECORDING_ID) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_TITLE) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_FILENAME) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_TIMESTAMP_SECONDS) {
+                        type = NavType.LongType; defaultValue = 0L },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_STORAGE_URL) {
+                        type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) { backStackEntry ->
+                RecordingDetailsScreen(navController = navController)
+            }
+            composable("recording_details/error") {
+                Text("Error: Could not navigate to recording details.")
+                LaunchedEffect(Unit) {
+                    delay(2000)
+                    navController.popBackStack()
                 }
             }
         }
     }
+}
 }

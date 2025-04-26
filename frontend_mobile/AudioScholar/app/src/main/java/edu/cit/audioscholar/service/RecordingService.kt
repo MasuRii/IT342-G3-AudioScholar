@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -35,11 +36,18 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import kotlin.math.sqrt
+import android.content.SharedPreferences
+import javax.inject.Named
+import edu.cit.audioscholar.di.PreferencesModule
+import edu.cit.audioscholar.domain.model.QualitySetting
 
 @AndroidEntryPoint
 class RecordingService : Service() {
 
     @Inject lateinit var recordingFileHandler: RecordingFileHandler
+    @Inject
+    @Named(PreferencesModule.SETTINGS_PREFERENCES)
+    lateinit var prefs: SharedPreferences
 
     private var mediaRecorder: MediaRecorder? = null
     private var currentRecordingFile: File? = null
@@ -84,6 +92,11 @@ class RecordingService : Service() {
         private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val AMPLITUDE_UPDATE_INTERVAL_MS = 100L
+
+        private const val DEFAULT_SAMPLE_RATE = 44100
+        private const val LOW_QUALITY_BUFFER_SIZE = 2048
+        private const val MEDIUM_QUALITY_BUFFER_SIZE = 4096
+        private const val HIGH_QUALITY_BUFFER_SIZE = 8192
     }
 
     override fun onCreate() {
@@ -150,6 +163,34 @@ class RecordingService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun getAudioRecordBufferSize(): Int {
+        val quality = QualitySetting.valueOf(
+            prefs.getString(QualitySetting.PREF_KEY, QualitySetting.DEFAULT)
+                ?: QualitySetting.DEFAULT
+        )
+        
+        val baseBufferSize = when (quality) {
+            QualitySetting.Low -> LOW_QUALITY_BUFFER_SIZE
+            QualitySetting.Medium -> MEDIUM_QUALITY_BUFFER_SIZE
+            QualitySetting.High -> HIGH_QUALITY_BUFFER_SIZE
+        }
+        
+        val channelConfig = if (quality == QualitySetting.High) 
+            AudioFormat.CHANNEL_IN_STEREO else AudioFormat.CHANNEL_IN_MONO
+        
+        Log.d("RecordingQuality", "AudioRecord Configuration: Quality=$quality, " +
+                "BufferSize=$baseBufferSize, " +
+                "ChannelConfig=${if(channelConfig == AudioFormat.CHANNEL_IN_STEREO) "STEREO" else "MONO"}")
+        
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            SAMPLE_RATE,
+            channelConfig,
+            AUDIO_FORMAT
+        )
+
+        return if (minBufferSize > baseBufferSize) minBufferSize else baseBufferSize
+    }
+
     private fun startRecording() {
         if (mediaRecorder != null || audioRecord != null) {
             Log.w("RecordingService", "Start recording called but already recording.")
@@ -176,15 +217,8 @@ class RecordingService : Service() {
             var outputFile: File? = null
 
             try {
-                audioRecordBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-                if (audioRecordBufferSize == AudioRecord.ERROR_BAD_VALUE || audioRecordBufferSize == AudioRecord.ERROR) {
-                    throw IOException("AudioRecord: Invalid parameters or unable to query buffer size.")
-                }
-                if (audioRecordBufferSize <= 0) {
-                    audioRecordBufferSize = 4096
-                    Log.w("RecordingService", "AudioRecord.getMinBufferSize returned non-positive value, using fallback: $audioRecordBufferSize")
-                }
-
+                audioRecordBufferSize = getAudioRecordBufferSize()
+                
                 if (ActivityCompat.checkSelfPermission(applicationContext, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                     throw SecurityException("RECORD_AUDIO permission check failed unexpectedly before AudioRecord creation.")
                 }
@@ -233,6 +267,10 @@ class RecordingService : Service() {
                 startTimer()
                 broadcastStatusUpdate(isRecording = true, isPaused = false, elapsedTimeMillis = 0L, amplitude = 0f)
                 Log.d("RecordingService", "Recording started successfully. File: ${outputFile?.absolutePath}")
+                Log.d("RecordingQuality", "Recording started with: " +
+                        "Quality=${QualitySetting.valueOf(prefs.getString(QualitySetting.PREF_KEY, QualitySetting.DEFAULT) ?: QualitySetting.DEFAULT)}, " +
+                        "Format=AAC/M4A, " +
+                        "OutputFile=${outputFile?.absolutePath}")
                 success = true
 
             } catch (e: SecurityException) {
@@ -444,6 +482,22 @@ class RecordingService : Service() {
 
                 releaseAudioRecord()
 
+                val fileSizeBytes = fileToSave?.length() ?: 0
+                val fileSizeKB = fileSizeBytes / 1024
+                
+                val quality = QualitySetting.valueOf(
+                    prefs.getString(QualitySetting.PREF_KEY, QualitySetting.DEFAULT) 
+                        ?: QualitySetting.DEFAULT
+                )
+                
+                val durationSeconds = finalDuration / 1000.0
+                val bitrateBps = if (durationSeconds > 0) (fileSizeBytes * 8 / durationSeconds).toInt() else 0
+                
+                Log.d("RecordingQuality", "Recording completed: " +
+                        "Quality=$quality, " +
+                        "Duration=${formatElapsedTime(finalDuration)}, " +
+                        "FileSize=${fileSizeKB}KB, " +
+                        "ActualBitrate=${bitrateBps/1000}kbps")
 
             } catch (e: IllegalStateException) {
                 Log.e("RecordingService", "IllegalStateException stopping recording: ${e.message}", e)
@@ -570,10 +624,13 @@ class RecordingService : Service() {
         val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingIntentFlags)
 
+        val largeIconBitmap = BitmapFactory.decodeResource(resources, R.mipmap.ic_audioscholar)
+
         val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title_recording))
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_mic)
+            .setLargeIcon(largeIconBitmap)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)

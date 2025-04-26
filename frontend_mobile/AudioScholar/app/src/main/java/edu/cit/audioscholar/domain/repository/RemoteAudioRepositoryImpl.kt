@@ -1,31 +1,24 @@
 package edu.cit.audioscholar.domain.repository
 
 import android.app.Application
-import android.net.Uri
-import android.provider.OpenableColumns
 import android.util.Log
+import android.webkit.MimeTypeMap
+import androidx.core.net.toUri
 import com.google.gson.Gson
 import edu.cit.audioscholar.R
-import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
+import edu.cit.audioscholar.data.remote.dto.*
 import edu.cit.audioscholar.data.remote.service.ApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
-import okhttp3.MediaType
+import kotlinx.coroutines.flow.*
+import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
-import okio.Buffer
-import okio.BufferedSink
-import okio.ForwardingSink
-import okio.IOException
-import okio.buffer
+import okio.*
 import retrofit2.HttpException
 import retrofit2.Response
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,52 +32,47 @@ class RemoteAudioRepositoryImpl @Inject constructor(
 ) : RemoteAudioRepository {
 
     override fun uploadAudioFile(
-        fileUri: Uri,
+        audioFile: File,
         title: String?,
         description: String?
     ): Flow<UploadResult> = callbackFlow<UploadResult> {
         trySend(UploadResult.Loading)
-        Log.d(TAG_REMOTE_REPO, "Starting upload for $fileUri. Title: '$title', Desc: '$description'")
+        Log.d(TAG_REMOTE_REPO, "Starting upload for File: ${audioFile.absolutePath}. Title: '$title', Desc: '$description'")
 
-        var fileName = "uploaded_audio"
+        val fileName = audioFile.name
         val contentResolver = application.contentResolver
+        var mimeType: String? = null
 
-        try {
-            contentResolver.query(fileUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1) {
-                        fileName = cursor.getString(nameIndex)
-                        Log.d(TAG_REMOTE_REPO, "Resolved filename: $fileName")
-                    }
-                }
+        val fileExtension = fileName.substringAfterLast('.', "").lowercase()
+        if (fileExtension.isNotEmpty()) {
+            mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileExtension)
+            Log.d(TAG_REMOTE_REPO, "MIME type from extension '$fileExtension': $mimeType")
+        }
+
+        if (mimeType == null) {
+            try {
+                mimeType = contentResolver.getType(audioFile.toUri())
+                Log.d(TAG_REMOTE_REPO, "MIME type from ContentResolver: $mimeType")
+            } catch (e: Exception) {
+                Log.w(TAG_REMOTE_REPO, "Could not get MIME type from ContentResolver for ${audioFile.toUri()}", e)
             }
-        } catch (e: Exception) {
-            Log.w(TAG_REMOTE_REPO, "Could not resolve filename, using default.", e)
         }
 
-        val mimeType = contentResolver.getType(fileUri) ?: "application/octet-stream"
-        Log.d(TAG_REMOTE_REPO, "Resolved MIME type: $mimeType")
+        mimeType = mimeType ?: "audio/m4a"
+        Log.d(TAG_REMOTE_REPO, "Final resolved MIME type: $mimeType")
 
-        val fileBytes: ByteArray? = try {
-            contentResolver.openInputStream(fileUri)?.use { it.readBytes() }
-        } catch (e: Exception) {
-            Log.e(TAG_REMOTE_REPO, "Failed to read file bytes", e)
-            trySend(UploadResult.Error(application.getString(R.string.upload_error_read_failed, e.message ?: "Unknown reason")))
-            close(e)
-            return@callbackFlow
-        }
 
-        if (fileBytes == null) {
-            Log.e(TAG_REMOTE_REPO, "Failed to read file content (stream was null or empty).")
-            val error = IOException(application.getString(R.string.upload_error_read_empty))
-            trySend(UploadResult.Error(error.message ?: "Empty file error"))
+        val mediaType = mimeType.toMediaTypeOrNull()
+
+        if (!audioFile.exists() || !audioFile.canRead()) {
+            val error = IOException("File not found or cannot be read: ${audioFile.absolutePath}")
+            Log.e(TAG_REMOTE_REPO, error.message, error)
+            trySend(UploadResult.Error(error.message ?: "File access error"))
             close(error)
             return@callbackFlow
         }
-        Log.d(TAG_REMOTE_REPO, "Read ${fileBytes.size} bytes from file.")
 
-        val baseRequestBody = fileBytes.toRequestBody(mimeType.toMediaTypeOrNull())
+        val baseRequestBody = audioFile.asRequestBody(mediaType)
         val progressRequestBody = ProgressReportingRequestBody(baseRequestBody) { percentage ->
             trySend(UploadResult.Progress(percentage))
         }
@@ -98,6 +86,7 @@ class RemoteAudioRepositoryImpl @Inject constructor(
         val titlePart: RequestBody? = title?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull())
         val descriptionPart: RequestBody? = description?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull())
 
+        Log.d(TAG_REMOTE_REPO, "Multipart parts created. Filename: '$fileName', MIME Type: '$mimeType'")
         Log.d(TAG_REMOTE_REPO, "Title part created: ${titlePart != null}")
         Log.d(TAG_REMOTE_REPO, "Description part created: ${descriptionPart != null}")
 
@@ -113,18 +102,23 @@ class RemoteAudioRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 val responseBody: AudioMetadataDto? = response.body()
                 if (responseBody != null) {
-                    Log.i(TAG_REMOTE_REPO, "Upload successful. Metadata ID: ${responseBody.id}")
-                    trySend(UploadResult.Success)
+                    Log.i(TAG_REMOTE_REPO, "Upload successful. Metadata ID: ${responseBody.id}, Recording ID: ${responseBody.recordingId}")
+                    trySend(UploadResult.Success(responseBody))
                 } else {
                     Log.w(TAG_REMOTE_REPO, "Upload successful (Code: ${response.code()}) but response body was null.")
-                    trySend(UploadResult.Success)
+                    trySend(UploadResult.Success(null))
                 }
                 close()
             } else {
                 val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
                 Log.e(TAG_REMOTE_REPO, "Upload failed with HTTP error: ${response.code()} - $errorBody")
                 val error = HttpException(response)
-                trySend(UploadResult.Error(application.getString(R.string.upload_error_server_http, response.code(), errorBody)))
+                val errorMessage = if (response.code() == 415) {
+                    application.getString(R.string.error_unsupported_file_type_detected, mimeType)
+                } else {
+                    application.getString(R.string.upload_error_server_http, response.code(), errorBody)
+                }
+                trySend(UploadResult.Error(errorMessage))
                 close(error)
             }
         } catch (e: IOException) {
@@ -133,7 +127,12 @@ class RemoteAudioRepositoryImpl @Inject constructor(
             close(e)
         } catch (e: HttpException) {
             Log.e(TAG_REMOTE_REPO, "HTTP exception during upload: ${e.code()} - ${e.message()}", e)
-            trySend(UploadResult.Error(application.getString(R.string.upload_error_server_http, e.code(), e.message())))
+            val errorMessage = if (e.code() == 415) {
+                application.getString(R.string.error_unsupported_file_type_detected, mimeType)
+            } else {
+                application.getString(R.string.upload_error_server_http, e.code(), e.message())
+            }
+            trySend(UploadResult.Error(errorMessage))
             close(e)
         } catch (e: Exception) {
             Log.e(TAG_REMOTE_REPO, "Unexpected exception during upload: ${e.message}", e)
@@ -145,34 +144,6 @@ class RemoteAudioRepositoryImpl @Inject constructor(
             Log.d(TAG_REMOTE_REPO, "Upload flow channel closed.")
         }
 
-    }.flowOn(Dispatchers.IO)
-
-
-    override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
-        try {
-            Log.d(TAG_REMOTE_REPO, "Fetching cloud recordings metadata from API: apiService.getAudioMetadataList")
-            val response: Response<List<AudioMetadataDto>> = apiService.getAudioMetadataList()
-
-            if (response.isSuccessful) {
-                val metadataList: List<AudioMetadataDto> = response.body() ?: emptyList()
-                Log.i(TAG_REMOTE_REPO, "Successfully fetched ${metadataList.size} cloud recordings metadata.")
-                emit(Result.success(metadataList))
-            } else {
-                val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
-                Log.e(TAG_REMOTE_REPO, "Failed to fetch cloud recordings: ${response.code()} - $errorBody")
-                val exception = IOException(application.getString(R.string.upload_error_server_http, response.code(), errorBody))
-                emit(Result.failure(exception))
-            }
-        } catch (e: IOException) {
-            Log.e(TAG_REMOTE_REPO, "Network/IO exception fetching cloud recordings: ${e.message}", e)
-            emit(Result.failure(IOException(application.getString(R.string.upload_error_network_connection), e)))
-        } catch (e: HttpException) {
-            Log.e(TAG_REMOTE_REPO, "HTTP exception fetching cloud recordings: ${e.code()} - ${e.message()}", e)
-            emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, e.code(), e.message()))))
-        } catch (e: Exception) {
-            Log.e(TAG_REMOTE_REPO, "Unexpected exception fetching cloud recordings: ${e.message}", e)
-            emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
-        }
     }.flowOn(Dispatchers.IO)
 
 
@@ -232,4 +203,110 @@ class RemoteAudioRepositoryImpl @Inject constructor(
             }
         }
     }
+
+    override fun getCloudRecordings(): Flow<Result<List<AudioMetadataDto>>> = flow {
+        try {
+            Log.d(TAG_REMOTE_REPO, "Fetching cloud recordings metadata from API: apiService.getAudioMetadataList")
+            val response: Response<List<AudioMetadataDto>> = apiService.getAudioMetadataList()
+
+            if (response.isSuccessful) {
+                val metadataList: List<AudioMetadataDto> = response.body() ?: emptyList()
+                Log.i(TAG_REMOTE_REPO, "Successfully fetched ${metadataList.size} cloud recordings metadata.")
+                emit(Result.success(metadataList))
+            } else {
+                val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
+                Log.e(TAG_REMOTE_REPO, "Failed to fetch cloud recordings: ${response.code()} - $errorBody")
+                val exception = IOException(application.getString(R.string.upload_error_server_http, response.code(), errorBody))
+                emit(Result.failure(exception))
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REMOTE_REPO, "Network/IO exception fetching cloud recordings: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_network_connection), e)))
+        } catch (e: HttpException) {
+            Log.e(TAG_REMOTE_REPO, "HTTP exception fetching cloud recordings: ${e.code()} - ${e.message()}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, e.code(), e.message()))))
+        } catch (e: Exception) {
+            Log.e(TAG_REMOTE_REPO, "Unexpected exception fetching cloud recordings: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun getSummary(recordingId: String): Flow<Result<SummaryResponseDto>> = flow {
+        try {
+            Log.d(TAG_REMOTE_REPO, "Fetching summary for recordingId: $recordingId")
+            val response: Response<SummaryResponseDto> = apiService.getRecordingSummary(recordingId)
+
+            if (response.isSuccessful) {
+                val summaryDto: SummaryResponseDto? = response.body()
+                if (summaryDto != null) {
+                    Log.i(TAG_REMOTE_REPO, "Successfully fetched summary for recordingId: $recordingId")
+                    emit(Result.success(summaryDto))
+                } else {
+                    Log.w(TAG_REMOTE_REPO, "Summary fetch successful (Code: ${response.code()}) but response body was null.")
+                    emit(Result.failure(IOException("Server returned empty summary.")))
+                }
+            } else {
+                val errorBody = response.errorBody()?.string()
+                Log.e(TAG_REMOTE_REPO, "Failed to fetch summary: ${response.code()} - $errorBody")
+                val exception = HttpException(response)
+                emit(Result.failure(exception))
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REMOTE_REPO, "Network/IO exception fetching summary: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_network_connection), e)))
+        } catch (e: HttpException) {
+            Log.e(TAG_REMOTE_REPO, "HTTP exception fetching summary: ${e.code()} - ${e.message()}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, e.code(), e.message()))))
+        } catch (e: Exception) {
+            Log.e(TAG_REMOTE_REPO, "Unexpected exception fetching summary: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun getRecommendations(recordingId: String): Flow<Result<List<RecommendationDto>>> = flow {
+        try {
+            Log.d(TAG_REMOTE_REPO, "Fetching recommendations for recordingId: $recordingId")
+            val response: Response<List<RecommendationDto>> = apiService.getRecordingRecommendations(recordingId)
+
+            if (response.isSuccessful) {
+                val recommendations: List<RecommendationDto> = response.body() ?: emptyList()
+                Log.i(TAG_REMOTE_REPO, "Successfully fetched ${recommendations.size} recommendations for recordingId: $recordingId")
+                emit(Result.success(recommendations))
+            } else {
+                val errorBody = response.errorBody()?.string()
+                Log.e(TAG_REMOTE_REPO, "Failed to fetch recommendations: ${response.code()} - $errorBody")
+                val exception = HttpException(response)
+                emit(Result.failure(exception))
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_REMOTE_REPO, "Network/IO exception fetching recommendations: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_network_connection), e)))
+        } catch (e: HttpException) {
+            Log.e(TAG_REMOTE_REPO, "HTTP exception fetching recommendations: ${e.code()} - ${e.message()}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_server_http, e.code(), e.message()))))
+        } catch (e: Exception) {
+            Log.e(TAG_REMOTE_REPO, "Unexpected exception fetching recommendations: ${e.message}", e)
+            emit(Result.failure(IOException(application.getString(R.string.upload_error_unexpected, e.message ?: "Unknown error"), e)))
+        }
+    }.flowOn(Dispatchers.IO)
+
+    override fun getCloudRecordingDetails(recordingId: String): Flow<Result<AudioMetadataDto>> = flow {
+        try {
+            Log.d(TAG_REMOTE_REPO, "Fetching cloud recording details for ID: $recordingId")
+            val response = apiService.getRecordingDetails(recordingId)
+            if (response.isSuccessful && response.body() != null) {
+                Log.i(TAG_REMOTE_REPO, "Successfully fetched details for cloud recording ID: $recordingId")
+                emit(Result.success(response.body()!!))
+            } else {
+                val errorBody = response.errorBody()?.string() ?: application.getString(R.string.upload_error_server_generic)
+                Log.e(TAG_REMOTE_REPO, "Failed to fetch cloud recording details: ${response.code()} - $errorBody")
+                val exception = HttpException(response)
+                emit(Result.failure(exception))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG_REMOTE_REPO, "Exception fetching cloud recording details for ID: $recordingId", e)
+            emit(Result.failure(e))
+        }
+    }.flowOn(Dispatchers.IO)
+
 }

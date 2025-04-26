@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <title>AudioScholar - Service Status</title>
+    <link rel="icon" th:href="@{/images/favicon.ico}" type="image/x-icon">
+    <link rel="stylesheet" type="text/css" th:href="@{/css/status.css}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body>
+
+    <header class="status-header">
+    </header>
+
+    <div class="page-heading-container">
+        <div class="page-logo">
+            <img th:src="@{/images/icon-512.png}" alt="AudioScholar Logo">
+        </div>
+        <div class="page-title">
+            <h1>Service status</h1>
+            <p th:if="${lastUpdated}">
+                Last updated <span th:text="${lastUpdated}">[Timestamp]</span> | Next update in <span
+                    id="countdown-seconds" th:text="${nextUpdateSeconds}">[X]</span> sec.
+            </p>
+        </div>
+    </div>
+
+    <main>
+        <div class="overall-status status-card">
+            <span class="indicator" th:classappend="'status-' + ${overallStatusColor}"></span>
+            <span class="text">
+                <span class="text-main" th:text="${overallStatusText}">All systems</span>
+                <span class="text-suffix" th:classappend="'status-' + ${overallStatusColor}"
+                    th:text="${overallStatusSuffix}">Operational</span>
+            </span>
+        </div>
+
+        <div class="services-list status-card">
+            <h2>Services</h2>
+            <div th:if="${monitors == null}">
+                <p class="error-message">Could not retrieve monitor status from UptimeRobot.</p>
+            </div>
+            <div th:if="${monitors != null and monitors.isEmpty()}">
+                <p class="no-monitors">No monitors found or configured.</p>
+            </div>
+            <div class="service-item" th:each="monitor : ${monitors}"
+                th:if="${monitors != null and !monitors.isEmpty()}">
+                <div class="service-details">
+                    <div class="name-uptime">
+                        <span class="name" th:text="${monitor.friendlyName}">Monitor Name</span>
+                        <span class="uptime-ratio" th:text="'| ' + ${monitor.getFormattedUptimeRatio()}">|
+                            100.000%</span>
+                    </div>
+                    <div class="uptime-graph-placeholder">
+                        <span class="graph-bar" th:classappend="'status-' + ${monitor.getStatusColor()}"></span>
+                    </div>
+                </div>
+                <div class="service-status">
+                    <span class="status-text" th:classappend="'status-' + ${monitor.getStatusColor()}"
+                        th:text="${monitor.getStatusText()}">Status</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="status-footer">
+        <span>Status page by AudioScholar</span>
+    </footer>
+
+    <script th:inline="javascript">
+        const countdownElement = document.getElementById('countdown-seconds');
+        if (countdownElement) {
+            let seconds = parseInt(countdownElement.textContent);
+            if (!isNaN(seconds)) {
+                const intervalId = setInterval(() => {
+                    seconds--;
+                    if (seconds <= 0) {
+                        countdownElement.textContent = '0';
+                        clearInterval(intervalId);
+                        console.log("Countdown finished. Reloading page...");
+                        location.reload();
+                    } else {
+                        countdownElement.textContent = seconds;
+                    }
+                }, 1000);
+            } else { console.error("Could not parse initial countdown seconds."); }
+        } else { console.error("Countdown element not found."); }
+    </script>
+
+</body>
+
+</html>

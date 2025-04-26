@@ -76,7 +76,7 @@ class SplashActivity : ComponentActivity() {
                 LaunchedEffect(Unit) {
                     val targetDestination = when {
                         !isOnboardingComplete -> Screen.Onboarding.route
-                        !isLoggedIn -> Screen.Login.route
+                        !isLoggedIn -> Screen.Login.createRoute()
                         else -> Screen.Record.route
                     }
                     Log.d("SplashActivity", "Determined target destination: $targetDestination")
@@ -85,7 +85,7 @@ class SplashActivity : ComponentActivity() {
 
                     val intent = Intent(this@SplashActivity, MainActivity::class.java).apply {
                         putExtra(EXTRA_START_DESTINATION, targetDestination)
-                        flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     }
                     Log.d("SplashActivity", "Starting MainActivity with intent: $intent")
                     startActivity(intent)

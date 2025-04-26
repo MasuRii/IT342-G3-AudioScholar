@@ -1,9 +1,5 @@
 package edu.cit.audioscholar.model;
 
 public enum ProcessingStatus {
-    UPLOADED,
-    PENDING,
-    PROCESSING,
-    COMPLETED,
-    FAILED
+    UPLOAD_PENDING, UPLOADING_TO_STORAGE, UPLOADED, PENDING, PROCESSING, COMPLETED, FAILED
 }

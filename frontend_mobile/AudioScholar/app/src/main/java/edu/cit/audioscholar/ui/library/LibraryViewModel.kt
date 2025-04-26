@@ -1,13 +1,17 @@
 package edu.cit.audioscholar.ui.library
 
+import android.net.Uri
 import android.util.Log
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import edu.cit.audioscholar.data.local.file.InsufficientStorageException
 import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.domain.repository.LocalAudioRepository
 import edu.cit.audioscholar.domain.repository.RemoteAudioRepository
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -15,10 +19,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.core.net.toFile
+import edu.cit.audioscholar.util.FileUtils
+
+@Immutable
+data class ImportDialogState(
+    val fileUri: Uri,
+    val originalFileName: String,
+    var title: String = "",
+    var description: String = ""
+)
 
 data class LibraryUiState(
     val isLoadingLocal: Boolean = false,
@@ -30,17 +49,24 @@ data class LibraryUiState(
 
     val isMultiSelectActive: Boolean = false,
     val selectedRecordingIds: Set<String> = emptySet(),
-    val showMultiDeleteConfirmation: Boolean = false
+    val showMultiDeleteConfirmation: Boolean = false,
+
+    val importDialogState: ImportDialogState? = null,
+    val isImporting: Boolean = false
 )
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val localAudioRepository: LocalAudioRepository,
-    private val remoteAudioRepository: RemoteAudioRepository
+    private val remoteAudioRepository: RemoteAudioRepository,
+    private val fileUtils: FileUtils
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
+
+    private val _eventChannel = Channel<LibraryViewEvent>()
+    val eventFlow = _eventChannel.receiveAsFlow()
 
     val areAllLocalRecordingsSelected: StateFlow<Boolean> = uiState
         .map { state ->
@@ -65,14 +91,20 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             localAudioRepository.getLocalRecordings()
                 .onStart {
-                    Log.d("LibraryViewModel", "Starting local recordings load")
-                    _uiState.update { it.copy(isLoadingLocal = true, error = null) }
+                    if (!_uiState.value.isImporting) {
+                        Log.d("LibraryViewModel", "Starting local recordings load (isLoadingLocal=true)")
+                        _uiState.update { it.copy(isLoadingLocal = true, error = null) }
+                    } else {
+                        Log.d("LibraryViewModel", "loadLocalRecordings called during import, keeping isLoadingLocal=true")
+                        _uiState.update { it.copy(isLoadingLocal = true, error = null) }
+                    }
                 }
                 .catch { throwable ->
                     Log.e("LibraryViewModel", "Error loading local recordings", throwable)
                     _uiState.update {
                         it.copy(
                             isLoadingLocal = false,
+                            isImporting = false,
                             error = it.error ?: "Failed to load local recordings: ${throwable.message}"
                         )
                     }
@@ -82,7 +114,8 @@ class LibraryViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             isLoadingLocal = false,
-                            localRecordings = recordingsList
+                            localRecordings = recordingsList,
+                            isImporting = if(it.isImporting) false else it.isImporting
                         )
                     }
                 }
@@ -220,6 +253,7 @@ class LibraryViewModel @Inject constructor(
 
         viewModelScope.launch {
             val success = localAudioRepository.deleteLocalRecordings(idsToDelete)
+            _uiState.update { it.copy(isLoadingLocal = false) }
             if (success) {
                 Log.i("LibraryViewModel", "Multi-delete successful via repository.")
                 _uiState.update { it.copy(isMultiSelectActive = false, selectedRecordingIds = emptySet()) }
@@ -228,12 +262,118 @@ class LibraryViewModel @Inject constructor(
                 Log.e("LibraryViewModel", "Multi-delete failed via repository.")
                 _uiState.update {
                     it.copy(
-                        isLoadingLocal = false,
                         error = "Failed to delete some or all selected recordings.",
                         isMultiSelectActive = false,
                         selectedRecordingIds = emptySet()
                     )
                 }
+                loadLocalRecordings()
+            }
+        }
+    }
+
+    fun onImportAudioClicked() {
+        Log.d("LibraryViewModel", "Import audio clicked, sending LaunchMultiFilePicker event.")
+        viewModelScope.launch {
+            _eventChannel.send(LibraryViewEvent.LaunchMultiFilePicker)
+        }
+    }
+
+    fun onAudioFilesSelected(uris: List<Uri?>) {
+        val validUris = uris.filterNotNull()
+        Log.d("LibraryViewModel", "Received ${validUris.size} valid URIs from picker.")
+
+        if (validUris.isEmpty()) {
+            Log.w("LibraryViewModel", "No valid URIs selected.")
+            return
+        }
+
+        if (validUris.size == 1) {
+            val uri = validUris.first()
+            val originalFileName = fileUtils.getFileName(uri) ?: "Unknown File"
+            Log.d("LibraryViewModel", "Single file selected: $uri, name: $originalFileName. Showing import dialog.")
+            _uiState.update {
+                it.copy(importDialogState = ImportDialogState(fileUri = uri, originalFileName = originalFileName))
+            }
+        } else {
+            Log.d("LibraryViewModel", "Multiple files selected (${validUris.size}). Importing directly.")
+            importFiles(validUris)
+        }
+    }
+
+    fun cancelImportDialog() {
+        Log.d("LibraryViewModel", "Import dialog cancelled.")
+        _uiState.update { it.copy(importDialogState = null) }
+    }
+
+    fun importFiles(uris: List<Uri>, title: String? = null, description: String? = null) {
+        if (uris.isEmpty()) return
+
+        _uiState.update { it.copy(isImporting = true, isLoadingLocal = true, importDialogState = null, error = null) }
+        Log.d("LibraryViewModel", "Starting import for ${uris.size} files. Title: $title, Desc: $description")
+
+        viewModelScope.launch {
+            var successfulImports = 0
+            val totalFiles = uris.size
+            val failedFiles = mutableListOf<String>()
+
+            for (uri in uris) {
+                val originalFileName = fileUtils.getFileName(uri) ?: "file_${System.currentTimeMillis()}"
+                try {
+                    val fileTitle = if (totalFiles == 1) {
+                        title?.takeIf { it.isNotBlank() } ?: fileUtils.getFileNameWithoutExtension(originalFileName)
+                    } else {
+                        fileUtils.getFileNameWithoutExtension(originalFileName)
+                    }
+
+                    Log.d("LibraryViewModel", "Importing file: $originalFileName with calculated title: '$fileTitle'")
+
+                    val result = localAudioRepository.importAudioFile(
+                        sourceUri = uri,
+                        originalFileName = originalFileName,
+                        title = fileTitle,
+                        description = if (totalFiles == 1) description else null
+                    )
+
+                    if (result.isSuccess) {
+                        successfulImports++
+                        Log.i("LibraryViewModel", "Successfully imported: $originalFileName")
+                    } else {
+                        val error = result.exceptionOrNull()?.message ?: "Unknown error"
+                        Log.e("LibraryViewModel", "Failed to import $originalFileName: $error")
+                        failedFiles.add(originalFileName)
+                    }
+                } catch (e: Exception) {
+                    Log.e("LibraryViewModel", "Exception during import of $originalFileName", e)
+                    failedFiles.add(originalFileName)
+                    val errorMsg = when(e) {
+                        is InsufficientStorageException -> "Import failed for $originalFileName: Insufficient storage space."
+                        is IOException -> "Import failed for $originalFileName: Could not read or write file."
+                        is SecurityException -> "Import failed for $originalFileName: Permission denied."
+                        else -> "Import failed for $originalFileName: ${e.message ?: "Unexpected error"}"
+                    }
+                    _eventChannel.send(LibraryViewEvent.ShowSnackbar(errorMsg))
+                }
+            }
+
+            val snackbarMessage = when {
+                successfulImports == totalFiles && totalFiles > 0 -> "Successfully imported $successfulImports file(s)."
+                successfulImports > 0 -> "Imported $successfulImports of $totalFiles files. Failures: ${failedFiles.joinToString()}."
+                totalFiles > 0 -> "Import failed for all $totalFiles files. ${failedFiles.joinToString()}"
+                else -> "No files were imported."
+            }
+            if (totalFiles > 0) {
+                _eventChannel.send(LibraryViewEvent.ShowSnackbar(snackbarMessage))
+            }
+
+            Log.d("LibraryViewModel", "Import process finished. Success: $successfulImports, Failed: ${failedFiles.size}")
+
+            if (successfulImports > 0) {
+                Log.d("LibraryViewModel", "Successful imports detected ($successfulImports). Reloading local recordings list.")
+                loadLocalRecordings()
+            } else {
+                Log.d("LibraryViewModel", "No successful imports. Resetting loading/importing state.")
+                _uiState.update { it.copy(isLoadingLocal = false, isImporting = false) }
             }
         }
     }
@@ -241,4 +381,60 @@ class LibraryViewModel @Inject constructor(
     fun consumeError() {
         _uiState.update { it.copy(error = null) }
     }
+
+    fun onRecordingClicked(recording: Any) {
+        if (_uiState.value.isMultiSelectActive) {
+            when (recording) {
+                is RecordingMetadata -> toggleSelection(recording.filePath)
+                is AudioMetadataDto -> {
+                    Log.w("LibraryViewModel", "Multi-select toggle attempted on cloud item (not implemented). ID: ${recording.recordingId}")
+                }
+                else -> Log.w("LibraryViewModel", "onRecordingClicked in multi-select mode called with unknown type: ${recording::class.java}")
+            }
+        } else {
+            viewModelScope.launch {
+                when (recording) {
+                    is RecordingMetadata -> {
+                        Log.d("LibraryViewModel", "Local recording clicked: ${recording.filePath}")
+                        _eventChannel.send(LibraryViewEvent.NavigateToLocalDetails(recording.filePath))
+                    }
+                    is AudioMetadataDto -> {
+                        val recordingId = recording.recordingId
+                        if (recordingId != null) {
+                            Log.d("LibraryViewModel", "Cloud recording clicked: ID=${recording.recordingId}, Title=${recording.title}")
+                            _eventChannel.send(
+                                LibraryViewEvent.NavigateToCloudDetails(
+                                    recordingId = recordingId,
+                                    title = recording.title ?: recording.fileName,
+                                    fileName = recording.fileName ?: "Unknown Filename",
+                                    timestampSeconds = recording.uploadTimestamp?.seconds,
+                                    storageUrl = recording.storageUrl
+                                )
+                            )
+                        } else {
+                            Log.e("LibraryViewModel", "Cloud recording clicked, but recordingId is null. Title: ${recording.title}")
+                            _eventChannel.send(LibraryViewEvent.ShowSnackbar("Cannot open details: Recording ID is missing."))
+                        }
+                    }
+                    else -> {
+                        Log.w("LibraryViewModel", "onRecordingClicked called with unknown type: ${recording::class.java}")
+                        _eventChannel.send(LibraryViewEvent.ShowSnackbar("Cannot open details for this item type."))
+                    }
+                }
+            }
+        }
+    }
+}
+
+sealed class LibraryViewEvent {
+    object LaunchMultiFilePicker : LibraryViewEvent()
+    data class ShowSnackbar(val message: String) : LibraryViewEvent()
+    data class NavigateToLocalDetails(val filePath: String) : LibraryViewEvent()
+    data class NavigateToCloudDetails(
+        val recordingId: String,
+        val title: String?,
+        val fileName: String,
+        val timestampSeconds: Long?,
+        val storageUrl: String?
+    ) : LibraryViewEvent()
 }

@@ -28,7 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
-		<dependency-check-maven.version>9.2.0</dependency-check-maven.version>
+		<dependency-check-maven.version>12.1.1</dependency-check-maven.version>
 		<jjwt.version>0.12.6</jjwt.version>
 	</properties>
 	<dependencyManagement>
@@ -43,6 +43,14 @@
 		</dependencies>
 	</dependencyManagement>
 	<dependencies>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-thymeleaf</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
+		</dependency>
 		<dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
@@ -195,11 +203,11 @@
 						<goals>
 							<goal>check</goal>
 						</goals>
-						<phase>verify</phase>
 					</execution>
 				</executions>
 				<configuration>
 					<format>HTML</format>
+					<nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
 				</configuration>
 			</plugin>
 

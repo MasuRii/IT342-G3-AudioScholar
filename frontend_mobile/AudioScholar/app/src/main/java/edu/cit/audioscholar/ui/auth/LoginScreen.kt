@@ -184,10 +184,9 @@ fun LoginScreen(
                     .padding(bottom = 32.dp)
             )
 
-            val welcomeText = if (loginState.email.isNotEmpty()) {
-                stringResource(R.string.login_title)
-            } else {
-                "Log in to your account"
+            val welcomeText = when (loginState.welcomeType) {
+                WelcomeMessageType.NEW_AFTER_ONBOARDING -> stringResource(R.string.login_welcome_new)
+                WelcomeMessageType.RETURNING -> stringResource(R.string.login_welcome_returning)
             }
             Text(
                 text = welcomeText,

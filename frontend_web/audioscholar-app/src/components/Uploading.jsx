@@ -4,20 +4,18 @@ import { Link, useNavigate } from 'react-router-dom';
 // Import the base API URL from your auth service file
 import { API_BASE_URL } from '../services/authService'; // <--- Assuming you export API_BASE_URL from here
 
-// --- Define ALLOWED types/extensions OUTSIDE the component ---
-// Moved these definitions outside the component function scope
+// --- Define ALLOWED types/extensions OUTSIDE the component (Gemini Supported) ---
 const VALID_AUDIO_TYPES = [
-  'audio/mpeg', 'audio/mp3', // MP3
-  'audio/wav', 'audio/x-wav', // WAV (added x-wav for broader compatibility)
-  'audio/ogg', // OGG
-  'audio/aac', // AAC
-  'audio/x-m4a', // M4A
-  'audio/webm', // WEBM
-  'audio/flac', // FLAC (Added based on backend controller)
-  'audio/aiff', 'audio/x-aiff' // AIFF (Added based on backend controller)
+  'audio/mpeg', 'audio/mp3',       // MP3
+  'audio/wav', 'audio/x-wav',       // WAV
+  'audio/aiff', 'audio/x-aiff',      // AIFF
+  'audio/aac', 'audio/vnd.dlna.adts', // AAC (added vnd.dlna.adts based on browser report)
+  'audio/ogg', 'application/ogg', // OGG (Vorbis)
+  'audio/flac', 'audio/x-flac',      // FLAC
+  // Removed: M4A ('audio/x-m4a', 'audio/mp4'), WEBM ('audio/webm', 'video/webm')
 ];
 
-const VALID_EXTENSIONS = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'webm', 'flac', 'aiff']; // Moved outside
+const VALID_EXTENSIONS = ['mp3', 'wav', 'aiff', 'aac', 'ogg', 'flac']; // Gemini Supported Extensions
 // --- End of constants ---
 
 
@@ -46,6 +44,10 @@ const Uploading = () => {
     // Validate file type and extension
     // *** Now using the constants defined OUTSIDE the component ***
     const fileExt = file.name.split('.').pop().toLowerCase();
+
+    // --- Debugging Log ---
+    console.log(`Selected File: ${file.name}, Type: ${file.type}, Ext: ${fileExt}`);
+    // --- End Debugging Log ---
 
     if (
       !VALID_AUDIO_TYPES.includes(file.type.toLowerCase()) || // Using VALID_AUDIO_TYPES
@@ -245,7 +247,7 @@ const Uploading = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     <p className="text-gray-600 mb-2">Click to select audio file or drag and drop</p>
-                    <p className="text-xs text-gray-500">Supports: {VALID_EXTENSIONS.join(', ').toUpperCase()}</p> {/* Using VALID_EXTENSIONS */}
+                    <p className="text-xs text-gray-500">Supports: {VALID_EXTENSIONS.join(', ').toUpperCase()}</p>
                   </div>
                 )}
               </div>

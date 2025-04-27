@@ -316,6 +316,9 @@
     <string name="onboarding_image_desc_3">Illustration showing transcription feature.</string>
     <string name="onboarding_image_desc_4">Illustration related to microphone permission.</string>
 
+    <string name="cd_password_requirement_met">Requirement met.</string>
+    <string name="cd_password_requirement_unmet">Requirement not met</string>
+
     <string name="login_welcome_new">Log in to your account</string>
     <string name="login_welcome_returning">Welcome back!</string>
 

@@ -5,53 +5,14 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabsIntent
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.ClickableText
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Password
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,14 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.*
+import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -127,7 +83,7 @@ fun RegistrationScreen(
     LaunchedEffect(uiState.registrationSuccess) {
         if (uiState.registrationSuccess) {
             Log.d("RegistrationScreen", "registrationSuccess is true. Navigating to Record screen.")
-            navController.navigate(Screen.Record.route) {
+            navController.navigate(Screen.Login.route) {
                 popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
                 launchSingleTop = true
             }
@@ -305,7 +261,7 @@ fun RegistrationScreen(
                     textAlign = TextAlign.Start
                 )
             } else {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(MaterialTheme.typography.bodySmall.lineHeight.value.dp + 8.dp))
             }
 
 
@@ -431,7 +387,7 @@ fun PasswordRequirementsIndicator(
     modifier: Modifier = Modifier
 ) {
     val requirementColorMet = MaterialTheme.colorScheme.primary
-    val requirementColorUnmet = MaterialTheme.colorScheme.onSurfaceVariant
+    val requirementColorUnmet = MaterialTheme.colorScheme.error
 
     Column(
         modifier = modifier
@@ -481,7 +437,7 @@ fun PasswordRequirement(
 ) {
     val icon = if (isMet) Icons.Filled.CheckCircle else Icons.Filled.Cancel
     val color = if (isMet) metColor else unmetColor
-    val iconDesc = if (isMet) "Requirement met" else "Requirement not met"
+    val iconDesc = if (isMet) stringResource(R.string.cd_password_requirement_met) else stringResource(R.string.cd_password_requirement_unmet)
 
     Row(
         modifier = modifier.padding(vertical = 2.dp),
@@ -501,3 +457,4 @@ fun PasswordRequirement(
         )
     }
 }
+

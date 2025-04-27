@@ -141,7 +141,7 @@ fun RecordingDetailsScreen(
             Log.d("RecordingDetailsScreen", "textToCopy state observed with text. Copying to clipboard.")
             clipboardManager.setText(AnnotatedString(text))
             scope.launch {
-                 snackbarHostState.showSnackbar(uiState.infoMessage ?: "Copied to clipboard!")
+                snackbarHostState.showSnackbar(uiState.infoMessage ?: "Copied to clipboard!")
             }
             viewModel.consumeTextToCopy()
             viewModel.consumeInfoMessage()
@@ -193,10 +193,11 @@ fun RecordingDetailsScreen(
             when {
                 uiState.isLoading && uiState.filePath.isEmpty() && uiState.remoteRecordingId == null -> {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         Log.d("DetailsScreen", "Showing initial loading indicator (no path/ID yet)")
                     }
                 }
+
                 uiState.filePath.isEmpty() && uiState.remoteRecordingId == null && !uiState.isLoading && uiState.error != null -> {
                     Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
                         Text(
@@ -208,6 +209,7 @@ fun RecordingDetailsScreen(
                         Log.d("DetailsScreen", "Showing critical error loading details: ${uiState.error}")
                     }
                 }
+
                 else -> {
                     Column(
                         modifier = Modifier
@@ -263,7 +265,7 @@ fun RecordingDetailsScreen(
                                                 Icons.Filled.Edit,
                                                 contentDescription = "Edit title",
                                                 modifier = Modifier.size(20.dp),
-                                                tint = LocalContentColor.current.copy(alpha = 0.7f)
+                                                tint = MaterialTheme.colorScheme.primary
                                             )
                                         }
                                     }
@@ -371,7 +373,11 @@ fun RecordingDetailsScreen(
                                             Spacer(modifier = Modifier.width(8.dp))
                                             when (uiState.summaryStatus) {
                                                 SummaryStatus.PROCESSING -> {
-                                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(16.dp),
+                                                        strokeWidth = 2.dp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text("Processing...", style = MaterialTheme.typography.labelMedium, color = LocalContentColor.current.copy(alpha = 0.7f))
                                                 }
@@ -433,7 +439,7 @@ fun RecordingDetailsScreen(
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                             ) {
                                 Box(modifier = Modifier.padding(16.dp).fillMaxWidth().defaultMinSize(minHeight = 50.dp)) {
                                     when (uiState.summaryStatus) {
@@ -441,7 +447,11 @@ fun RecordingDetailsScreen(
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(24.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
                                                     text = "Generating notes...",
@@ -547,7 +557,11 @@ fun RecordingDetailsScreen(
                             when(uiState.recommendationsStatus) {
                                 RecommendationsStatus.LOADING -> {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = "Loading recommendations...",
@@ -581,7 +595,8 @@ fun RecordingDetailsScreen(
                                         color = MaterialTheme.colorScheme.error
                                     )
                                 }
-                                RecommendationsStatus.IDLE -> {}
+                                RecommendationsStatus.IDLE -> {
+                                }
                             }
                         }
 
@@ -594,6 +609,7 @@ fun RecordingDetailsScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
                         .clickable(enabled = false, onClick = {}),
                     contentAlignment = Alignment.Center
                 ) {
@@ -604,15 +620,17 @@ fun RecordingDetailsScreen(
                         if (uiState.uploadProgressPercent != null) {
                             LinearProgressIndicator(
                                 progress = { (uiState.uploadProgressPercent ?: 0) / 100f },
-                                modifier = Modifier.width(150.dp)
+                                modifier = Modifier.width(150.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                             Text(
                                 text = "Uploading ${uiState.uploadProgressPercent}%",
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         } else {
-                            CircularProgressIndicator(color = Color.White)
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             Text(
                                 text = when {
                                     uiState.summaryStatus == SummaryStatus.PROCESSING -> stringResource(R.string.details_processing_data)
@@ -620,7 +638,7 @@ fun RecordingDetailsScreen(
                                     else -> "Processing..."
                                 },
                                 style = MaterialTheme.typography.bodyLarge,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -707,7 +725,6 @@ fun YouTubeRecommendationCard(
             )
             Column(modifier = Modifier
                 .padding(12.dp)
-                .height(60.dp)
                 .fillMaxWidth(),
                 verticalArrangement = Arrangement.Top
             ) {

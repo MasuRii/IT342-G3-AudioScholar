@@ -20,7 +20,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.dto.AudioProcessingMessage;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
-import edu.cit.audioscholar.model.*;
+import edu.cit.audioscholar.model.AudioMetadata;
+import edu.cit.audioscholar.model.ProcessingStatus;
+import edu.cit.audioscholar.model.Recording;
+import edu.cit.audioscholar.model.Summary;
 
 @Service
 public class AudioSummarizationListenerService {
@@ -148,7 +151,8 @@ public class AudioSummarizationListenerService {
                         }
 
                         finalizeProcessing(metadataId, savedSummary.getSummaryId());
-                        triggerRecommendations(recordingId, metadataId);
+                        triggerRecommendations(recording.getUserId(), recordingId,
+                                        savedSummary.getSummaryId());
 
                 } catch (FirestoreInteractionException e) {
                         log.error("[{}] Firestore error during processing for metadata {}.",
@@ -471,40 +475,25 @@ public class AudioSummarizationListenerService {
                 }
         }
 
-        private void triggerRecommendations(String recordingId, String metadataId) {
-                AudioMetadata finalMetadata = null;
-                try {
-                        finalMetadata = firebaseService.getAudioMetadataById(metadataId);
-                } catch (Exception fetchEx) {
-                        log.warn("[{}] Failed to re-fetch metadata {} after processing to check status for recommendation trigger. Error: {}",
-                                        recordingId, metadataId, fetchEx.getMessage());
+        private void triggerRecommendations(String userId, String recordingId, String summaryId) {
+                if (learningMaterialRecommenderService == null) {
+                        log.error("[{}] LearningMaterialRecommenderService is null. Cannot trigger recommendations.",
+                                        recordingId);
+                        updateMetadataStatusToFailed(recordingId,
+                                        "Internal server error: Recommendation service unavailable.");
                         return;
                 }
-                if (finalMetadata != null
-                                && finalMetadata.getStatus() == ProcessingStatus.COMPLETED) {
-                        try {
-                                log.info("[{}] Triggering recommendation generation...",
-                                                recordingId);
-                                List<LearningRecommendation> recommendations =
-                                                learningMaterialRecommenderService
-                                                                .generateAndSaveRecommendations(
-                                                                                recordingId);
-                                if (recommendations.isEmpty()) {
-                                        log.warn("[{}] Recommendation generation completed, but no recommendations were generated or saved.",
-                                                        recordingId);
-                                } else {
-                                        log.info("[{}] Successfully generated and saved {} recommendations.",
-                                                        recordingId, recommendations.size());
-                                }
-                        } catch (Exception e) {
-                                log.error("[{}] Failed to generate or save recommendations after successful summarization. Summary is saved, metadata status is COMPLETED. Error: {}",
-                                                recordingId, e.getMessage(), e);
-                        }
-                } else {
-                        log.info("[{}] Skipping recommendation generation as metadata status is not COMPLETED (Current: {}).",
-                                        recordingId,
-                                        (finalMetadata != null ? finalMetadata.getStatus()
-                                                        : "UNKNOWN/FETCH_FAILED"));
+
+                log.info("[{}] Triggering recommendation generation for user {}...", recordingId,
+                                userId);
+                try {
+                        learningMaterialRecommenderService.generateAndSaveRecommendations(userId,
+                                        recordingId, summaryId);
+                        log.info("[{}] Recommendation generation process triggered successfully.",
+                                        recordingId);
+                } catch (Exception e) {
+                        log.error("[{}] Failed to trigger recommendation generation: {}",
+                                        recordingId, e.getMessage(), e);
                 }
         }
 

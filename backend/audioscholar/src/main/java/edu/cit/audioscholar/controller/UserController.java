@@ -7,8 +7,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import edu.cit.audioscholar.dto.FcmTokenRequest;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.User;
 import edu.cit.audioscholar.service.UserService;
@@ -134,6 +136,44 @@ public class UserController {
                          e.getMessage(), e);
                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                          .body("An unexpected error occurred while searching users.");
+          }
+     }
+
+     @PostMapping("/me/fcm-token")
+     @PreAuthorize("isAuthenticated()")
+     public ResponseEntity<?> addFcmToken(@Valid @RequestBody FcmTokenRequest request,
+               Authentication authentication) {
+          if (authentication == null || !authentication.isAuthenticated()) {
+               logger.warn("Attempt to add FCM token without authentication.");
+               return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                         .body("Authentication required.");
+          }
+          String userId = authentication.getName();
+          String token = request.getToken();
+
+          logger.info("Received request to add FCM token for user ID: {}", userId);
+
+          try {
+               userService.addFcmToken(userId, token);
+               logger.info("Successfully added/updated FCM token for user ID: {}", userId);
+               return ResponseEntity.ok().body("FCM token registered successfully.");
+          } catch (IllegalArgumentException e) {
+               logger.warn("Invalid request to add FCM token for user {}: {}", userId,
+                         e.getMessage());
+               if (e.getMessage() != null && e.getMessage().startsWith("User not found")) {
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+               }
+               return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+          } catch (FirestoreInteractionException e) {
+               logger.error("Firestore error adding FCM token for user {}: {}", userId,
+                         e.getMessage(), e);
+               return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                         .body("Failed to update token due to a server error.");
+          } catch (Exception e) {
+               logger.error("Unexpected error adding FCM token for user {}: {}", userId,
+                         e.getMessage(), e);
+               return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                         .body("An unexpected error occurred.");
           }
      }
 }

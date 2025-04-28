@@ -10,6 +10,7 @@ import org.springframework.util.StringUtils;
 import com.google.api.core.ApiFuture;
 import com.google.api.services.youtube.model.*;
 import com.google.cloud.firestore.*;
+import com.google.firebase.messaging.MulticastMessage;
 import edu.cit.audioscholar.dto.AnalysisResults;
 import edu.cit.audioscholar.integration.YouTubeAPIClient;
 import edu.cit.audioscholar.model.LearningRecommendation;
@@ -23,22 +24,29 @@ public class LearningMaterialRecommenderService {
     private final YouTubeAPIClient youTubeAPIClient;
     private final Firestore firestore;
     private final RecordingService recordingService;
+    private final FirebaseService firebaseService;
+    private final UserService userService;
     private final String recommendationsCollectionName = "learningRecommendations";
     private static final int MAX_RECOMMENDATIONS_TO_FETCH = 10;
 
     public LearningMaterialRecommenderService(
             LectureContentAnalyzerService lectureContentAnalyzerService,
             YouTubeAPIClient youTubeAPIClient, Firestore firestore,
-            RecordingService recordingService) {
+            RecordingService recordingService, FirebaseService firebaseService,
+            UserService userService) {
         this.lectureContentAnalyzerService = lectureContentAnalyzerService;
         this.youTubeAPIClient = youTubeAPIClient;
         this.firestore = firestore;
         this.recordingService = recordingService;
+        this.firebaseService = firebaseService;
+        this.userService = userService;
     }
 
-    public List<LearningRecommendation> generateAndSaveRecommendations(String recordingId) {
-        log.info("Starting recommendation generation and storage for recording ID: {}",
-                recordingId);
+    public List<LearningRecommendation> generateAndSaveRecommendations(String userId,
+            String recordingId, String summaryId) {
+        log.info(
+                "Starting recommendation generation and storage for recording ID: {}, user: {}, summary: {}",
+                recordingId, userId, summaryId);
         AnalysisResults analysisResults =
                 lectureContentAnalyzerService.analyzeLectureContent(recordingId);
         if (!analysisResults.isSuccess()) {
@@ -75,7 +83,8 @@ public class LearningMaterialRecommenderService {
             List<LearningRecommendation> savedRecommendationsWithIds =
                     saveRecommendationsBatch(recommendations);
             if (!savedRecommendationsWithIds.isEmpty()) {
-                linkRecommendationsToRecording(recordingId, savedRecommendationsWithIds);
+                linkRecommendationsAndNotify(userId, recordingId, summaryId,
+                        savedRecommendationsWithIds);
             } else {
                 log.warn(
                         "No recommendations were successfully saved for recording ID: {}. Skipping linking step.",
@@ -132,7 +141,7 @@ public class LearningMaterialRecommenderService {
         }
     }
 
-    private void linkRecommendationsToRecording(String recordingId,
+    private void linkRecommendationsAndNotify(String userId, String recordingId, String summaryId,
             List<LearningRecommendation> savedRecommendations) {
         if (savedRecommendations == null || savedRecommendations.isEmpty()) {
             log.warn("No saved recommendations provided to link for recording ID: {}", recordingId);
@@ -148,9 +157,16 @@ public class LearningMaterialRecommenderService {
         }
         log.info("Attempting to link {} new recommendation(s) to recording ID: {}",
                 newRecommendationIds.size(), recordingId);
+        boolean linkSuccess = false;
         try {
             Recording recording = recordingService.getRecordingById(recordingId);
             if (recording != null) {
+                if (!Objects.equals(userId, recording.getUserId())) {
+                    log.warn(
+                            "User ID mismatch! Passed userId {} does not match recording owner {} for recordingId {}. Using recording owner for notification.",
+                            userId, recording.getUserId(), recordingId);
+                    userId = recording.getUserId();
+                }
                 List<String> currentIds = recording.getRecommendationIds();
                 if (currentIds == null) {
                     currentIds = new ArrayList<>();
@@ -170,10 +186,12 @@ public class LearningMaterialRecommenderService {
                     log.info(
                             "Successfully linked {} new recommendations. Total recommendations linked for Recording ID {}: {}",
                             newRecommendationIds.size(), recordingId, currentIds.size());
+                    linkSuccess = true;
                 } else {
                     log.info(
                             "No *new* recommendations to link. Recording ID {} already contains these recommendation IDs.",
                             recordingId);
+                    linkSuccess = true;
                 }
             } else {
                 log.warn("Recording {} not found. Cannot link recommendations: {}", recordingId,
@@ -188,6 +206,33 @@ public class LearningMaterialRecommenderService {
         } catch (Exception e) {
             log.error("Unexpected error linking recommendations to recording {}: {}", recordingId,
                     e.getMessage(), e);
+        }
+
+        if (linkSuccess) {
+            log.info("Proceeding to send FCM notification for user: {}, recording: {}, summary: {}",
+                    userId, recordingId, summaryId);
+
+            List<String> tokensToSend = userService.getFcmTokensForUser(userId);
+            if (tokensToSend != null && !tokensToSend.isEmpty()) {
+                MulticastMessage message = firebaseService.buildProcessingCompleteMessage(userId,
+                        recordingId, summaryId);
+                if (message != null) {
+                    firebaseService.sendFcmMessage(message, tokensToSend, userId);
+                    log.info("FCM notification send task initiated for user {}, recording {}.",
+                            userId, recordingId);
+                } else {
+                    log.warn(
+                            "FCM message build returned null (likely no tokens found for user {}). Notification not sent for recording {}.",
+                            userId, recordingId);
+                }
+            } else {
+                log.warn(
+                        "No tokens retrieved for user {} just before sending notification for recording {}. Notification not sent.",
+                        userId, recordingId);
+            }
+        } else {
+            log.error("Linking recommendations failed for recording {}. Skipping FCM notification.",
+                    recordingId);
         }
     }
 

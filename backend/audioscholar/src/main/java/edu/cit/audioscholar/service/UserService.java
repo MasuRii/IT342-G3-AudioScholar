@@ -24,6 +24,7 @@ import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import com.google.cloud.firestore.FieldValue;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
 import edu.cit.audioscholar.dto.RegistrationRequest;
@@ -139,7 +140,10 @@ public class UserService {
                 log.warn("User not found in Firestore for ID: {}", userId);
                 return null;
             }
-            return User.fromMap(data);
+            User user = User.fromMap(data);
+            List<String> tokens = (List<String>) data.get("fcmTokens");
+            user.setFcmTokens(tokens != null ? List.copyOf(tokens) : List.of());
+            return user;
         } catch (Exception e) {
             log.error("Failed to get user {} from Firestore: {}", userId, e.getMessage(), e);
             throw new FirestoreInteractionException(
@@ -463,6 +467,75 @@ public class UserService {
                     e);
             throw new FirestoreInteractionException(
                     "Failed to find user by email from Firestore: " + email, e);
+        }
+    }
+
+    public User addFcmToken(String userId, String fcmToken)
+            throws FirestoreInteractionException, IllegalArgumentException {
+        log.info("Attempting to add FCM token for user ID: {}", userId);
+        if (!StringUtils.hasText(userId) || !StringUtils.hasText(fcmToken)) {
+            log.error("User ID and FCM token cannot be blank.");
+            throw new IllegalArgumentException("User ID and FCM token must be provided.");
+        }
+
+        User user = getUserById(userId);
+        if (user == null) {
+            log.error("User not found with ID: {} while trying to add FCM token.", userId);
+            throw new IllegalArgumentException("User not found with ID: " + userId);
+        }
+
+        List<String> currentTokens = user.getFcmTokens();
+        if (!currentTokens.contains(fcmToken)) {
+            log.debug("Adding new FCM token for user ID: {}", userId);
+            currentTokens.add(fcmToken);
+            user.setFcmTokens(currentTokens);
+            return updateUser(user);
+        } else {
+            log.debug("FCM token already exists for user ID: {}. No update needed.", userId);
+            return user;
+        }
+    }
+
+    public List<String> getFcmTokensForUser(String userId) throws FirestoreInteractionException {
+        log.debug("Attempting to retrieve FCM tokens for user ID: {}", userId);
+        if (!StringUtils.hasText(userId)) {
+            log.warn("Attempted to get FCM tokens with null or blank user ID.");
+            return List.of();
+        }
+
+        User user = getUserById(userId);
+        if (user == null) {
+            log.warn("User not found with ID: {} when trying to retrieve FCM tokens.", userId);
+            return List.of();
+        }
+
+        List<String> tokens = user.getFcmTokens();
+        log.info("Retrieved {} FCM token(s) for user ID: {}", tokens.size(), userId);
+        return tokens;
+    }
+
+    public void removeFcmTokens(String userId, List<String> tokensToRemove) {
+        if (userId == null || userId.isBlank() || tokensToRemove == null
+                || tokensToRemove.isEmpty()) {
+            log.warn(
+                    "Attempted to remove FCM tokens with invalid userId or empty token list. userId={}, tokens={}",
+                    userId, tokensToRemove);
+            return;
+        }
+
+        try {
+            log.info("Attempting to remove {} stale FCM token(s) for user: {}",
+                    tokensToRemove.size(), userId);
+            firebaseService.updateDataWithMap(COLLECTION_NAME, userId,
+                    Map.of("fcmTokens", FieldValue.arrayRemove(tokensToRemove.toArray())));
+            log.info("Successfully removed {} stale FCM token(s) for user: {}",
+                    tokensToRemove.size(), userId);
+        } catch (FirestoreInteractionException e) {
+            log.error("Failed to remove stale FCM tokens for user {}: {}", userId, e.getMessage(),
+                    e);
+        } catch (Exception e) {
+            log.error("Unexpected error removing stale FCM tokens for user {}: {}", userId,
+                    e.getMessage(), e);
         }
     }
 }

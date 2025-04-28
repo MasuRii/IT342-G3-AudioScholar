@@ -54,7 +54,7 @@ public class FirebaseService {
     @Value("${google.oauth.android.client.id}")
     private String androidClientId;
 
-    @Value("classpath:audio-scholar-firebase-adminsdk.json")
+    @Value("classpath:firebase-service-account.json")
     private Resource serviceAccountResource;
 
     public FirebaseService(
@@ -786,10 +786,8 @@ public class FirebaseService {
         Map<String, String> apnsHeaders =
                 Map.of("apns-priority", "5", "apns-push-type", "background");
         Aps aps = Aps.builder().setContentAvailable(true).build();
-        Map<String, Object> apnsPayloadMap = Map.of("aps", aps);
 
-        ApnsConfig apnsConfig = ApnsConfig.builder().putAllHeaders(apnsHeaders)
-                .putAllCustomData(apnsPayloadMap).build();
+        ApnsConfig apnsConfig = ApnsConfig.builder().putAllHeaders(apnsHeaders).setAps(aps).build();
 
         MulticastMessage message =
                 MulticastMessage.builder().putAllData(dataPayload).setAndroidConfig(androidConfig)

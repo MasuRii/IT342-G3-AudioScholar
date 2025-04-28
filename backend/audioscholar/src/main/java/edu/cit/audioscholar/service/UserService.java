@@ -470,6 +470,7 @@ public class UserService {
         }
     }
 
+    @CacheEvict(value = USER_CACHE, key = "#userId")
     public User addFcmToken(String userId, String fcmToken)
             throws FirestoreInteractionException, IllegalArgumentException {
         log.info("Attempting to add FCM token for user ID: {}", userId);
@@ -478,31 +479,29 @@ public class UserService {
             throw new IllegalArgumentException("User ID and FCM token must be provided.");
         }
 
+        log.debug("Attempting to add FCM token {} for user {}", fcmToken, userId);
+
         User user = getUserById(userId);
         if (user == null) {
-            log.error("User not found with ID: {} while trying to add FCM token.", userId);
+            log.error("Cannot add FCM token: User not found with ID {}", userId);
             throw new IllegalArgumentException("User not found with ID: " + userId);
         }
 
-        List<String> currentTokens = user.getFcmTokens();
-        if (currentTokens == null) {
-            log.warn("User {} had a null fcmTokens list in Firestore. Initializing a new list.",
-                    userId);
-            currentTokens = new java.util.ArrayList<>();
-        }
-        if (!(currentTokens instanceof java.util.ArrayList)) {
-            currentTokens = new java.util.ArrayList<>(currentTokens);
+        try {
+            Map<String, Object> updates = Map.of("fcmTokens", FieldValue.arrayUnion(fcmToken));
+            firebaseService.updateDataWithMap(COLLECTION_NAME, userId, updates);
+            log.info("Firestore update called successfully to add FCM token for user {}", userId);
+        } catch (Exception e) {
+            log.error("Failed to update Firestore with FCM token for user {}: {}", userId,
+                    e.getMessage(), e);
+            throw new FirestoreInteractionException(
+                    "Failed to persist FCM token for user " + userId, e);
         }
 
-        if (!currentTokens.contains(fcmToken)) {
-            log.debug("Adding new FCM token for user ID: {}", userId);
-            currentTokens.add(fcmToken);
-            user.setFcmTokens(currentTokens);
-            return updateUser(user);
-        } else {
-            log.debug("FCM token already exists for user ID: {}. No update needed.", userId);
-            return user;
-        }
+        log.debug(
+                "FCM token add operation completed for user {} (Returning potentially cached user object).",
+                userId);
+        return user;
     }
 
     public List<String> getFcmTokensForUser(String userId) throws FirestoreInteractionException {

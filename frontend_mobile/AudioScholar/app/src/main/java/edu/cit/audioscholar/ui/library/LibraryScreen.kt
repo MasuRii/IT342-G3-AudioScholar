@@ -1,76 +1,26 @@
 package edu.cit.audioscholar.ui.library
 
-import android.content.ActivityNotFoundException
-import android.content.Context
-import android.content.Intent
+import android.content.*
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Deselect
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.UploadFile
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DrawerState
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberTopAppBarState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.*
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,13 +42,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import androidx.activity.result.ActivityResultLauncher
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
-import androidx.compose.runtime.rememberCoroutineScope
 
 private fun formatTimestampMillis(timestampMillis: Long): String {
     if (timestampMillis <= 0) return "Unknown date"
@@ -246,22 +189,35 @@ fun LibraryScreen(
                     navController.navigate(Screen.RecordingDetails.createLocalRoute(filePath = event.filePath))
                 }
                 is LibraryViewEvent.NavigateToCloudDetails -> {
-                    val metadataDto = AudioMetadataDto(
+                    val route = Screen.RecordingDetails.createCloudRoute(
+                        id = event.id,
                         recordingId = event.recordingId,
                         title = event.title,
                         fileName = event.fileName,
-                        storageUrl = event.storageUrl,
-                        uploadTimestamp = event.timestampSeconds?.let { TimestampDto(it, 0) }
+                        timestampSeconds = event.timestampSeconds,
+                        storageUrl = event.storageUrl
                     )
-                    val route = Screen.RecordingDetails.createCloudRoute(metadata = metadataDto)
                     if (route != "recording_details/error") {
-                        navController.navigate(route)
+                        navController.navigate(route) { launchSingleTop = true }
                     } else {
                         scope.launch { showSnackbar("Error: Cannot navigate, recording ID missing.") }
                     }
                 }
             }
         }
+    }
+
+    LaunchedEffect(navController.currentBackStackEntry) {
+        navController.currentBackStackEntry
+            ?.savedStateHandle
+            ?.getStateFlow("refresh_needed_cloud", false)
+            ?.collectLatest { refreshNeeded ->
+                if (refreshNeeded) {
+                    Log.d("LibraryScreen", "StateFlow observed refresh_needed_cloud=true. Refreshing.")
+                    viewModel.forceRefreshCloudRecordings()
+                    navController.currentBackStackEntry?.savedStateHandle?.remove<Boolean>("refresh_needed_cloud")
+                }
+            }
     }
 
     if (uiState.showMultiDeleteConfirmation) {
@@ -531,18 +487,11 @@ fun CloudRecordingsTabPage(
                 items(
                     uiState.cloudRecordings,
                     key = { it.recordingId ?: it.id ?: it.fileName ?: it.hashCode() }
-                ) { metadata ->
+                ) { metadataDto ->
                     CloudRecordingListItem(
-                        metadata = metadata,
-                        onItemClick = { clickedMetadata ->
-                            val route = Screen.RecordingDetails.createCloudRoute(clickedMetadata)
-                            if (route != "recording_details/error") {
-                                navController.navigate(route)
-                                Log.d("CloudRecordingListItem", "Navigating route: $route")
-                            } else {
-                                Log.w("CloudRecordingListItem", "Cloud recording ID is missing, cannot navigate.")
-                                scope.launch { showSnackbar("Cannot open details: Recording ID missing.") }
-                            }
+                        metadata = metadataDto,
+                        onItemClick = { clickedMetadataDto ->
+                            onItemClick(clickedMetadataDto)
                         },
                     )
                     HorizontalDivider(thickness = 0.5.dp)

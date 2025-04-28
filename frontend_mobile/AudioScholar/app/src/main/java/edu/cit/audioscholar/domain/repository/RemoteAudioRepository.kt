@@ -25,4 +25,7 @@ interface RemoteAudioRepository {
     fun getRecommendations(recordingId: String): Flow<Result<List<RecommendationDto>>>
 
     fun getCloudRecordingDetails(recordingId: String): Flow<Result<AudioMetadataDto>>
+
+    fun deleteCloudRecording(metadataId: String): Flow<Result<Unit>>
+
 }

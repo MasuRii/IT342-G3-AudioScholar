@@ -16,6 +16,9 @@ import edu.cit.audioscholar.domain.repository.*
 import edu.cit.audioscholar.service.PlaybackManager
 import edu.cit.audioscholar.service.PlaybackState
 import edu.cit.audioscholar.ui.main.Screen
+import edu.cit.audioscholar.ui.details.RecordingDetailsUiState
+import edu.cit.audioscholar.ui.details.SummaryStatus
+import edu.cit.audioscholar.ui.details.RecommendationsStatus
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
@@ -72,14 +75,18 @@ class RecordingDetailsViewModel @Inject constructor(
     private val _infoMessageEvent = Channel<String?>(Channel.BUFFERED)
     val infoMessageEvent: Flow<String?> = _infoMessageEvent.receiveAsFlow()
 
+    private val _navigateUpEvent = MutableStateFlow(false)
+    val navigateUpEvent: StateFlow<Boolean> = _navigateUpEvent.asStateFlow()
+
     private val localFilePath: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_LOCAL_FILE_PATH)
+    private val cloudId: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_ID)
     private val cloudRecordingId: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_RECORDING_ID)
 
     private var pollingJob: Job? = null
     private var currentMetadata: RecordingMetadata? = null
 
     init {
-        Log.d("DetailsViewModel", "Initializing. LocalPath: $localFilePath, CloudID: $cloudRecordingId")
+        Log.d("DetailsViewModel", "Initializing. LocalPath: $localFilePath, PrimaryCloudID: $cloudId, OtherCloudID: $cloudRecordingId")
 
         when {
             localFilePath != null -> {
@@ -88,10 +95,10 @@ class RecordingDetailsViewModel @Inject constructor(
                 loadLocalRecordingDetails(localFilePath)
                 observePlaybackState()
             }
-            cloudRecordingId != null -> {
-                Log.d("DetailsViewModel", "Source: Cloud Recording")
+            cloudId != null -> {
+                Log.d("DetailsViewModel", "Source: Cloud Recording (Primary ID: $cloudId, Other ID: $cloudRecordingId)")
                 _uiState.update { it.copy(isCloudSource = true) }
-                loadInitialCloudDetailsFromArgsAndPoll(cloudRecordingId)
+                loadInitialCloudDetailsFromArgsAndPoll(cloudId, cloudRecordingId)
                 observePlaybackState()
             }
             else -> {
@@ -143,6 +150,7 @@ class RecordingDetailsViewModel @Inject constructor(
                                 durationFormatted = formatDurationMillis(metadata.durationMillis),
                                 filePath = metadata.filePath,
                                 remoteRecordingId = remoteId,
+                                cloudId = null,
                                 storageUrl = null,
                                 error = null,
                                 summaryStatus = when {
@@ -181,7 +189,7 @@ class RecordingDetailsViewModel @Inject constructor(
         }
     }
 
-    private fun loadInitialCloudDetailsFromArgsAndPoll(recId: String) {
+    private fun loadInitialCloudDetailsFromArgsAndPoll(primaryId: String, recordingId: String?) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
 
@@ -190,9 +198,9 @@ class RecordingDetailsViewModel @Inject constructor(
             val timestampSeconds: Long = savedStateHandle.get<Long>(Screen.RecordingDetails.ARG_CLOUD_TIMESTAMP_SECONDS) ?: 0L
             val storageUrl: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_STORAGE_URL)?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
 
-            Log.d("DetailsViewModel", "Loading cloud details from args: ID='$recId', Title='$title', Filename='$fileName', TimestampSecs=$timestampSeconds, StorageUrl='$storageUrl'")
+            Log.d("DetailsViewModel", "Loading cloud details from args: PrimaryID='$primaryId', RecordingID='$recordingId', Title='$title', Filename='$fileName', TimestampSecs=$timestampSeconds, StorageUrl='$storageUrl'")
 
-            if (recId.isBlank()) {
+            if (primaryId.isBlank()) {
                 Log.e("DetailsViewModel", "Cloud recording ID from args is blank!")
                 val errorMsg = "Invalid Recording ID."
                 _uiState.update { it.copy(isLoading = false, error = errorMsg) }
@@ -208,13 +216,12 @@ class RecordingDetailsViewModel @Inject constructor(
             var cachedGlossary: List<GlossaryItemDto>? = null
             var cachedRecs: List<RecommendationDto>? = null
 
-            cloudCacheRepository.getCache(recId)?.let { cloudCache ->
-                Log.d("DetailsViewModel", "Found dedicated cloud cache entry for $recId.")
+            cloudCacheRepository.getCache(primaryId)?.let { cloudCache ->
+                Log.d("DetailsViewModel", "Found dedicated cloud cache entry for $primaryId.")
                 val cacheTimestamp = cloudCache.cacheTimestampMillis
                 val isSummaryCacheValid = isCacheValid(cacheTimestamp) && !cloudCache.summaryText.isNullOrBlank()
                 val areRecsCacheValid = isCacheValid(cacheTimestamp) && !cloudCache.recommendationsJson.isNullOrBlank()
-
-                Log.d("DetailsViewModel", "[CloudCache] Check for $recId: SummaryValid=$isSummaryCacheValid, RecsValid=$areRecsCacheValid")
+                Log.d("DetailsViewModel", "[CloudCache] Check for $primaryId: SummaryValid=$isSummaryCacheValid, RecsValid=$areRecsCacheValid")
 
                 if (isSummaryCacheValid) {
                     needsSummaryFetch = false
@@ -227,7 +234,7 @@ class RecordingDetailsViewModel @Inject constructor(
                     initialRecsStatus = RecommendationsStatus.READY
                     cachedRecs = parseRecommendations(cloudCache.recommendationsJson)
                 }
-            } ?: Log.d("DetailsViewModel", "No dedicated cloud cache entry found for $recId.")
+            } ?: Log.d("DetailsViewModel", "No dedicated cloud cache entry found for $primaryId.")
 
             _uiState.update {
                 it.copy(
@@ -238,7 +245,8 @@ class RecordingDetailsViewModel @Inject constructor(
                     durationMillis = 0L,
                     durationFormatted = "--:--",
                     filePath = "",
-                    remoteRecordingId = recId,
+                    cloudId = primaryId,
+                    remoteRecordingId = recordingId,
                     storageUrl = storageUrl,
                     error = null,
                     summaryStatus = initialSummaryStatus,
@@ -252,11 +260,12 @@ class RecordingDetailsViewModel @Inject constructor(
 
             storageUrl?.let { configurePlayback(cloudUrl = it) }
 
-            if (needsSummaryFetch || needsRecsFetch) {
-                Log.d("DetailsViewModel", "Cache invalid or missing for cloud ID $recId. Starting polling.")
-                startPollingForSummaryAndRecommendations(recId, needsSummaryFetch, needsRecsFetch)
+            val idForPolling = recordingId ?: primaryId
+            if ((needsSummaryFetch || needsRecsFetch) && idForPolling.isNotBlank()) {
+                Log.d("DetailsViewModel", "Cache invalid or missing for cloud ID $primaryId. Starting polling using ID: $idForPolling.")
+                startPollingForSummaryAndRecommendations(idForPolling, needsSummaryFetch, needsRecsFetch)
             } else {
-                Log.d("DetailsViewModel", "Cache is valid for cloud ID $recId. No polling needed.")
+                Log.d("DetailsViewModel", "Cache is valid for cloud ID $primaryId or polling ID missing. No polling needed.")
             }
         }
     }
@@ -365,10 +374,12 @@ class RecordingDetailsViewModel @Inject constructor(
                                 }
                             } ?: Log.w("DetailsViewModel", "Summary fetched for local source, but currentMetadata is null!")
                         } else {
-                            Log.d("DetailsViewModel", "Saving fetched summary data to cloud cache for $remoteId")
-                            viewModelScope.launch(Dispatchers.IO) {
-                                cloudCacheRepository.saveSummaryToCache(remoteId, summaryDto, cacheTimestamp)
-                            }
+                            updatedState.cloudId?.let { primaryCloudId ->
+                                Log.d("DetailsViewModel", "Saving fetched summary data to cloud cache for $primaryCloudId")
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    cloudCacheRepository.saveSummaryToCache(primaryCloudId, summaryDto, cacheTimestamp)
+                                }
+                            } ?: Log.w("DetailsViewModel", "Summary fetched for cloud source, but primary cloudId is null in state!")
                         }
                     },
                     onFailure = { errorMsg ->
@@ -419,10 +430,12 @@ class RecordingDetailsViewModel @Inject constructor(
                                 }
                             } ?: Log.w("DetailsViewModel", "Recommendations fetched for local source, but currentMetadata is null!")
                         } else {
-                            Log.d("DetailsViewModel", "Saving fetched recommendations data to cloud cache for $remoteId")
-                            viewModelScope.launch(Dispatchers.IO) {
-                                cloudCacheRepository.saveRecommendationsToCache(remoteId, recommendationsList, cacheTimestamp)
-                            }
+                            updatedState.cloudId?.let { primaryCloudId ->
+                                Log.d("DetailsViewModel", "Saving fetched recommendations data to cloud cache for $primaryCloudId")
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    cloudCacheRepository.saveRecommendationsToCache(primaryCloudId, recommendationsList, cacheTimestamp)
+                                }
+                            } ?: Log.w("DetailsViewModel", "Recommendations fetched for cloud source, but primary cloudId is null in state!")
                         }
                     },
                     onFailure = { errorMsg ->
@@ -820,17 +833,24 @@ class RecordingDetailsViewModel @Inject constructor(
 
             try {
                 if (uiState.value.isCloudSource) {
-                    val idToDelete = uiState.value.remoteRecordingId
+                    val idToDelete = uiState.value.cloudId
                     if (idToDelete == null) {
-                        Log.e("DetailsViewModel", "Cannot delete cloud recording: Remote ID is missing.")
+                        Log.e("DetailsViewModel", "Cannot delete cloud recording: Primary Cloud ID is missing.")
                         errorMsg = "Cannot delete: Recording ID unknown."
                     } else {
-                        Log.d("DetailsViewModel", "Attempting to delete cloud recording with ID: $idToDelete")
-                        Log.w("DetailsViewModel", "Cloud delete endpoint not implemented yet.")
-                        delay(1000)
-                        deleteSuccess = true
-                        if (deleteSuccess) infoMsg = "Cloud recording deleted."
-                        else errorMsg = "Failed to delete cloud recording (Not implemented)."
+                        Log.d("DetailsViewModel", "Attempting to delete cloud recording with Primary ID: $idToDelete")
+                        remoteAudioRepository.deleteCloudRecording(idToDelete)
+                            .collect { result ->
+                                result.onSuccess {
+                                    Log.i("DetailsViewModel", "Successfully deleted cloud recording metadata with ID: $idToDelete")
+                                    deleteSuccess = true
+                                    infoMsg = application.getString(R.string.info_cloud_recording_deleted)
+                                }.onFailure { e ->
+                                    Log.e("DetailsViewModel", "Failed to delete cloud recording metadata (ID: $idToDelete)", e)
+                                    errorMsg = mapErrorToUserFriendlyMessage(e)
+                                    deleteSuccess = false
+                                }
+                            }
                     }
                 } else {
                     val metaToDelete = currentMetadata
@@ -844,10 +864,10 @@ class RecordingDetailsViewModel @Inject constructor(
                             Log.d("DetailsViewModel", "Local deletion successful for: ${metaToDelete.filePath}")
                             playbackManager.releasePlayer()
                             currentMetadata = null
-                            infoMsg = "Recording deleted."
+                            infoMsg = application.getString(R.string.info_local_recording_deleted)
                         } else {
                             Log.e("DetailsViewModel", "Error deleting local file: ${metaToDelete.filePath}")
-                            errorMsg = "Failed to delete recording file."
+                            errorMsg = application.getString(R.string.error_delete_failed_local)
                         }
                     }
                 }
@@ -862,9 +882,10 @@ class RecordingDetailsViewModel @Inject constructor(
                     isDeleting = false,
                     infoMessage = infoMsg,
                     filePath = if (!it.isCloudSource) "" else it.filePath,
-                    remoteRecordingId = if (it.isCloudSource) null else it.remoteRecordingId,
-                    title = "Deleted",
-                    editableTitle = "Deleted",
+                    cloudId = if (it.isCloudSource && deleteSuccess) null else it.cloudId,
+                    remoteRecordingId = if (it.isCloudSource && deleteSuccess) null else it.remoteRecordingId,
+                    title = application.getString(R.string.details_title_deleted),
+                    editableTitle = application.getString(R.string.details_title_deleted),
                     storageUrl = null,
                     summaryStatus = SummaryStatus.IDLE,
                     recommendationsStatus = RecommendationsStatus.IDLE,
@@ -879,6 +900,7 @@ class RecordingDetailsViewModel @Inject constructor(
                     isPlaying = false
                 ) }
                 _infoMessageEvent.trySend(infoMsg)
+                _navigateUpEvent.value = true
             } else {
                 _uiState.update { it.copy(isDeleting = false, error = errorMsg) }
                 _errorEvent.trySend(errorMsg)
@@ -886,6 +908,9 @@ class RecordingDetailsViewModel @Inject constructor(
         }
     }
 
+    fun consumeNavigateUpEvent() {
+        _navigateUpEvent.value = false
+    }
 
     fun consumeError() {
         _uiState.update { it.copy(error = null) }
@@ -929,15 +954,15 @@ class RecordingDetailsViewModel @Inject constructor(
 
             try {
                 if (state.isCloudSource) {
-                    val remoteId = state.remoteRecordingId
-                    if (remoteId == null) {
-                        Log.e("DetailsViewModel", "Cannot update cloud title: Remote ID is null.")
+                    val primaryCloudId = state.cloudId
+                    if (primaryCloudId == null) {
+                        Log.e("DetailsViewModel", "Cannot update cloud title: Primary Cloud ID is null.")
                         errorMsg = "Cannot update title: Recording ID unknown."
                     } else {
-                        Log.d("DetailsViewModel", "Attempting to update cloud title for ID: $remoteId to '$newTitle'")
-                        Log.w("DetailsViewModel", "Cloud title update endpoint not implemented yet.")
-                        delay(1000)
-                        success = true
+                        Log.d("DetailsViewModel", "Attempting to update cloud title for Primary ID: $primaryCloudId to '$newTitle'")
+                        Log.w("DetailsViewModel", "Cloud title update endpoint call is commented out.")
+                        success = false
+                        if (!success) errorMsg = "Failed to update cloud title (Not implemented)."
                     }
                 } else {
                     val meta = currentMetadata

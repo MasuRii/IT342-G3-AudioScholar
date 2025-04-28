@@ -8,47 +8,14 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.filled.Login
-import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Password
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDrawerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,31 +25,20 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.navigation.*
+import androidx.navigation.compose.*
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
-import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
-import edu.cit.audioscholar.ui.auth.LoginScreen
-import edu.cit.audioscholar.ui.auth.LoginViewModel
-import edu.cit.audioscholar.ui.auth.RegistrationScreen
+import edu.cit.audioscholar.ui.auth.*
 import edu.cit.audioscholar.ui.details.RecordingDetailsScreen
 import edu.cit.audioscholar.ui.library.LibraryScreen
 import edu.cit.audioscholar.ui.onboarding.OnboardingScreen
@@ -93,9 +49,9 @@ import edu.cit.audioscholar.ui.settings.SettingsViewModel
 import edu.cit.audioscholar.ui.settings.ThemeSetting
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import edu.cit.audioscholar.util.Resource
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
@@ -115,6 +71,7 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
 
     object RecordingDetails : Screen("recording_details", R.string.nav_recording_details) {
         const val ARG_LOCAL_FILE_PATH = "localFilePath"
+        const val ARG_CLOUD_ID = "cloudId"
         const val ARG_CLOUD_RECORDING_ID = "cloudRecordingId"
         const val ARG_CLOUD_TITLE = "cloudTitle"
         const val ARG_CLOUD_FILENAME = "cloudFileName"
@@ -123,6 +80,7 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
 
         const val ROUTE_PATTERN = "recording_details" +
                 "?$ARG_LOCAL_FILE_PATH={$ARG_LOCAL_FILE_PATH}" +
+                "&$ARG_CLOUD_ID={$ARG_CLOUD_ID}" +
                 "&$ARG_CLOUD_RECORDING_ID={$ARG_CLOUD_RECORDING_ID}" +
                 "&$ARG_CLOUD_TITLE={$ARG_CLOUD_TITLE}" +
                 "&$ARG_CLOUD_FILENAME={$ARG_CLOUD_FILENAME}" +
@@ -133,23 +91,30 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
             return "recording_details?$ARG_LOCAL_FILE_PATH=${Uri.encode(filePath)}"
         }
 
-        fun createCloudRoute(metadata: AudioMetadataDto): String {
-            val recordingId = metadata.recordingId
-            if (recordingId.isNullOrBlank()) {
-                Log.e("Screen.RecordingDetails", "Cannot create cloud route, recordingId is null or blank in metadata: $metadata")
+        fun createCloudRoute(
+            id: String, // Primary UUID (required for deletion)
+            recordingId: String, // Secondary ID (used for other operations)
+            title: String?,
+            fileName: String?,
+            timestampSeconds: Long?,
+            storageUrl: String?
+        ): String {
+            if (id.isBlank()) {
+                Log.e("Screen.RecordingDetails", "Cannot create cloud route, primary 'id' is null or blank.")
                 return "recording_details/error"
             }
 
-            val title = Uri.encode(metadata.title ?: metadata.fileName ?: "Cloud Recording")
-            val fileName = Uri.encode(metadata.fileName ?: "Unknown Filename")
-            val timestamp = metadata.uploadTimestamp?.seconds ?: 0L
-            val storageUrl = Uri.encode(metadata.storageUrl ?: "")
+            val encodedTitle = Uri.encode(title ?: fileName ?: "Cloud Recording")
+            val encodedFileName = Uri.encode(fileName ?: "Unknown Filename")
+            val timestamp = timestampSeconds ?: 0L
+            val encodedStorageUrl = Uri.encode(storageUrl ?: "")
 
-            return "recording_details?$ARG_CLOUD_RECORDING_ID=$recordingId" +
-                    "&$ARG_CLOUD_TITLE=$title" +
-                    "&$ARG_CLOUD_FILENAME=$fileName" +
+            return "recording_details?$ARG_CLOUD_ID=$id" +
+                    "&$ARG_CLOUD_RECORDING_ID=$recordingId" +
+                    "&$ARG_CLOUD_TITLE=$encodedTitle" +
+                    "&$ARG_CLOUD_FILENAME=$encodedFileName" +
                     "&$ARG_CLOUD_TIMESTAMP_SECONDS=$timestamp" +
-                    "&$ARG_CLOUD_STORAGE_URL=$storageUrl"
+                    "&$ARG_CLOUD_STORAGE_URL=$encodedStorageUrl"
         }
     }
 }
@@ -576,6 +541,8 @@ fun MainAppScreen(
                 arguments = listOf(
                     navArgument(Screen.RecordingDetails.ARG_LOCAL_FILE_PATH) {
                         type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_ID) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
                     navArgument(Screen.RecordingDetails.ARG_CLOUD_RECORDING_ID) {
                         type = NavType.StringType; nullable = true; defaultValue = null },
                     navArgument(Screen.RecordingDetails.ARG_CLOUD_TITLE) {
@@ -599,5 +566,5 @@ fun MainAppScreen(
             }
         }
     }
-}
+    }
 }

@@ -326,4 +326,16 @@
     <string name="details_notes_placeholder">No notes available yet.</string>
     <string name="details_notes_failed">Failed to generate notes.</string>
 
+    <string name="error_delete_failed_generic">Failed to delete the recording. Please try again.</string>
+    <string name="error_delete_forbidden">You do not have permission to delete this recording.</string>
+    <string name="error_delete_not_found">Could not delete: Recording not found on the server.</string>
+    <string name="error_delete_server_http">Failed to delete: Server error %1$d. %2$s</string>
+    <string name="error_delete_failed_local_file">Failed to delete the local recording file.</string>
+    <string name="info_recording_deleted">Recording deleted successfully.</string>
+    <string name="details_title_deleted">[Deleted]</string>
+
+    <string name="info_cloud_recording_deleted">Cloud recording deleted.</string>
+    <string name="info_local_recording_deleted">Local recording deleted.</string>
+    <string name="error_delete_failed_local">Failed to delete the local recording file.</string>
+
 </resources>

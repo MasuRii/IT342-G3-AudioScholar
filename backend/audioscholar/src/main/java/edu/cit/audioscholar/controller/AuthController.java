@@ -337,6 +337,7 @@ public class AuthController {
                                         firebaseUid, null, authorities);
                         String jwt = jwtTokenProvider.generateToken(authentication);
 
+                        log.info("Authorization Bearer Token: {}", jwt);
                         log.info("Generated API JWT for user UID {} (Google)", firebaseUid);
 
                         AuthResponse response = new AuthResponse(true,
@@ -498,6 +499,8 @@ public class AuthController {
                                                                                                 .generateToken(authentication);
                                                                                 Instant jwtEnd = Instant
                                                                                                 .now();
+                                                                                log.info("Authorization Bearer Token: {}",
+                                                                                                jwt);
                                                                                 log.info("Generated API JWT for user UID {} (GitHub). Duration: {}ms",
                                                                                                 firebaseUid,
                                                                                                 Duration.between(

@@ -19,6 +19,11 @@ interface ApiService {
     @GET("/api/audio/metadata")
     suspend fun getAudioMetadataList(): Response<List<AudioMetadataDto>>
 
+    @DELETE("/api/audio/metadata/{id}")
+    suspend fun deleteAudioMetadata(
+        @Path("id") metadataId: String
+    ): Response<Unit>
+
     @POST("/api/auth/register")
     suspend fun registerUser(
         @Body registrationRequest: RegistrationRequest
@@ -80,4 +85,5 @@ interface ApiService {
     suspend fun getRecordingDetails(
         @Path("recordingId") recordingId: String
     ): Response<AudioMetadataDto>
+
 }

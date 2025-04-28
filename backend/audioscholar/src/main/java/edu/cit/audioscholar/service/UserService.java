@@ -488,9 +488,9 @@ public class UserService {
         }
 
         try {
-            Map<String, Object> updates = Map.of("fcmTokens", FieldValue.arrayUnion(fcmToken));
+            Map<String, Object> updates = Map.of("fcmTokens", List.of(fcmToken));
             firebaseService.updateDataWithMap(COLLECTION_NAME, userId, updates);
-            log.info("Firestore update called successfully to add FCM token for user {}", userId);
+            log.info("Firestore update called successfully to set FCM token for user {}", userId);
         } catch (Exception e) {
             log.error("Failed to update Firestore with FCM token for user {}: {}", userId,
                     e.getMessage(), e);

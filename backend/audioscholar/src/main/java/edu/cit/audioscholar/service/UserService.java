@@ -485,6 +485,15 @@ public class UserService {
         }
 
         List<String> currentTokens = user.getFcmTokens();
+        if (currentTokens == null) {
+            log.warn("User {} had a null fcmTokens list in Firestore. Initializing a new list.",
+                    userId);
+            currentTokens = new java.util.ArrayList<>();
+        }
+        if (!(currentTokens instanceof java.util.ArrayList)) {
+            currentTokens = new java.util.ArrayList<>(currentTokens);
+        }
+
         if (!currentTokens.contains(fcmToken)) {
             log.debug("Adding new FCM token for user ID: {}", userId);
             currentTokens.add(fcmToken);

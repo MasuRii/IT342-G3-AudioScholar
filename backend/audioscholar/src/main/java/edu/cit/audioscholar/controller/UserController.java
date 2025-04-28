@@ -143,6 +143,24 @@ public class UserController {
      @PreAuthorize("isAuthenticated()")
      public ResponseEntity<?> addFcmToken(@Valid @RequestBody FcmTokenRequest request,
                Authentication authentication) {
+          logger.debug("Entered addFcmToken endpoint.");
+          if (authentication == null) {
+               logger.error("Authentication object is NULL inside addFcmToken.");
+               return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                         .body("Authentication is missing.");
+          }
+          logger.debug("Authentication type: {}", authentication.getClass().getName());
+          logger.debug("Authentication principal: {}", authentication.getPrincipal());
+          logger.debug("Authentication name (userId): {}", authentication.getName());
+
+          if (request == null) {
+               logger.error("FcmTokenRequest object is NULL inside addFcmToken.");
+               return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                         .body("Request body is missing.");
+          }
+          logger.debug("Received FcmTokenRequest object: {}", request);
+          logger.debug("Token from request: {}", request.getToken());
+
           if (authentication == null || !authentication.isAuthenticated()) {
                logger.warn("Attempt to add FCM token without authentication.");
                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -150,6 +168,17 @@ public class UserController {
           }
           String userId = authentication.getName();
           String token = request.getToken();
+
+          if (userId == null) {
+               logger.error("Extracted userId is NULL after authentication checks.");
+               return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                         .body("Could not determine user ID.");
+          }
+          if (token == null) {
+               logger.error("Extracted token is NULL after request checks.");
+               return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                         .body("Token is missing in request.");
+          }
 
           logger.info("Received request to add FCM token for user ID: {}", userId);
 

@@ -154,9 +154,14 @@ const SignIn = () => {
     const handleGithubSignIn = () => {
         const githubClientId = 'Iv23liMzUNGL8JuXu40i'; // Use provided Client ID
 
-        // **IMPORTANT:** This MUST match the callback URL configured in your GitHub OAuth App
-        // Assuming standard localhost for Vite dev server. Change if different!
-        const redirectUri = `${window.location.origin}/auth/github/callback`; // Added explicit slash here
+        // Determine the base URL based on the current environment
+        const isProduction = window.location.hostname === 'it342-g3-audioscholar.onrender.com';
+        const redirectBase = isProduction 
+                             ? 'https://it342-g3-audioscholar.onrender.com' 
+                             : window.location.origin;
+
+        // Construct the redirect URI
+        const redirectUri = `${redirectBase}/auth/github/callback`; 
 
         // Log the generated redirect_uri to the console for debugging
         console.log('Generated redirect_uri:', redirectUri);

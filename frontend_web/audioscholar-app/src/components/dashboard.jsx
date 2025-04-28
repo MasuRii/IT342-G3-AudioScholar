@@ -14,7 +14,7 @@ const Dashboard = () => {
       {/* Updated Header */}
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
-          <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
+          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
           <div className="flex items-center space-x-2">
             <Link
               to="/profile"
@@ -42,14 +42,14 @@ const Dashboard = () => {
       <main className="flex-grow bg-gray-50">
         <div className="container mx-auto px-4 py-12">
           <div className="max-w-6xl mx-auto">
-            <h1 className="text-3xl font-bold text-gray-800 mb-8">Dashboard</h1>
+            <h1 className="text-3xl font-bold text-gray-800 mb-10">Dashboard</h1>
 
             {/* Updated grid to potentially adjust layout if needed (e.g., using md:grid-cols-2 instead of 3 if only two items remain) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* Adjusted grid columns */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Upload Card */}
               <Link
                 to="/upload"
-                className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+                className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer border border-gray-200"
               >
                 <div className="flex items-center mb-4">
                   <div className="bg-[#2D8A8A] bg-opacity-20 p-3 rounded-full mr-4">
@@ -65,7 +65,7 @@ const Dashboard = () => {
               {/* Recording List Card */}
               <Link
                 to="/recordings"
-                className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
+                className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer border border-gray-200"
               >
                 <div className="flex items-center mb-4">
                   <div className="bg-blue-100 p-3 rounded-full mr-4">

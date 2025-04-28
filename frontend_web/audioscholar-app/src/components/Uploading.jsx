@@ -4,20 +4,18 @@ import { Link, useNavigate } from 'react-router-dom';
 // Import the base API URL from your auth service file
 import { API_BASE_URL } from '../services/authService'; // <--- Assuming you export API_BASE_URL from here
 
-// --- Define ALLOWED types/extensions OUTSIDE the component ---
-// Moved these definitions outside the component function scope
+// --- Define ALLOWED types/extensions OUTSIDE the component (Gemini Supported) ---
 const VALID_AUDIO_TYPES = [
-  'audio/mpeg', 'audio/mp3', // MP3
-  'audio/wav', 'audio/x-wav', // WAV (added x-wav for broader compatibility)
-  'audio/ogg', // OGG
-  'audio/aac', // AAC
-  'audio/x-m4a', // M4A
-  'audio/webm', // WEBM
-  'audio/flac', // FLAC (Added based on backend controller)
-  'audio/aiff', 'audio/x-aiff' // AIFF (Added based on backend controller)
+  'audio/mpeg', 'audio/mp3',       // MP3
+  'audio/wav', 'audio/x-wav',       // WAV
+  'audio/aiff', 'audio/x-aiff',      // AIFF
+  'audio/aac', 'audio/vnd.dlna.adts', // AAC (added vnd.dlna.adts based on browser report)
+  'audio/ogg', 'application/ogg', // OGG (Vorbis)
+  'audio/flac', 'audio/x-flac',      // FLAC
+  // Removed: M4A ('audio/x-m4a', 'audio/mp4'), WEBM ('audio/webm', 'video/webm')
 ];
 
-const VALID_EXTENSIONS = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'webm', 'flac', 'aiff']; // Moved outside
+const VALID_EXTENSIONS = ['mp3', 'wav', 'aiff', 'aac', 'ogg', 'flac']; // Gemini Supported Extensions
 // --- End of constants ---
 
 
@@ -46,6 +44,10 @@ const Uploading = () => {
     // Validate file type and extension
     // *** Now using the constants defined OUTSIDE the component ***
     const fileExt = file.name.split('.').pop().toLowerCase();
+
+    // --- Debugging Log ---
+    console.log(`Selected File: ${file.name}, Type: ${file.type}, Ext: ${fileExt}`);
+    // --- End Debugging Log ---
 
     if (
       !VALID_AUDIO_TYPES.includes(file.type.toLowerCase()) || // Using VALID_AUDIO_TYPES
@@ -163,7 +165,7 @@ const Uploading = () => {
       {/* Header ... */}
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
-          <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
+          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
           <div className="flex items-center space-x-2">
             <Link
               to="/dashboard"
@@ -213,17 +215,17 @@ const Uploading = () => {
             />
 
             {/* File Upload Section */}
-            <div className="mb-4">
+            <div className="mb-6">
               <div
                 onClick={handleClick}
-                className={`border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer transition ${loading ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+                className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 ${loading ? 'opacity-60 cursor-not-allowed bg-gray-100' : 'hover:bg-gray-100 hover:border-teal-400'}`}
               >
                 {fileName ? (
-                  <div className="flex items-center justify-center gap-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                     </svg>
-                    <p className="text-gray-800 font-medium truncate max-w-xs">{fileName}</p>
+                    <p className="text-gray-800 font-medium text-lg truncate max-w-xs">{fileName}</p>
                     {!loading && (
                        <button
                          type="button"
@@ -231,7 +233,7 @@ const Uploading = () => {
                            e.stopPropagation();
                            removeFile();
                          }}
-                         className="text-red-500 hover:text-red-700"
+                         className="text-red-600 hover:text-red-800 transition-colors duration-150 p-1 rounded-full hover:bg-red-100"
                        >
                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
@@ -245,24 +247,24 @@ const Uploading = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
                     <p className="text-gray-600 mb-2">Click to select audio file or drag and drop</p>
-                    <p className="text-xs text-gray-500">Supports: {VALID_EXTENSIONS.join(', ').toUpperCase()}</p> {/* Using VALID_EXTENSIONS */}
+                    <p className="text-xs text-gray-500">Supports: {VALID_EXTENSIONS.join(', ').toUpperCase()}</p>
                   </div>
                 )}
               </div>
-              {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+              {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
             </div>
 
             {/* Audio Details Form */}
-            {/* ... (Title and Description inputs - they use state directly, which is correct) ... */}
-             <div className="mb-6">
-               <label htmlFor="audio-title" className="block text-sm font-medium text-gray-700 mb-2">
+            <form onSubmit={handleFileUpload} className="space-y-6">
+             <div className="mb-0">
+               <label htmlFor="audio-title" className="block text-sm font-medium text-gray-700 mb-1">
                  <span className="font-bold">Title:</span>
                  <span className="ml-1 text-gray-500">Enter title for your audio</span>
                </label>
                <input
                  type="text"
                  id="audio-title"
-                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2D8A8A] focus:border-[#2D8A8A]"
+                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition duration-150 ease-in-out shadow-sm"
                  placeholder="Enter title for your upload"
                  value={title}
                  onChange={(e) => setTitle(e.target.value)}
@@ -270,13 +272,13 @@ const Uploading = () => {
                />
              </div>
 
-             <div className="mb-8">
-               <label htmlFor="audio-description" className="block text-sm font-medium text-gray-700 mb-2">
+             <div className="mb-0">
+               <label htmlFor="audio-description" className="block text-sm font-medium text-gray-700 mb-1">
                  <span className="font-bold">Description (Optional):</span>
                </label>
                <textarea
                   id="audio-description"
-                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2D8A8A] focus:border-[#2D8A8A] min-h-[100px]"
+                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 min-h-[100px] transition duration-150 ease-in-out shadow-sm"
                  placeholder="Add a description for your upload"
                  value={description}
                  onChange={(e) => setDescription(e.target.value)}
@@ -286,14 +288,15 @@ const Uploading = () => {
 
 
             <button
-              onClick={handleFileUpload}
+              type="submit"
               disabled={!selectedFile || loading}
-              className={`w-full bg-[#2D8A8A] text-white py-3 px-4 rounded-lg font-medium hover:bg-[#236b6b] transition ${
-                 (!selectedFile || loading) ? 'opacity-50 cursor-not-allowed' : ''
+              className={`w-full bg-[#2D8A8A] text-white py-3 px-4 rounded-lg font-medium hover:bg-[#236b6b] transition-all duration-200 ease-in-out ${ 
+                 (!selectedFile || loading) ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md transform hover:-translate-y-0.5'
               }`}
             >
               {loading ? 'Uploading...' : 'Upload Audio'}
             </button>
+            </form>
           </div>
         </div>
       </main>

@@ -9,9 +9,10 @@ import Footer from './components/footer';
 import SignUp from './components/SignUp';
 import SignIn from './components/SignIn';
 import Uploading from './components/Uploading';
-import Dashboard from './components/Dashboard';
+import Dashboard from './components/dashboard';
 import RecordingList from './components/RecordingList';
 import UserProfile from './components/UserProfile';
+import UserProfileEdit from './components/UserProfileEdit';
 import RecordingData from './components/RecordingData'; // Added from dataViewable-integration-orlanes
 import GithubAuthCallback from './components/GithubAuthCallback'; // Added from dataViewable-integration-orlanes
 
@@ -75,6 +76,9 @@ function App() {
           {/* User Profile route */}
           {/* Add flex-grow to user profile content if needed for layout consistency */}
           <Route path="/profile" element={<UserProfile />} />
+
+          {/* User Profile Edit route */}
+          <Route path="/profile/edit" element={<UserProfileEdit />} />
 
           {/* GitHub Auth Callback Route */}
           {/* Added from dataViewable-integration-orlanes */}

@@ -15,15 +15,8 @@ import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.regex.Pattern
@@ -103,7 +96,7 @@ class RegistrationViewModel @Inject constructor(
         private const val GITHUB_CLIENT_ID = "Iv23liMzUNGL8JuXu40i"
         const val GITHUB_REDIRECT_URI_SCHEME = "audioscholar"
         const val GITHUB_REDIRECT_URI_HOST = "github-callback"
-        private const val GITHUB_REDIRECT_URI = "audioscholar://github-callback"
+        private const val GITHUB_REDIRECT_URI = "$GITHUB_REDIRECT_URI_SCHEME://$GITHUB_REDIRECT_URI_HOST"
         private const val GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"
         private const val GITHUB_SCOPE = "read:user user:email"
     }
@@ -135,7 +128,6 @@ class RegistrationViewModel @Inject constructor(
     }
 
     private fun getPasswordValidationDetails(password: String): PasswordValidationResult {
-
         return PasswordValidationResult(
             meetsLength = password.length >= minPasswordLength,
             hasUppercase = uppercaseRegex.matcher(password).matches(),
@@ -162,6 +154,28 @@ class RegistrationViewModel @Inject constructor(
                     state.termsAccepted
         }
 
+    private fun validateRegistrationForm(state: RegistrationUiState, passwordResult: PasswordValidationResult): String? {
+        val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(state.email.trim()).matches()
+        val passwordsMatch = state.password == state.confirmPassword
+        val terms = state.termsAccepted
+        val isFirstNameValid = isValidName(state.firstName)
+        val isLastNameValid = isValidName(state.lastName)
+
+        return when {
+            state.firstName.isBlank() || state.lastName.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank() ->
+                "Please fill all required fields."
+            !isFirstNameValid || !isLastNameValid ->
+                "Name fields can only contain letters, spaces, hyphens, and apostrophes."
+            !isEmailValid -> "Please enter a valid email address."
+            !passwordResult.isValid ->
+                "Password does not meet all requirements."
+
+            !passwordsMatch -> "Passwords do not match."
+            !terms -> "You must accept the terms and conditions."
+            else -> null
+        }
+    }
+
     fun registerUser() {
         if (_uiState.value.isAnyLoading) return
         val state = _uiState.value
@@ -184,14 +198,17 @@ class RegistrationViewModel @Inject constructor(
 
             when (val result = authRepository.registerUser(request)) {
                 is Resource.Success -> {
+                    Log.i(TAG, "[Email/Pass] Registration successful via API.")
+                    _registrationScreenEventFlow.emit(RegistrationScreenEvent.ShowMessage("Registration successful! Redirecting to login..."))
+                    delay(1000)
+
                     _uiState.update {
                         it.copy(
                             registrationInProgress = false,
-                            registrationSuccess = false,
+                            registrationSuccess = true,
                             errorMessage = null
                         )
                     }
-                    _registrationScreenEventFlow.tryEmit(RegistrationScreenEvent.ShowMessage("Registration successful! Please log in."))
                 }
                 is Resource.Error -> {
                     handleFailedLogin(result.message ?: "An unknown error occurred during registration.", "Email/Pass")
@@ -212,7 +229,7 @@ class RegistrationViewModel @Inject constructor(
     fun handleGoogleSignInResult(account: GoogleSignInAccount?) {
         val idToken = account?.idToken
         if (idToken != null) {
-            Log.i(TAG, "[GoogleSignIn] Registration attempt successful. Verifying token...")
+            Log.i(TAG, "[GoogleSignIn] Sign-in successful locally. Verifying token with backend...")
             if (!_uiState.value.isGoogleRegistrationLoading) {
                 _uiState.update { it.copy(isGoogleRegistrationLoading = true, errorMessage = null) }
             }
@@ -226,7 +243,7 @@ class RegistrationViewModel @Inject constructor(
                 }
             }
         } else {
-            Log.w(TAG, "[GoogleSignIn] Registration attempt failed or token missing.")
+            Log.w(TAG, "[GoogleSignIn] Sign-in failed locally or token missing.")
             if (_uiState.value.isGoogleRegistrationLoading) {
                 _uiState.update { it.copy(isGoogleRegistrationLoading = false, errorMessage = "Google Sign-In failed or cancelled.") }
             }
@@ -242,14 +259,14 @@ class RegistrationViewModel @Inject constructor(
                 putString(KEY_GITHUB_AUTH_STATE, state)
                 apply()
             }
-            Log.d(TAG, "Generated and saved GitHub state for registration: $state")
+            Log.d(TAG, "[GitHubSignIn] Generated and saved GitHub state for registration: $state")
             val authUri = Uri.parse(GITHUB_AUTH_URL).buildUpon()
                 .appendQueryParameter("client_id", GITHUB_CLIENT_ID)
                 .appendQueryParameter("redirect_uri", GITHUB_REDIRECT_URI)
                 .appendQueryParameter("scope", GITHUB_SCOPE)
                 .appendQueryParameter("state", state)
                 .build()
-            Log.d(TAG, "Constructed GitHub Auth URL for registration: $authUri")
+            Log.d(TAG, "[GitHubSignIn] Constructed GitHub Auth URL for registration: $authUri")
             _registrationScreenEventFlow.emit(RegistrationScreenEvent.LaunchGitHubSignIn(authUri))
         }
     }
@@ -257,28 +274,6 @@ class RegistrationViewModel @Inject constructor(
     fun handleGitHubLaunchFailed() {
         if (_uiState.value.isGitHubRegistrationLoading) {
             _uiState.update { it.copy(isGitHubRegistrationLoading = false, errorMessage = "Could not open browser for GitHub login.") }
-        }
-    }
-
-    private fun validateRegistrationForm(state: RegistrationUiState, passwordResult: PasswordValidationResult): String? {
-        val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(state.email.trim()).matches()
-        val passwordsMatch = state.password == state.confirmPassword
-        val terms = state.termsAccepted
-        val isFirstNameValid = isValidName(state.firstName)
-        val isLastNameValid = isValidName(state.lastName)
-
-        return when {
-            state.firstName.isBlank() || state.lastName.isBlank() || state.email.isBlank() || state.password.isBlank() || state.confirmPassword.isBlank() ->
-                "Please fill all required fields."
-            !isFirstNameValid || !isLastNameValid ->
-                "Name fields can only contain letters, spaces, hyphens, and apostrophes."
-            !isEmailValid -> "Please enter a valid email address."
-            !passwordResult.isValid ->
-                "Password does not meet all requirements."
-
-            !passwordsMatch -> "Passwords do not match."
-            !terms -> "You must accept the terms and conditions."
-            else -> null
         }
     }
 

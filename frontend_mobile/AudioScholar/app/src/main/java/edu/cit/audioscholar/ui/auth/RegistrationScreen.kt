@@ -28,7 +28,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -82,9 +81,9 @@ fun RegistrationScreen(
 
     LaunchedEffect(uiState.registrationSuccess) {
         if (uiState.registrationSuccess) {
-            Log.d("RegistrationScreen", "registrationSuccess is true. Navigating to Record screen.")
+            Log.d("RegistrationScreen", "registrationSuccess is true. Navigating to Login screen.")
             navController.navigate(Screen.Login.route) {
-                popUpTo(navController.graph.findStartDestination().id) { inclusive = true }
+                popUpTo(Screen.Registration.route) { inclusive = true }
                 launchSingleTop = true
             }
             viewModel.registrationNavigated()
@@ -264,7 +263,6 @@ fun RegistrationScreen(
                 Spacer(modifier = Modifier.height(MaterialTheme.typography.bodySmall.lineHeight.value.dp + 8.dp))
             }
 
-
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -277,18 +275,19 @@ fun RegistrationScreen(
                 val annotatedTermsText = buildAnnotatedString {
                     append(stringResource(R.string.registration_terms_prefix).trimEnd())
                     append(" ")
+                    pushStringAnnotation(tag = "T&C", annotation = "terms_url")
                     withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary)) {
-                        pushStringAnnotation(tag = "T&C", annotation = "terms")
                         append(stringResource(R.string.registration_terms_link))
-                        pop()
                     }
+                    pop()
                 }
                 ClickableText(
                     text = annotatedTermsText,
                     onClick = { offset ->
                         if (!uiState.isAnyLoading) {
                             annotatedTermsText.getStringAnnotations(tag = "T&C", start = offset, end = offset)
-                                .firstOrNull()?.let {
+                                .firstOrNull()?.let { annotation ->
+                                    Log.d("RegistrationScreen", "Terms link clicked. Annotation: ${annotation.item}")
                                     scope.launch { snackbarHostState.showSnackbar("Terms & Conditions clicked (Placeholder)") }
                                 }
                         }
@@ -366,6 +365,7 @@ fun RegistrationScreen(
                 onClick = {
                     if (!uiState.isAnyLoading) {
                         navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Registration.route) { inclusive = true }
                             launchSingleTop = true
                         }
                     }
@@ -457,4 +457,3 @@ fun PasswordRequirement(
         )
     }
 }
-

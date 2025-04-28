@@ -90,6 +90,7 @@ fun RecordingDetailsScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = LocalClipboardManager.current
+    val navigateUpState by viewModel.navigateUpEvent.collectAsStateWithLifecycle()
 
     val powerPointLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -158,6 +159,15 @@ fun RecordingDetailsScreen(
         } else if (criticalLoadError) {
             Log.d("RecordingDetailsScreen", "Critical load error and no ID/Path available, navigating up.")
             navController.navigateUp()
+        }
+    }
+
+    LaunchedEffect(navigateUpState) {
+        if (navigateUpState) {
+            Log.d("RecordingDetailsScreen", "Navigate up state is true, navigating...")
+            navController.previousBackStackEntry?.savedStateHandle?.set("refresh_needed_cloud", true)
+            navController.navigateUp()
+            viewModel.consumeNavigateUpEvent()
         }
     }
 

@@ -11,25 +11,12 @@ import edu.cit.audioscholar.data.local.model.RecordingMetadata
 import edu.cit.audioscholar.data.remote.dto.AudioMetadataDto
 import edu.cit.audioscholar.domain.repository.LocalAudioRepository
 import edu.cit.audioscholar.domain.repository.RemoteAudioRepository
+import edu.cit.audioscholar.util.FileUtils
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.receiveAsFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.io.IOException
 import javax.inject.Inject
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.getValue
-import androidx.core.net.toFile
-import edu.cit.audioscholar.util.FileUtils
 
 @Immutable
 data class ImportDialogState(
@@ -399,21 +386,27 @@ class LibraryViewModel @Inject constructor(
                         _eventChannel.send(LibraryViewEvent.NavigateToLocalDetails(recording.filePath))
                     }
                     is AudioMetadataDto -> {
-                        val recordingId = recording.recordingId
-                        if (recordingId != null) {
-                            Log.d("LibraryViewModel", "Cloud recording clicked: ID=${recording.recordingId}, Title=${recording.title}")
+                        val primaryId = recording.id
+                        val recordingIdForDetails = recording.recordingId
+
+                        if (!primaryId.isNullOrBlank() && recordingIdForDetails != null) {
+                            Log.d("LibraryViewModel", "Cloud recording clicked: PrimaryID=${primaryId}, RecordingID=${recordingIdForDetails}, Title=${recording.title}")
                             _eventChannel.send(
                                 LibraryViewEvent.NavigateToCloudDetails(
-                                    recordingId = recordingId,
+                                    id = primaryId,
+                                    recordingId = recordingIdForDetails,
                                     title = recording.title ?: recording.fileName,
                                     fileName = recording.fileName ?: "Unknown Filename",
                                     timestampSeconds = recording.uploadTimestamp?.seconds,
                                     storageUrl = recording.storageUrl
                                 )
                             )
-                        } else {
+                        } else if (recordingIdForDetails == null) {
                             Log.e("LibraryViewModel", "Cloud recording clicked, but recordingId is null. Title: ${recording.title}")
                             _eventChannel.send(LibraryViewEvent.ShowSnackbar("Cannot open details: Recording ID is missing."))
+                        } else {
+                            Log.e("LibraryViewModel", "Cloud recording clicked, but primary ID (id field) is null or blank. Cannot proceed with actions requiring it (like delete). Title: ${recording.title}, PrimaryID: '$primaryId'")
+                            _eventChannel.send(LibraryViewEvent.ShowSnackbar("Cannot open details: Primary recording identifier is missing."))
                         }
                     }
                     else -> {
@@ -431,6 +424,7 @@ sealed class LibraryViewEvent {
     data class ShowSnackbar(val message: String) : LibraryViewEvent()
     data class NavigateToLocalDetails(val filePath: String) : LibraryViewEvent()
     data class NavigateToCloudDetails(
+        val id: String,
         val recordingId: String,
         val title: String?,
         val fileName: String,

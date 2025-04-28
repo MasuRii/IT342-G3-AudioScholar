@@ -21,6 +21,7 @@ data class RecordingDetailsUiState(
     val durationFormatted: String = "00:00",
     val filePath: String = "",
     val remoteRecordingId: String? = null,
+    val cloudId: String? = null,
     val storageUrl: String? = null,
     val isCloudSource: Boolean = false,
 

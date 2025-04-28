@@ -15,6 +15,17 @@ import edu.cit.audioscholar.data.local.UserDataStore
 import edu.cit.audioscholar.data.local.file.RecordingFileHandler
 import edu.cit.audioscholar.data.remote.service.ApiService
 import edu.cit.audioscholar.domain.repository.*
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.auth.providers.BearerTokens
+import io.ktor.client.plugins.auth.providers.bearer
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.logging.*
+import io.ktor.http.encodedPath
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.logging.HttpLoggingInterceptor
@@ -328,5 +339,75 @@ object NetworkModule {
     @Singleton
     fun provideUserDataStore(@ApplicationContext context: Context): UserDataStore {
         return UserDataStore(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideKtorHttpClient(prefs: SharedPreferences): HttpClient {
+        Log.d(TAG, "Creating Ktor HttpClient instance.")
+        return HttpClient(OkHttp) {
+
+            engine {
+            }
+
+            defaultRequest {
+                 url(PRIMARY_BASE_URL)
+                 Log.d("$TAG-Ktor", "Applying defaultRequest with base URL: $PRIMARY_BASE_URL")
+            }
+
+            install(ContentNegotiation) {
+                json(Json {
+                    prettyPrint = true
+                    isLenient = true
+                    ignoreUnknownKeys = true
+                    encodeDefaults = true
+                })
+                Log.d("$TAG-Ktor", "Installed ContentNegotiation with Kotlinx JSON.")
+            }
+
+            install(Logging) {
+                logger = object : Logger {
+                    override fun log(message: String) {
+                        Log.v("$TAG-Ktor-Logger", message)
+                    }
+                }
+                level = LogLevel.ALL
+                 Log.d("$TAG-Ktor", "Installed Ktor Logging plugin.")
+            }
+
+            install(Auth) {
+                 bearer {
+                     loadTokens {
+                         val token = prefs.getString("auth_token", null)
+                         if (!token.isNullOrBlank()) {
+                             Log.d("$TAG-Ktor", "Auth Plugin: Loading token from prefs.")
+                             BearerTokens(token, "")
+                         } else {
+                             Log.d("$TAG-Ktor", "Auth Plugin: No token found in prefs.")
+                             null
+                         }
+                     }
+
+                     sendWithoutRequest { request ->
+                         val path = request.url.encodedPath
+                         val shouldNotSend = path.startsWith("/api/auth/")
+                         Log.d("$TAG-Ktor", "Auth Plugin: Checking sendWithoutRequest for path: $path. Should NOT send: $shouldNotSend")
+                         shouldNotSend
+                     }
+                 }
+                 Log.d("$TAG-Ktor", "Installed Ktor Auth plugin with Bearer provider.")
+            }
+            Log.i("$TAG-Ktor", "Ktor HttpClient configuration complete.")
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationRepository(
+        httpClient: HttpClient,
+        prefs: SharedPreferences
+    ): NotificationRepository {
+         Log.d(TAG, "Providing NotificationRepository implementation.")
+         return edu.cit.audioscholar.domain.repository.NotificationRepositoryImpl(httpClient, prefs)
     }
 }

@@ -1,5 +1,6 @@
 package edu.cit.audioscholar.ui.auth
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
@@ -7,17 +8,22 @@ import android.util.Patterns
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.common.GoogleApiAvailability
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import edu.cit.audioscholar.BuildConfig
 import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
-import edu.cit.audioscholar.di.ApplicationScope
 import edu.cit.audioscholar.domain.repository.AuthRepository
+import edu.cit.audioscholar.domain.repository.NotificationRepository
+import edu.cit.audioscholar.di.ApplicationScope
 import edu.cit.audioscholar.ui.main.SplashActivity
 import edu.cit.audioscholar.util.Resource
+import edu.cit.audioscholar.util.FcmTokenProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
@@ -34,7 +40,7 @@ import javax.inject.Inject
 
 enum class WelcomeMessageType {
     NEW_AFTER_ONBOARDING,
-    RETURNING // Covers both returning from logout and app restart
+    RETURNING
 }
 
 data class LoginUiState(
@@ -48,7 +54,7 @@ data class LoginUiState(
     val navigateToRecordScreen: Boolean = false,
     val isFromOnboarding: Boolean = false,
     val isFromLogout: Boolean = false,
-    val welcomeType: WelcomeMessageType = WelcomeMessageType.RETURNING // Default to returning
+    val welcomeType: WelcomeMessageType = WelcomeMessageType.RETURNING
 ) {
     val isAnyLoading: Boolean
         get() = isEmailLoginLoading || isGoogleLoginLoading || isGitHubLoginLoading
@@ -63,9 +69,11 @@ sealed class LoginScreenEvent {
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val notificationRepository: NotificationRepository,
     private val prefs: SharedPreferences,
     private val firebaseAuth: FirebaseAuth,
     @ApplicationScope private val applicationScope: CoroutineScope,
+    @ApplicationContext private val applicationContext: Context,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -108,33 +116,25 @@ class LoginViewModel @Inject constructor(
         val determinedWelcomeType: WelcomeMessageType
 
         if (isFirstLoginArg) {
-            // Came directly from Onboarding - ALWAYS show "New"
             determinedWelcomeType = WelcomeMessageType.NEW_AFTER_ONBOARDING
             Log.d(TAG, "ViewModel init: Detected isFirstLogin=true argument. Setting WelcomeType to NEW.")
-            // Mark onboarding as complete in preferences NOW
             prefs.edit().putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true).apply()
             Log.d(TAG, "ViewModel init: Marked onboarding as complete in preferences.")
 
         } else if (isFromLogoutArg) {
-            // Came directly from Logout button - ALWAYS show "Returning"
             determinedWelcomeType = WelcomeMessageType.RETURNING
             Log.d(TAG, "ViewModel init: Detected fromLogout=true argument. Setting WelcomeType to RETURNING.")
 
         } else {
-            // Neither argument is true - implies app restart
-            // Check if onboarding is done AND if they have ever logged in before
             val onboardingCompleted = prefs.getBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, false)
             val hasEverLoggedIn = prefs.getBoolean(KEY_HAS_EVER_LOGGED_IN, false)
 
             if (onboardingCompleted && hasEverLoggedIn) {
-                 // They completed onboarding previously AND have logged in at least once
                  determinedWelcomeType = WelcomeMessageType.RETURNING
                  Log.d(TAG, "ViewModel init: No args, onboarding complete AND hasEverLoggedIn is true. Setting WelcomeType to RETURNING.")
             } else {
-                 // Onboarding might be complete, but they never successfully logged in OR onboarding isn't complete yet
-                 determinedWelcomeType = WelcomeMessageType.NEW_AFTER_ONBOARDING // Treat as "New" needing first login
+                 determinedWelcomeType = WelcomeMessageType.NEW_AFTER_ONBOARDING
                  Log.d(TAG, "ViewModel init: No args, hasEverLoggedIn is false OR onboarding incomplete. Setting WelcomeType to NEW.")
-                 // Ensure onboarding complete is marked if needed (safety check)
                  if (!onboardingCompleted) {
                      prefs.edit().putBoolean(SplashActivity.KEY_ONBOARDING_COMPLETE, true).apply()
                  }
@@ -142,6 +142,39 @@ class LoginViewModel @Inject constructor(
         }
 
         _uiState.update { it.copy(welcomeType = determinedWelcomeType) }
+    }
+
+    private fun registerDeviceToken() {
+        val googleApiAvailability = GoogleApiAvailability.getInstance()
+        val resultCode = googleApiAvailability.isGooglePlayServicesAvailable(applicationContext)
+
+        if (resultCode != com.google.android.gms.common.ConnectionResult.SUCCESS) {
+            Log.w(TAG, "Google Play Services not available or out of date. FCM token registration skipped. ResultCode: $resultCode")
+            return
+        }
+
+        applicationScope.launch {
+            Log.d(TAG, "[registerDeviceToken] Attempting to get initial FCM token...")
+            val token = FcmTokenProvider.getCurrentToken()
+
+            if (token != null) {
+                Log.d(TAG, "[registerDeviceToken] Initial token retrieved: $token")
+                Log.d(TAG, "[registerDeviceToken] Calling NotificationRepository to register initial FCM token.")
+                val result = notificationRepository.registerFcmToken(token)
+                when (result) {
+                     is Resource.Success -> {
+                        Log.i(TAG, "[registerDeviceToken] Initial FCM token registration successful.")
+                     }
+                     is Resource.Error -> {
+                         val errorMessage = result.message ?: "Unknown error"
+                         Log.e(TAG, "[registerDeviceToken] Initial FCM token registration failed: $errorMessage")
+                     }
+                     else -> {}
+                }
+            } else {
+                Log.w(TAG, "[registerDeviceToken] Initial FCM Token was null after successful retrieval task.")
+            }
+        }
     }
 
     private fun triggerProfilePrefetch() {
@@ -185,12 +218,13 @@ class LoginViewModel @Inject constructor(
                     putString(KEY_AUTH_TOKEN, DEV_OFFLINE_TOKEN)
                     putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                     putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
-                    apply()
+                    commit()
                 }
                 _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
                 Log.w(TAG, "!!! OFFLINE DEV LOGIN SUCCESSFUL !!!")
             }
             triggerProfilePrefetch()
+            registerDeviceToken()
             return
         }
 
@@ -236,10 +270,11 @@ class LoginViewModel @Inject constructor(
                                 putString(KEY_AUTH_TOKEN, apiJwt)
                                 putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                                 putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
-                                apply()
+                                commit()
                             }
                             _uiState.update { it.copy(isEmailLoginLoading = false, navigateToRecordScreen = true) }
                             triggerProfilePrefetch()
+                            registerDeviceToken()
                         } else {
                             Log.w(TAG, "Backend verification successful but API JWT was null in response.")
                             _uiState.update { it.copy(isEmailLoginLoading = false, errorMessage = backendResult.message ?: "Login failed: Missing API token from server.") }
@@ -310,11 +345,12 @@ class LoginViewModel @Inject constructor(
                                     putString(KEY_AUTH_TOKEN, apiJwt)
                                     putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                                     putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
-                                    apply()
+                                    commit()
                                 }
                                 Log.d(TAG, "[GoogleSignIn] Prefs saved.")
                                 _uiState.update { it.copy(isGoogleLoginLoading = false, navigateToRecordScreen = true) }
                                 triggerProfilePrefetch()
+                                registerDeviceToken()
                                 Log.d(TAG, "[GoogleSignIn] State updated for navigation.")
                             } catch (e: Exception) {
                                 Log.e(TAG, "[GoogleSignIn] CRITICAL Exception during pref saving!", e)
@@ -346,7 +382,7 @@ class LoginViewModel @Inject constructor(
             val state = UUID.randomUUID().toString()
             with(prefs.edit()) {
                 putString(KEY_GITHUB_AUTH_STATE, state)
-                apply()
+                commit()
             }
             Log.d(TAG, "Generated and saved GitHub state to SharedPreferences: $state")
 
@@ -374,7 +410,7 @@ class LoginViewModel @Inject constructor(
         if (code.isNullOrBlank()) {
             Log.w(TAG, "[GitHubRedirect] GitHub redirect failed: Code is null or blank.")
             _uiState.update { it.copy(isGitHubLoginLoading = false, errorMessage = "GitHub login failed: Authorization code missing.") }
-            with(prefs.edit()) { remove(KEY_GITHUB_AUTH_STATE).apply() }
+            with(prefs.edit()) { remove(KEY_GITHUB_AUTH_STATE).commit() }
             return
         }
 
@@ -384,7 +420,7 @@ class LoginViewModel @Inject constructor(
 
         with(prefs.edit()) {
             remove(KEY_GITHUB_AUTH_STATE)
-            apply()
+            commit()
         }
 
         if (expectedState == null) {
@@ -420,13 +456,14 @@ class LoginViewModel @Inject constructor(
                                 putString(KEY_AUTH_TOKEN, apiJwt)
                                 putBoolean(SplashActivity.KEY_IS_LOGGED_IN, true)
                                 putBoolean(KEY_HAS_EVER_LOGGED_IN, true)
-                                apply()
+                                commit()
                             }
                             Log.d(TAG, "[GitHubRedirect] Prefs saved.")
                             signalActivity = true
                             finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = null)
                             triggerProfilePrefetch()
                             prefetchTriggered = true
+                            registerDeviceToken()
                         } catch (e: Exception) {
                             Log.e(TAG, "[GitHubRedirect] CRITICAL Exception during pref saving!", e)
                             finalState = finalState.copy(isGitHubLoginLoading = false, errorMessage = "Critical error after login verification.")

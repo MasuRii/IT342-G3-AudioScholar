@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.os.Build
 import dagger.hilt.android.HiltAndroidApp
 import edu.cit.audioscholar.service.RecordingService
+import edu.cit.audioscholar.service.PROCESSING_COMPLETE_CHANNEL_ID
+import edu.cit.audioscholar.service.GENERAL_NOTIFICATION_CHANNEL_ID
 
 const val UPLOAD_CHANNEL_ID = "upload_status_channel"
 
@@ -22,13 +24,21 @@ class AudioScholarApplication : Application() {
             val notificationManager: NotificationManager =
                 getSystemService(NOTIFICATION_SERVICE) as NotificationManager
 
-            val uploadChannelName = getString(R.string.notification_channel_name_upload)
-            val uploadChannelDescription = getString(R.string.notification_channel_desc_upload)
-            val uploadChannelImportance = NotificationManager.IMPORTANCE_DEFAULT
-            val uploadChannel = NotificationChannel(UPLOAD_CHANNEL_ID, uploadChannelName, uploadChannelImportance).apply {
-                description = uploadChannelDescription
+            val generalChannelName = "General Notifications"
+            val generalChannelDescription = "General app notifications"
+            val generalChannelImportance = NotificationManager.IMPORTANCE_DEFAULT
+            val generalChannel = NotificationChannel(GENERAL_NOTIFICATION_CHANNEL_ID, generalChannelName, generalChannelImportance).apply {
+                description = generalChannelDescription
             }
-            notificationManager.createNotificationChannel(uploadChannel)
+            notificationManager.createNotificationChannel(generalChannel)
+
+            val processingChannelName = "Processing Complete"
+            val processingChannelDescription = "Notifications for when audio processing is finished"
+            val processingChannelImportance = NotificationManager.IMPORTANCE_DEFAULT
+            val processingChannel = NotificationChannel(PROCESSING_COMPLETE_CHANNEL_ID, processingChannelName, processingChannelImportance).apply {
+                description = processingChannelDescription
+            }
+            notificationManager.createNotificationChannel(processingChannel)
 
             val recordingChannelName = getString(R.string.notification_channel_name_recording)
             val recordingChannelDescription = getString(R.string.notification_channel_desc_recording)

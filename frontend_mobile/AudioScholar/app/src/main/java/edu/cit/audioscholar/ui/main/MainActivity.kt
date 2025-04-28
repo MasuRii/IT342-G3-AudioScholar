@@ -31,11 +31,12 @@ import androidx.navigation.*
 import androidx.navigation.compose.*
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.google.firebase.messaging.FirebaseMessaging
 import dagger.hilt.android.AndroidEntryPoint
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
+import edu.cit.audioscholar.service.RECORDING_DETAIL_DESTINATION
+import edu.cit.audioscholar.service.RECORDING_ID_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
 import edu.cit.audioscholar.ui.about.AboutScreen
 import edu.cit.audioscholar.ui.auth.*
@@ -92,8 +93,8 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
         }
 
         fun createCloudRoute(
-            id: String, // Primary UUID (required for deletion)
-            recordingId: String, // Secondary ID (used for other operations)
+            id: String,
+            recordingId: String,
             title: String?,
             fileName: String?,
             timestampSeconds: Long?,
@@ -172,15 +173,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         Log.d("MainActivity", "Using start destination: $startDestination")
-
-        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-            if (!task.isSuccessful) {
-                Log.w("MainActivity", "Fetching FCM registration token failed", task.exception)
-                return@addOnCompleteListener
-            }
-            val token = task.result
-            Log.d("MainActivity", "Manually fetched FCM token: $token")
-        }
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -295,25 +287,57 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleNavigationIntent(intent: Intent?, navController: NavHostController) {
-        Log.d("MainActivity", "[handleNavigationIntent] Checking intent for non-OAuth navigation...")
+        Log.d("MainActivity", "[handleNavigationIntent] Checking intent for navigation...")
         logIntentExtras("handleNavigationIntent", intent)
 
-        if (intent?.action == Intent.ACTION_VIEW && intent.data?.scheme == LoginViewModel.GITHUB_REDIRECT_URI_SCHEME) {
-            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping.")
+        if (intent == null) return
+
+        if (intent.action == Intent.ACTION_VIEW && intent.data?.scheme == LoginViewModel.GITHUB_REDIRECT_URI_SCHEME) {
+            Log.d("MainActivity", "[handleNavigationIntent] Intent was GitHub redirect, skipping navigation handling here.")
             return
         }
 
-        val navigateTo = intent?.getStringExtra(NAVIGATE_TO_EXTRA)
+        val navigateTo = intent.getStringExtra(NAVIGATE_TO_EXTRA)
         Log.d("MainActivity", "[handleNavigationIntent] Value from getExtra(NAVIGATE_TO_EXTRA): $navigateTo")
 
-        if (navigateTo == UPLOAD_SCREEN_VALUE) {
-            Log.w("MainActivity", "[handleNavigationIntent] Intent requested navigation to removed Upload screen. Ignoring.")
-            intent?.removeExtra(NAVIGATE_TO_EXTRA)
-        } else if (navigateTo != null) {
-            Log.d("MainActivity", "[handleNavigationIntent] Received navigation intent for target: $navigateTo (not implemented or handled elsewhere).")
-            intent?.removeExtra(NAVIGATE_TO_EXTRA)
-        } else {
-            Log.d("MainActivity", "[handleNavigationIntent] No specific navigation target in intent extras.")
+        when (navigateTo) {
+            RECORDING_DETAIL_DESTINATION -> {
+                val recordingId = intent.getStringExtra(RECORDING_ID_EXTRA)
+                Log.i("MainActivity", "[handleNavigationIntent] Intent requests navigation to Recording Details for recordingId: $recordingId")
+                if (!recordingId.isNullOrBlank()) {
+                    val route = Screen.RecordingDetails.createCloudRoute(
+                        id = recordingId,
+                        recordingId = recordingId,
+                        title = null,
+                        fileName = null,
+                        timestampSeconds = null,
+                        storageUrl = null
+                    )
+                    if (route != "recording_details/error") {
+                         Log.d("MainActivity", "[handleNavigationIntent] Navigating to: $route")
+                         navController.navigate(route) {
+                             launchSingleTop = true
+                         }
+                    } else {
+                        Log.e("MainActivity", "[handleNavigationIntent] Failed to create route for recording details.")
+                    }
+                } else {
+                    Log.w("MainActivity", "[handleNavigationIntent] Destination is RECORDING_DETAIL, but recordingId extra is missing or blank.")
+                }
+                intent.removeExtra(NAVIGATE_TO_EXTRA)
+                intent.removeExtra(RECORDING_ID_EXTRA)
+            }
+            UPLOAD_SCREEN_VALUE -> {
+                Log.w("MainActivity", "[handleNavigationIntent] Intent requested navigation to removed Upload screen. Ignoring.")
+                intent.removeExtra(NAVIGATE_TO_EXTRA)
+            }
+            null -> {
+                Log.d("MainActivity", "[handleNavigationIntent] No specific navigation target in intent extras (NAVIGATE_TO_EXTRA is null)." )
+            }
+            else -> {
+                Log.d("MainActivity", "[handleNavigationIntent] Received unhandled navigation target: $navigateTo")
+                intent.removeExtra(NAVIGATE_TO_EXTRA)
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ plugins {
     id("com.google.dagger.hilt.android")
     alias(libs.plugins.compose.compiler)
     id("com.google.gms.google-services")
+    id("org.jetbrains.kotlin.plugin.serialization") version "1.9.24"
 }
 
 android {
@@ -112,6 +113,27 @@ dependencies {
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    // Ktor Client Core
+    implementation("io.ktor:ktor-client-core:2.3.12")
+
+    // Ktor Client Engine (OkHttp)
+    implementation("io.ktor:ktor-client-okhttp:2.3.12")
+
+    // Ktor Content Negotiation
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
+
+    // Ktor Kotlinx Serialization JSON
+    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
+
+    // Ktor Logging
+    implementation("io.ktor:ktor-client-logging:2.3.12")
+
+    // Ktor Auth (For Bearer Token)
+    implementation("io.ktor:ktor-client-auth:2.3.12")
+
+    // Kotlinx Serialization Core
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 }
 
 kapt {

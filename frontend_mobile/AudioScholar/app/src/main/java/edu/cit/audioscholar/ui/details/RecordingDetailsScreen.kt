@@ -267,16 +267,18 @@ fun RecordingDetailsScreen(
                                         modifier = Modifier.weight(1f)
                                     )
                                     if (!uiState.isProcessing && !uiState.isDeleting) {
-                                        IconButton(
-                                            onClick = viewModel::onTitleEditRequested,
-                                            modifier = Modifier.size(36.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.Edit,
-                                                contentDescription = "Edit title",
-                                                modifier = Modifier.size(20.dp),
-                                                tint = MaterialTheme.colorScheme.primary
-                                            )
+                                        if (!uiState.isCloudSource) {
+                                            IconButton(
+                                                onClick = viewModel::onTitleEditRequested,
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Edit,
+                                                    contentDescription = "Edit title",
+                                                    modifier = Modifier.size(20.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
                                         }
                                     }
                                 }

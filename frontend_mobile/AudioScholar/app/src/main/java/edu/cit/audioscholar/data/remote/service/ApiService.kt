@@ -86,4 +86,9 @@ interface ApiService {
         @Path("recordingId") recordingId: String
     ): Response<AudioMetadataDto>
 
+    @POST("/api/users/me/fcm-token")
+    suspend fun registerFcmToken(
+        @Body fcmTokenRequest: FcmTokenRequestDto
+    ): Response<Unit>
+
 }

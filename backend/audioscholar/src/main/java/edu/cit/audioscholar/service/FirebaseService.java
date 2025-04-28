@@ -4,11 +4,12 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import javax.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.lang.Nullable;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
@@ -19,12 +20,14 @@ import com.google.api.core.ApiFuture;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.*;
 import com.google.firebase.FirebaseApp;
+import com.google.firebase.FirebaseOptions;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
 import com.google.firebase.auth.UserRecord.UpdateRequest;
 import com.google.firebase.cloud.FirestoreClient;
+import com.google.firebase.messaging.*;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.LearningRecommendation;
@@ -35,32 +38,61 @@ public class FirebaseService {
 
     private static final Logger log = LoggerFactory.getLogger(FirebaseService.class);
 
+    private Firestore firestore;
+    private FirebaseAuth firebaseAuth;
+    private FirebaseMessaging firebaseMessaging;
+
     private final String audioMetadataCollectionName;
-    private final String summariesCollectionName;
     private final String recommendationsCollectionName;
     private static final int DEFAULT_PAGE_SIZE = 20;
 
     private final FirebaseApp firebaseApp;
+    private final UserService userService;
 
     @Value("${google.oauth.web.client.id}")
     private String webClientIdFromTokenAud;
     @Value("${google.oauth.android.client.id}")
     private String androidClientId;
 
-    @Autowired
+    @Value("classpath:firebase-service-account.json")
+    private Resource serviceAccountResource;
+
     public FirebaseService(
             @Value("${firebase.firestore.collection.audiometadata}") String audioMetadataCollectionName,
-            @Value("${firebase.firestore.collection.summaries}") String summariesCollectionName,
             @Value("${firebase.firestore.collection.recommendations}") String recommendationsCollectionName,
-            FirebaseApp firebaseApp) {
+            FirebaseApp firebaseApp, @Lazy UserService userService) {
         this.audioMetadataCollectionName = audioMetadataCollectionName;
-        this.summariesCollectionName = summariesCollectionName;
         this.recommendationsCollectionName = recommendationsCollectionName;
         this.firebaseApp = firebaseApp;
+        this.userService = userService;
+    }
+
+    @PostConstruct
+    private void initializeFirebase() {
+        try {
+            if (FirebaseApp.getApps().isEmpty()) {
+                FirebaseOptions options =
+                        FirebaseOptions.builder()
+                                .setCredentials(com.google.auth.oauth2.GoogleCredentials
+                                        .fromStream(serviceAccountResource.getInputStream()))
+                                .build();
+                FirebaseApp.initializeApp(options);
+                log.info("Firebase Admin SDK initialized successfully.");
+            } else {
+                log.info("Firebase Admin SDK already initialized.");
+            }
+            this.firestore = FirestoreClient.getFirestore(this.firebaseApp);
+            this.firebaseAuth = FirebaseAuth.getInstance(this.firebaseApp);
+            this.firebaseMessaging = FirebaseMessaging.getInstance(this.firebaseApp);
+
+        } catch (IOException e) {
+            log.error("Failed to initialize Firebase Admin SDK", e);
+            throw new IllegalStateException("Failed to initialize Firebase Admin SDK", e);
+        }
     }
 
     private FirebaseAuth getFirebaseAuth() {
-        return FirebaseAuth.getInstance(this.firebaseApp);
+        return this.firebaseAuth;
     }
 
     public String getAudioMetadataCollectionName() {
@@ -68,7 +100,7 @@ public class FirebaseService {
     }
 
     private Firestore getFirestore() {
-        return FirestoreClient.getFirestore(this.firebaseApp);
+        return this.firestore;
     }
 
     public FirebaseToken verifyFirebaseIdToken(String idToken) throws FirebaseAuthException {
@@ -216,7 +248,6 @@ public class FirebaseService {
         }
     }
 
-
     public String saveData(String collection, String document, Object dataPojo) {
         if (dataPojo == null) {
             log.error("Attempted to save null data object to {}/{}", collection, document);
@@ -311,7 +342,6 @@ public class FirebaseService {
         }
     }
 
-
     public String deleteData(String collection, String document) {
         try {
             Firestore firestore = getFirestore();
@@ -348,8 +378,6 @@ public class FirebaseService {
             throw new FirestoreInteractionException("Error querying collection in Firestore", e);
         }
     }
-
-
 
     public void updateAudioMetadataStatus(String metadataId, ProcessingStatus status)
             throws FirestoreInteractionException {
@@ -414,7 +442,7 @@ public class FirebaseService {
     }
 
     public List<AudioMetadata> getAudioMetadataByUserId(String userId, int pageSize,
-            @Nullable String lastDocumentId) {
+            String lastDocumentId) {
         if (!StringUtils.hasText(userId)) {
             log.warn("Attempted to get AudioMetadata with blank userId.");
             return Collections.emptyList();
@@ -512,7 +540,6 @@ public class FirebaseService {
         }
     }
 
-
     public AudioMetadata getAudioMetadataById(String metadataId) {
         if (!StringUtils.hasText(metadataId)) {
             log.warn("Attempted to get AudioMetadata with blank ID.");
@@ -550,8 +577,6 @@ public class FirebaseService {
                     "Unexpected error retrieving AudioMetadata by ID " + metadataId, e);
         }
     }
-
-
 
     public void saveLearningRecommendations(List<LearningRecommendation> recommendations)
             throws FirestoreInteractionException {
@@ -637,30 +662,6 @@ public class FirebaseService {
         }
     }
 
-    private Map<String, Object> convertToMap(AudioMetadata metadata) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("userId", metadata.getUserId());
-        map.put("fileName", metadata.getFileName());
-        map.put("fileSize", metadata.getFileSize());
-        map.put("contentType", metadata.getContentType());
-        map.put("title", Objects.toString(metadata.getTitle(), ""));
-        map.put("description", Objects.toString(metadata.getDescription(), ""));
-        map.put("nhostFileId", metadata.getNhostFileId());
-        map.put("storageUrl", metadata.getStorageUrl());
-        map.put("uploadTimestamp",
-                metadata.getUploadTimestamp() != null ? metadata.getUploadTimestamp()
-                        : Timestamp.now());
-        map.put("status", metadata.getStatus() != null ? metadata.getStatus().name()
-                : ProcessingStatus.UPLOADED.name());
-        if (metadata.getRecordingId() != null) {
-            map.put("recordingId", metadata.getRecordingId());
-        }
-        if (metadata.getSummaryId() != null) {
-            map.put("summaryId", metadata.getSummaryId());
-        }
-        return map;
-    }
-
     private AudioMetadata fromDocumentSnapshot(DocumentSnapshot document) {
         if (document == null || !document.exists()) {
             log.warn("Attempted to map null or non-existent document snapshot.");
@@ -714,7 +715,6 @@ public class FirebaseService {
         }
     }
 
-
     private String getString(Map<String, Object> data, String key, String docId) {
         Object value = data.get(key);
         if (value instanceof String) {
@@ -756,4 +756,114 @@ public class FirebaseService {
         return null;
     }
 
+    public MulticastMessage buildProcessingCompleteMessage(String userId, String recordingId,
+            String summaryId) {
+        log.info(
+                "Building FCM processing complete message for userId: {}, recordingId: {}, summaryId: {}",
+                userId, recordingId, summaryId);
+
+        List<String> tokens;
+        try {
+            tokens = userService.getFcmTokensForUser(userId);
+        } catch (FirestoreInteractionException e) {
+            log.error("Failed to retrieve FCM tokens for user {} due to Firestore error: {}",
+                    userId, e.getMessage(), e);
+            return null;
+        }
+
+        if (tokens == null || tokens.isEmpty()) {
+            log.warn("No FCM tokens found for user {}. Cannot build notification message.", userId);
+            return null;
+        }
+        log.debug("Found {} tokens for user {}", tokens.size(), userId);
+
+        Map<String, String> dataPayload = Map.of("type", "processingComplete", "recordingId",
+                recordingId, "summaryId", summaryId);
+
+        AndroidConfig androidConfig =
+                AndroidConfig.builder().setPriority(AndroidConfig.Priority.HIGH).build();
+
+        Map<String, String> apnsHeaders =
+                Map.of("apns-priority", "5", "apns-push-type", "background");
+        Aps aps = Aps.builder().setContentAvailable(true).build();
+
+        ApnsConfig apnsConfig = ApnsConfig.builder().putAllHeaders(apnsHeaders).setAps(aps).build();
+
+        MulticastMessage message =
+                MulticastMessage.builder().putAllData(dataPayload).setAndroidConfig(androidConfig)
+                        .setApnsConfig(apnsConfig).addAllTokens(tokens).build();
+
+        log.info("Successfully built FCM MulticastMessage for {} tokens, user {}, recording {}",
+                tokens.size(), userId, recordingId);
+        return message;
+    }
+
+    public void sendFcmMessage(MulticastMessage message, List<String> tokens, String userId) {
+        if (message == null || tokens == null || tokens.isEmpty() || userId == null
+                || userId.isBlank()) {
+            log.warn("Cannot send FCM message: message, token list, or userId is null or empty.");
+            return;
+        }
+        FirebaseMessaging messagingInstance = this.firebaseMessaging;
+        log.info("Attempting to send FCM multicast message to {} recipients for user {}.",
+                tokens.size(), userId);
+        List<String> unregisteredTokens = new ArrayList<>();
+        try {
+            BatchResponse response = messagingInstance.sendEachForMulticast(message);
+            int successCount = response.getSuccessCount();
+            int failureCount = response.getFailureCount();
+            log.info("FCM multicast send completed for user {}. Success: {}, Failure: {}", userId,
+                    successCount, failureCount);
+
+            if (failureCount > 0) {
+                log.warn("Some FCM messages failed to send for user {}. Failures: {}", userId,
+                        failureCount);
+                List<SendResponse> responses = response.getResponses();
+                for (int i = 0; i < responses.size(); i++) {
+                    if (!responses.get(i).isSuccessful()) {
+                        if (i < tokens.size()) {
+                            String failedToken = tokens.get(i);
+                            FirebaseMessagingException e = responses.get(i).getException();
+                            if (e != null) {
+                                log.warn(
+                                        "FCM message failed for token {} (user {}): ErrorCode={}, Message={}",
+                                        failedToken, userId, e.getMessagingErrorCode(),
+                                        e.getMessage());
+                                if (e.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED) {
+                                    unregisteredTokens.add(failedToken);
+                                    log.info(
+                                            "Identified unregistered token {} for user {} for cleanup.",
+                                            failedToken, userId);
+                                }
+                            } else {
+                                log.warn(
+                                        "FCM message failed for token {} (user {}), but no exception details available.",
+                                        failedToken, userId);
+                            }
+                        } else {
+                            log.error(
+                                    "Index {} out of bounds for token list size {} while processing failures for user {}. Cannot log failed token.",
+                                    i, tokens.size(), userId);
+                        }
+                    }
+                }
+            }
+        } catch (FirebaseMessagingException e) {
+            log.error("Failed to send FCM multicast message for user {}: ErrorCode={}, Message={}",
+                    userId, e.getMessagingErrorCode(), e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error sending FCM multicast message for user {}.", userId, e);
+        }
+
+        if (!unregisteredTokens.isEmpty()) {
+            log.info("Initiating cleanup for {} unregistered FCM tokens for user {}.",
+                    unregisteredTokens.size(), userId);
+            try {
+                userService.removeFcmTokens(userId, unregisteredTokens);
+            } catch (Exception e) {
+                log.error("Error during FCM token cleanup for user {}: {}", userId, e.getMessage(),
+                        e);
+            }
+        }
+    }
 }

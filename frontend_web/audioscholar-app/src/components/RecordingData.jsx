@@ -211,7 +211,7 @@ const RecordingData = () => {
       <header className="bg-[#1A365D] shadow-sm py-4 sticky top-0 z-10">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
           {/* Keep Logo/Brand */}
-          <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
+          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
 
           {/* Right side actions (back to list) */}
           <div className="flex items-center space-x-2">
@@ -233,17 +233,17 @@ const RecordingData = () => {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 
           {/* Top Section: Title, Meta, Actions */}
-          <div className="bg-[#1A365D] text-white rounded-lg shadow-lg p-6 mb-8">
+          <div className="bg-gradient-to-r from-[#1A365D] to-[#2D8A8A] text-white rounded-lg shadow-lg p-6 md:p-8 mb-8"> {/* Gradient, more padding */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               {/* Left side: Title and Meta */}
               <div>
                 <h1 className="text-3xl font-bold mb-2">{recordingData.title || 'Untitled Recording'}</h1>
-                <div className="flex items-center space-x-4 text-sm text-gray-300 mb-4">
-                  {/* Add Course Code/Instructor here if available in data */}
-                   {/* <span>CS401</span>
-                   <span>•</span>
-                   <span>Dr. Sarah Miller</span>
-                   <span>•</span> */}
+                <div className="flex items-center flex-wrap space-x-4 text-sm text-indigo-100 mb-4"> {/* Changed color, allow wrap */} 
+                   {/* Add Course Code/Instructor here if available in data */}
+                    {/* <span>CS401</span>
+                    <span>•</span>
+                    <span>Dr. Sarah Miller</span>
+                    <span>•</span> */}
                    <span>{formatDate(recordingData.uploadTimestamp)}</span>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -258,11 +258,11 @@ const RecordingData = () => {
               </div>
 
               {/* Right side: Action Buttons */}
-              <div className="flex space-x-3 mt-4 md:mt-0">
-                <button className="inline-flex items-center bg-teal-500 hover:bg-teal-600 text-white font-medium py-2 px-4 rounded-md text-sm transition-colors disabled:opacity-50" disabled> {/* Placeholder */}
+              <div className="flex space-x-3 mt-4 md:mt-0 flex-shrink-0"> {/* Added flex-shrink-0 */}
+                <button className="inline-flex items-center bg-teal-500 hover:bg-teal-600 text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 ease-in-out shadow hover:shadow-md transform hover:-translate-y-0.5 disabled:opacity-50" disabled> {/* Added transition, shadow, transform */}
                   <DownloadIcon /> Download Summary
                 </button>
-                <button className="inline-flex items-center bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md text-sm transition-colors disabled:opacity-50" disabled> {/* Placeholder */}
+                <button className="inline-flex items-center bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 ease-in-out shadow hover:shadow-md transform hover:-translate-y-0.5 disabled:opacity-50" disabled> {/* Added transition, shadow, transform */}
                   <ShareIcon /> Share
                 </button>
               </div>
@@ -274,30 +274,30 @@ const RecordingData = () => {
             <nav className="-mb-px flex space-x-8" aria-label="Tabs">
               <button
                 onClick={() => setActiveTab('summary')}
-                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150 ease-in-out ${
                   activeTab === 'summary'
                     ? 'border-teal-500 text-teal-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'
                 }`}
               >
                 Summary
               </button>
               <button
                 onClick={() => setActiveTab('transcript')}
-                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150 ease-in-out ${
                   activeTab === 'transcript'
                     ? 'border-teal-500 text-teal-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'
                 }`}
               >
                 Transcript
               </button>
               <button
                 onClick={() => setActiveTab('notes')}
-                className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150 ease-in-out ${
                   activeTab === 'notes'
                     ? 'border-teal-500 text-teal-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'
                 }`}
               >
                 My Notes
@@ -407,8 +407,8 @@ const RecordingData = () => {
           </div>
 
           {/* --- Recommendations Section (Below Tab Content) --- */}
-           <div className="mt-8">
-             <h2 className="text-2xl font-semibold text-gray-800 mb-4">Learning Recommendations</h2>
+           <div className="mt-10"> {/* Increased mt-8 to mt-10 */} 
+             <h2 className="text-2xl font-semibold text-gray-800 mb-5">Learning Recommendations</h2> {/* Increased mb-4 to mb-5 */} 
              {recommendationsLoading && <p className="text-gray-600">Loading recommendations...</p>}
              {recommendationsError && <p className="text-red-500">{recommendationsError}</p>}
              {!recommendationsLoading && !recommendationsError && recommendationsData.length > 0 && (
@@ -419,17 +419,17 @@ const RecordingData = () => {
                      href={`https://www.youtube.com/watch?v=${rec.videoId}`}
                      target="_blank"
                      rel="noopener noreferrer"
-                     className="block border rounded-lg overflow-hidden hover:shadow-lg transition-shadow bg-white group"
+                     className="block border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 ease-in-out bg-white group transform hover:-translate-y-1"
                    >
                      {rec.thumbnailUrl ? (
                        <img src={rec.thumbnailUrl} alt={rec.title} className="w-full h-32 object-cover" />
                      ) : (
-                       <div className="w-full h-32 bg-gray-200 flex items-center justify-center text-gray-400">
+                       <div className="w-full h-32 bg-gray-100 flex items-center justify-center text-gray-400"> {/* Changed bg-gray-200 to bg-gray-100 */} 
                          <span>No Thumbnail</span>
                        </div>
                      )}
                      <div className="p-3">
-                       <h4 className="font-semibold text-sm text-gray-800 truncate group-hover:text-teal-600" title={rec.title}>{rec.title}</h4>
+                       <h4 className="font-semibold text-sm text-gray-800 group-hover:text-teal-600 transition-colors duration-150" title={rec.title}>{rec.title}</h4> {/* Added transition */} 
                        {/* Description Snippet Removed as per Figma style focus */}
                        {/* {rec.descriptionSnippet && (
                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">{rec.descriptionSnippet}</p>

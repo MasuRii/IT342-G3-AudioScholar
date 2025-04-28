@@ -143,7 +143,7 @@ const RecordingList = () => {
       {/* Header updated to include Profile button */}
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
-          <Link to="/" className="text-2xl font-bold text-white">AudioScholar</Link>
+          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
           {/* Updated div for header buttons */}
           <div className="flex items-center space-x-2"> {/* Use items-center and space-x-2 */}
             <Link
@@ -191,9 +191,9 @@ const RecordingList = () => {
               <h1 className="text-3xl font-bold text-gray-800">Recording List</h1>
               <Link
                 to="/upload"
-                className="bg-[#2D8A8A] text-white py-2 px-4 rounded-lg font-medium hover:bg-[#236b6b] transition flex items-center" // Added flex items-center
+                className="bg-[#2D8A8A] text-white py-2 px-5 rounded-lg font-medium hover:bg-[#236b6b] transition-colors duration-200 flex items-center shadow hover:shadow-md transform hover:-translate-y-0.5" // Refined styling
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"> {/* Added Icon */}
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 12v6m0 0l-3-3m3 3l3-3" />
                  </svg>
                  New Upload {/* Removed + sign */}
@@ -217,41 +217,41 @@ const RecordingList = () => {
               <div className="bg-white rounded-lg shadow-md overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-100"> {/* Changed bg-gray-50 to bg-gray-100 */}
                       <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Title</th> {/* Increased padding, font-weight, text color */}
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th> {/* Increased padding, font-weight, text color */}
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Duration</th> {/* Increased padding, font-weight, text color */}
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th> {/* Increased padding, font-weight, text color */}
                          {/* Added View Data header */}
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">View Data</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">View Data</th> {/* Increased padding, font-weight, text color */}
+                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th> {/* Increased padding, font-weight, text color */}
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {/* Map over the fetched recordings */}
                       {recordings.map((recording) => (
                         // Use recording.id as the key
-                        <tr key={recording.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
+                        <tr key={recording.id} className="hover:bg-gray-50 transition-colors duration-150"> {/* Added transition */}
+                          <td className="px-6 py-5 whitespace-nowrap"> {/* Increased py-4 to py-5 */}
                             {/* Display title as simple text */}
                             <div className="text-sm font-medium text-gray-900">
                                 {recording.title || 'Untitled Recording'}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-5 whitespace-nowrap"> {/* Increased py-4 to py-5 */}
                             {/* Display date from backend data (assuming it's in a format Date can parse) */}
                             {/* You might need to format the date depending on your backend's output */}
                              <div className="text-sm text-gray-500">{new Date(recording.uploadDate).toLocaleDateString()}</div> {/* Assuming backend provides 'uploadDate' */}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-5 whitespace-nowrap"> {/* Increased py-4 to py-5 */}
                             {/* Display duration from backend data */}
                             <div className="text-sm text-gray-500">{recording.duration || 'N/A'}</div> {/* Assuming backend provides 'duration' */}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="px-6 py-5 whitespace-nowrap"> {/* Increased py-4 to py-5 */}
                              {/* Display status from backend data and apply styles (using lowercase check) */}
                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed' 
+                              recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed'
                                  ? 'bg-green-100 text-green-800'
                                  : recording.status?.toLowerCase() === 'processing'
                                    ? 'bg-yellow-100 text-yellow-800'
@@ -261,9 +261,9 @@ const RecordingList = () => {
                             </span>
                           </td>
                            {/* Add new Cell for View Data Link (using lowercase check) */}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <td className="px-6 py-5 whitespace-nowrap text-sm font-medium"> {/* Increased py-4 to py-5 */}
                               {(recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed') ? (
-                                 <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b]">
+                                 <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b] transition-colors duration-150"> {/* Added transition */}
                                      View Data
                                  </Link>
                               ) : (
@@ -272,11 +272,11 @@ const RecordingList = () => {
                                  </span>
                               )}
                            </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <td className="px-6 py-5 whitespace-nowrap text-sm font-medium"> {/* Increased py-4 to py-5 */}
                             {/* Delete button - add onClick handler */}
                             <button
                               onClick={() => handleDelete(recording.id)} // Call handleDelete with the recording's ID
-                              className="text-red-600 hover:text-red-900" // Use red color for delete
+                              className="text-red-600 hover:text-red-800 transition-colors duration-150" // Use red color for delete, slightly darker hover, added transition
                             >
                               Delete
                             </button>

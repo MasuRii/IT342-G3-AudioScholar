@@ -290,8 +290,6 @@
     <string name="about_contact_email_subject">AudioScholar Mobile App Support</string>
     <string name="about_contact_email_body">Please describe your issue or feedback here:\n\n</string>
     <string name="about_contact_email_address">audioscholar.support@example.com</string>
-    <string name="about_privacy_policy_url">https://audioscholar.example.com/privacy</string>
-    <string name="about_terms_of_use_url">https://audioscholar.example.com/terms</string>
     <string name="cd_about_app_logo">AudioScholar App Logo</string>
 
     <string name="onboarding_skip">Skip</string>
@@ -337,5 +335,18 @@
     <string name="info_cloud_recording_deleted">Cloud recording deleted.</string>
     <string name="info_local_recording_deleted">Local recording deleted.</string>
     <string name="error_delete_failed_local">Failed to delete the local recording file.</string>
+
+    <string name="settings_sync_mode_automatic">Automatic</string>
+    <string name="settings_sync_mode_manual">Manual</string>
+    <string name="settings_sync_mode_wifi_only">Wi-Fi Only</string>
+    <string name="settings_sync_freq_daily">Daily</string>
+    <string name="settings_sync_freq_weekly">Weekly</string>
+    <string name="settings_sync_freq_monthly">Monthly</string>
+    <string name="settings_dialog_title_sync_mode">Select Sync Mode</string>
+    <string name="settings_dialog_title_sync_frequency">Select Sync Frequency</string>
+
+    <string name="settings_url_help_center">https://rentry.co/it342-audioscholar-privacy-policy</string>
+    <string name="settings_url_privacy_policy">https://rentry.co/it342-audioscholar-privacy</string>
+    <string name="settings_url_terms_service">https://rentry.co/it342-audioscholar-termsofservice</string>
 
 </resources>

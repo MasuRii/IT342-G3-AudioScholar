@@ -38,6 +38,7 @@ import edu.cit.audioscholar.service.NAVIGATE_TO_EXTRA
 import edu.cit.audioscholar.service.RECORDING_DETAIL_DESTINATION
 import edu.cit.audioscholar.service.RECORDING_ID_EXTRA
 import edu.cit.audioscholar.service.UPLOAD_SCREEN_VALUE
+import edu.cit.audioscholar.service.LIBRARY_CLOUD_DESTINATION
 import edu.cit.audioscholar.ui.about.AboutScreen
 import edu.cit.audioscholar.ui.auth.*
 import edu.cit.audioscholar.ui.details.RecordingDetailsScreen
@@ -330,6 +331,14 @@ class MainActivity : ComponentActivity() {
             UPLOAD_SCREEN_VALUE -> {
                 Log.w("MainActivity", "[handleNavigationIntent] Intent requested navigation to removed Upload screen. Ignoring.")
                 intent.removeExtra(NAVIGATE_TO_EXTRA)
+            }
+            LIBRARY_CLOUD_DESTINATION -> {
+                Log.i("MainActivity", "[handleNavigationIntent] Intent requests navigation to Library (Cloud). Navigating...")
+                navController.navigate(Screen.Library.route) {
+                    launchSingleTop = true
+                }
+                intent.removeExtra(NAVIGATE_TO_EXTRA)
+                intent.removeExtra(RECORDING_ID_EXTRA)
             }
             null -> {
                 Log.d("MainActivity", "[handleNavigationIntent] No specific navigation target in intent extras (NAVIGATE_TO_EXTRA is null)." )

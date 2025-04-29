@@ -629,7 +629,7 @@ class RecordingService : Service() {
         val builder = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title_recording))
             .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_mic)
+            .setSmallIcon(R.mipmap.ic_audioscholar)
             .setLargeIcon(largeIconBitmap)
             .setContentIntent(pendingIntent)
             .setOngoing(true)

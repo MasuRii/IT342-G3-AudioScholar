@@ -211,7 +211,7 @@ fun AboutScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 TextButton(
-                    onClick = { uriHandler.openUri(context.getString(R.string.about_privacy_policy_url)) },
+                    onClick = { uriHandler.openUri(context.getString(R.string.settings_url_privacy_policy)) },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary
                     )
@@ -219,7 +219,7 @@ fun AboutScreen(
                     Text(stringResource(id = R.string.about_link_privacy_policy))
                 }
                 TextButton(
-                    onClick = { uriHandler.openUri(context.getString(R.string.about_terms_of_use_url)) },
+                    onClick = { uriHandler.openUri(context.getString(R.string.settings_url_terms_service)) },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary
                     )

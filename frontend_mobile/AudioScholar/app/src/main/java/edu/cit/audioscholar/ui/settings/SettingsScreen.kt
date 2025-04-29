@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +51,8 @@ import edu.cit.audioscholar.domain.model.QualitySetting
 import edu.cit.audioscholar.ui.main.Screen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import edu.cit.audioscholar.ui.settings.SyncMode
+import edu.cit.audioscholar.ui.settings.SyncFrequency
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,12 +62,17 @@ fun SettingsScreen(
     scope: CoroutineScope,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    LocalContext.current
+    val context = LocalContext.current
     val showThemeDialog = remember { mutableStateOf(false) }
     val showQualityDialog = remember { mutableStateOf(false) }
+    val showSyncModeDialog = remember { mutableStateOf(false) }
+    val showSyncFrequencyDialog = remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
 
     val selectedTheme by viewModel.selectedTheme.collectAsState()
     val selectedQuality by viewModel.selectedQuality.collectAsState()
+    val selectedSyncMode by viewModel.selectedSyncMode.collectAsState()
+    val selectedSyncFrequency by viewModel.selectedSyncFrequency.collectAsState()
 
     if (showThemeDialog.value) {
         SelectionDialog(
@@ -85,6 +93,28 @@ fun SettingsScreen(
             onSelectionChanged = { viewModel.updateQuality(it) },
             onDismissRequest = { showQualityDialog.value = false },
             optionLabel = { quality -> stringResource(id = quality.labelResId) }
+        )
+    }
+
+    if (showSyncModeDialog.value) {
+        SelectionDialog(
+            title = stringResource(R.string.settings_dialog_title_sync_mode),
+            options = SyncMode.entries,
+            currentSelection = selectedSyncMode,
+            onSelectionChanged = { viewModel.updateSyncMode(it) },
+            onDismissRequest = { showSyncModeDialog.value = false },
+            optionLabel = { mode -> stringResource(id = mode.labelResId) }
+        )
+    }
+
+    if (showSyncFrequencyDialog.value) {
+        SelectionDialog(
+            title = stringResource(R.string.settings_dialog_title_sync_frequency),
+            options = SyncFrequency.entries,
+            currentSelection = selectedSyncFrequency,
+            onSelectionChanged = { viewModel.updateSyncFrequency(it) },
+            onDismissRequest = { showSyncFrequencyDialog.value = false },
+            optionLabel = { frequency -> stringResource(id = frequency.labelResId) }
         )
     }
 
@@ -110,13 +140,13 @@ fun SettingsScreen(
             SettingsSectionHeader(title = stringResource(R.string.settings_section_cloud_sync))
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_sync_mode),
-                subtitle = "Automatic",
-                onClick = { }
+                subtitle = stringResource(id = selectedSyncMode.labelResId),
+                onClick = { showSyncModeDialog.value = true }
             )
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_sync_frequency),
-                subtitle = "Daily",
-                onClick = { }
+                subtitle = stringResource(id = selectedSyncFrequency.labelResId),
+                onClick = { showSyncFrequencyDialog.value = true }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))
@@ -142,15 +172,15 @@ fun SettingsScreen(
             SettingsSectionHeader(title = stringResource(R.string.settings_section_support))
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_help_center),
-                onClick = { }
+                onClick = { uriHandler.openUri(context.getString(R.string.settings_url_help_center)) }
             )
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_privacy_policy),
-                onClick = { }
+                onClick = { uriHandler.openUri(context.getString(R.string.settings_url_privacy_policy)) }
             )
             SettingsItemRow(
                 title = stringResource(R.string.settings_item_terms_service),
-                onClick = { }
+                onClick = { uriHandler.openUri(context.getString(R.string.settings_url_terms_service)) }
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp))

@@ -42,8 +42,12 @@ import dev.jeziellago.compose.markdowntext.MarkdownText
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.data.remote.dto.GlossaryItemDto
 import edu.cit.audioscholar.data.remote.dto.RecommendationDto
+import edu.cit.audioscholar.ui.theme.AudioScholarTheme
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import edu.cit.audioscholar.ui.details.NavigationEvent
+import edu.cit.audioscholar.ui.main.Screen
 
 private fun getFileNameFromUri(contentResolver: ContentResolver, uri: Uri): String? {
     var fileName: String? = null
@@ -90,7 +94,6 @@ fun RecordingDetailsScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val clipboardManager = LocalClipboardManager.current
-    val navigateUpState by viewModel.navigateUpEvent.collectAsStateWithLifecycle()
 
     val powerPointLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
@@ -149,25 +152,17 @@ fun RecordingDetailsScreen(
         }
     }
 
-    LaunchedEffect(uiState.filePath, uiState.remoteRecordingId, uiState.isLoading, uiState.isDeleting, uiState.error) {
-        val localFileDeleted = uiState.filePath.isEmpty() && !uiState.isLoading && !uiState.isDeleting && !uiState.isCloudSource
-        val criticalLoadError = uiState.filePath.isEmpty() && uiState.remoteRecordingId == null && !uiState.isLoading && uiState.error != null
-
-        if (localFileDeleted) {
-            Log.d("RecordingDetailsScreen", "Local file path became empty after load/delete, navigating up.")
-            navController.navigateUp()
-        } else if (criticalLoadError) {
-            Log.d("RecordingDetailsScreen", "Critical load error and no ID/Path available, navigating up.")
-            navController.navigateUp()
-        }
-    }
-
-    LaunchedEffect(navigateUpState) {
-        if (navigateUpState) {
-            Log.d("RecordingDetailsScreen", "Navigate up state is true, navigating...")
-            navController.previousBackStackEntry?.savedStateHandle?.set("refresh_needed_cloud", true)
-            navController.navigateUp()
-            viewModel.consumeNavigateUpEvent()
+    LaunchedEffect(key1 = navController, key2 = viewModel) {
+        viewModel.navigationEvent.collectLatest { event ->
+            when (event) {
+                is NavigationEvent.NavigateToLibrary -> {
+                    Log.d("RecordingDetailsScreen", "Received NavigateToLibrary event. Navigating...")
+                    navController.navigate(Screen.Library.route) {
+                        popUpTo(Screen.RecordingDetails.ROUTE_PATTERN) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
         }
     }
 

@@ -33,6 +33,9 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
+sealed class NavigationEvent {
+    object NavigateToLibrary : NavigationEvent()
+}
 
 private fun formatDurationMillis(durationMillis: Long): String {
     if (durationMillis <= 0) return "00:00"
@@ -78,8 +81,8 @@ class RecordingDetailsViewModel @Inject constructor(
     private val _infoMessageEvent = Channel<String?>(Channel.BUFFERED)
     val infoMessageEvent: Flow<String?> = _infoMessageEvent.receiveAsFlow()
 
-    private val _navigateUpEvent = MutableStateFlow(false)
-    val navigateUpEvent: StateFlow<Boolean> = _navigateUpEvent.asStateFlow()
+    private val _navigationEvent = Channel<NavigationEvent>(Channel.BUFFERED)
+    val navigationEvent: Flow<NavigationEvent> = _navigationEvent.receiveAsFlow()
 
     private val localFilePath: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_LOCAL_FILE_PATH)
     private val cloudId: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_ID)
@@ -180,9 +183,19 @@ class RecordingDetailsViewModel @Inject constructor(
                         configurePlayback(localMetadata = metadata)
 
                         if (remoteId != null && (!isSummaryCacheValid || !areRecommendationsCacheValid)) {
+                            Log.d("DetailsViewModel", "[Local Load] Remote ID exists and cache is invalid/incomplete. Starting listener and attempting immediate fetch.")
                             listenForProcessingCompletion(remoteId, !isSummaryCacheValid, !areRecommendationsCacheValid)
+
+                            if (!isSummaryCacheValid) {
+                                Log.d("DetailsViewModel", "[Local Load] Summary cache invalid, launching immediate fetch for $remoteId")
+                                launch { fetchSummary(remoteId) }
+                            }
+                            if (!areRecommendationsCacheValid) {
+                                Log.d("DetailsViewModel", "[Local Load] Recommendations cache invalid, launching immediate fetch for $remoteId")
+                                launch { fetchRecommendations(remoteId) }
+                            }
                         } else {
-                            Log.d("DetailsViewModel", "Local record. Cache is valid or no remote ID. No FCM listener needed now.")
+                            Log.d("DetailsViewModel", "Local record. Cache is valid or no remote ID. No direct fetch/listener needed now.")
                         }
 
                     }.onFailure { e ->
@@ -833,16 +846,12 @@ class RecordingDetailsViewModel @Inject constructor(
                     isPlaying = false
                 ) }
                 _infoMessageEvent.trySend(infoMsg)
-                _navigateUpEvent.value = true
+                _navigationEvent.trySend(NavigationEvent.NavigateToLibrary)
             } else {
                 _uiState.update { it.copy(isDeleting = false, error = errorMsg) }
                 _errorEvent.trySend(errorMsg)
             }
         }
-    }
-
-    fun consumeNavigateUpEvent() {
-        _navigateUpEvent.value = false
     }
 
     fun consumeError() {

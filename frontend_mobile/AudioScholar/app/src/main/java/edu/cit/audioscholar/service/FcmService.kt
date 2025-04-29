@@ -28,6 +28,7 @@ const val RECORDING_ID_EXTRA = "RECORDING_ID"
 const val SUMMARY_ID_EXTRA = "SUMMARY_ID"
 const val UPLOAD_SCREEN_VALUE = "UPLOAD_SCREEN"
 const val RECORDING_DETAIL_DESTINATION = "RECORDING_DETAIL"
+const val LIBRARY_CLOUD_DESTINATION = "LIBRARY_CLOUD"
 
 const val GENERAL_NOTIFICATION_CHANNEL_ID = "GENERAL_NOTIFICATIONS"
 const val PROCESSING_COMPLETE_CHANNEL_ID = "PROCESSING_COMPLETE"
@@ -126,7 +127,7 @@ class FcmService : FirebaseMessagingService() {
     private fun sendProcessingCompleteNotification(recordingId: String) {
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(NAVIGATE_TO_EXTRA, RECORDING_DETAIL_DESTINATION)
+            putExtra(NAVIGATE_TO_EXTRA, LIBRARY_CLOUD_DESTINATION)
             putExtra(RECORDING_ID_EXTRA, recordingId)
         }
 
@@ -140,7 +141,7 @@ class FcmService : FirebaseMessagingService() {
         )
 
         val notificationBuilder = NotificationCompat.Builder(this, PROCESSING_COMPLETE_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_mic)
+            .setSmallIcon(R.mipmap.ic_audioscholar)
             .setContentTitle("Processing Complete")
             .setContentText("Your audio recording is ready.")
             .setAutoCancel(true)
@@ -170,7 +171,7 @@ class FcmService : FirebaseMessagingService() {
         )
 
         val notificationBuilder = NotificationCompat.Builder(this, GENERAL_NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_mic)
+            .setSmallIcon(R.mipmap.ic_audioscholar)
             .setContentTitle(title ?: "AudioScholar")
             .setContentText(messageBody ?: "New notification")
             .setAutoCancel(true)

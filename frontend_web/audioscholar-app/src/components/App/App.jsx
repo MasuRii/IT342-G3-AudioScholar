@@ -1,19 +1,19 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
-import Dashboard from './components/dashboard';
-import Features from './components/features';
-import Footer from './components/footer';
-import GithubAuthCallback from './components/GithubAuthCallback';
-import Header from './components/header';
-import HeroSection from './components/HeroSection';
-import Pricing from './components/pricing';
-import RecordingData from './components/RecordingData';
-import RecordingList from './components/RecordingList';
-import SignIn from './components/SignIn';
-import SignUp from './components/SignUp';
-import Testimonials from './components/testimonials';
-import Uploading from './components/Uploading';
-import UserProfile from './components/UserProfile';
-import UserProfileEdit from './components/UserProfileEdit';
+import GithubAuthCallback from '../../pages/Auth/GithubCallback/GithubAuthCallback';
+import SignIn from '../../pages/Auth/SignIn/SignIn';
+import SignUp from '../../pages/Auth/SignUp/SignUp';
+import Dashboard from '../../pages/Dashboard/Dashboard';
+import Features from '../../pages/Home/Features';
+import Footer from '../../pages/Home/footer';
+import Header from '../../pages/Home/header';
+import HeroSection from '../../pages/Home/HeroSection';
+import Pricing from '../../pages/Home/Pricing';
+import Testimonials from '../../pages/Home/Testimonials';
+import RecordingData from '../../pages/RecordingData/RecordingData';
+import RecordingList from '../../pages/RecordingList/RecordingList';
+import Uploading from '../../pages/Upload/Uploading';
+import UserProfile from '../../pages/UserProfile/UserProfile';
+import UserProfileEdit from '../../pages/UserProfileEdit/UserProfileEdit';
 
 
 function App() {

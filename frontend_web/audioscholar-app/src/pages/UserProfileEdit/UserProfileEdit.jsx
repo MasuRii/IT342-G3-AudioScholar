@@ -1,7 +1,7 @@
 import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../services/authService';
+import { API_BASE_URL } from '../../services/authService';
 
 const UserProfileEdit = () => {
   const navigate = useNavigate();

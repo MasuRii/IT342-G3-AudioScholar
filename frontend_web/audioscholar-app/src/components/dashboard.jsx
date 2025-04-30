@@ -11,7 +11,7 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Updated Header */}
+      <title>AudioScholar - Dashboard</title>
       <header className="bg-[#1A365D] shadow-sm py-4">
         <div className="container mx-auto px-4 flex justify-between items-center">
           <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
@@ -38,15 +38,12 @@ const Dashboard = () => {
         </div>
       </header>
 
-      {/* Rest of the dashboard content */}
       <main className="flex-grow bg-gray-50">
         <div className="container mx-auto px-4 py-12">
           <div className="max-w-6xl mx-auto">
             <h1 className="text-3xl font-bold text-gray-800 mb-10">Dashboard</h1>
 
-            {/* Updated grid to potentially adjust layout if needed (e.g., using md:grid-cols-2 instead of 3 if only two items remain) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Upload Card */}
               <Link
                 to="/upload"
                 className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer border border-gray-200"
@@ -62,7 +59,6 @@ const Dashboard = () => {
                 <p className="text-gray-600">Upload new audio files to generate summaries and notes.</p>
               </Link>
 
-              {/* Recording List Card */}
               <Link
                 to="/recordings"
                 className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer border border-gray-200"
@@ -78,30 +74,12 @@ const Dashboard = () => {
                 <p className="text-gray-600">View and manage all your audio recordings.</p>
               </Link>
 
-              {/* Profile Card Removed */}
-              {/* The following block was removed:
-                <Link 
-                  to="/profile" 
-                  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border border-gray-200"
-                >
-                  <div className="flex items-center mb-4">
-                    <div className="bg-purple-100 p-3 rounded-full mr-4">
-                      <svg xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className="h-6 w-6 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    </div>
-                    <h2 className="text-xl font-semibold text-gray-800">My Profile</h2>
-                  </div>
-                  <p className="text-gray-600">View and edit your personal information.</p>
-                </Link> 
-              */}
             </div>
           </div>
         </div>
       </main>
 
       <footer className="bg-gray-100 py-12">
-        {/* Footer content */}
       </footer>
     </div>
   );

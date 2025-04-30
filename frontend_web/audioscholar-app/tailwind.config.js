@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     "./App.jsx",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -23,7 +23,7 @@ module.exports = {
           blue: '#CBD5E1',
         },
         dark: {
-          blue: '#1E293B', // For text contrast
+          blue: '#1E293B',
         },
       },
     },

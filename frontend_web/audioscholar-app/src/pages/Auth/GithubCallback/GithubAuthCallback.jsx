@@ -1,7 +1,7 @@
 import axios from 'axios';
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { API_BASE_URL } from '../services/authService';
+import { API_BASE_URL } from '../../../services/authService';
 
 const GithubAuthCallback = () => {
   const [statusMessage, setStatusMessage] = useState('Processing GitHub login...');

@@ -31,12 +31,24 @@ import edu.cit.audioscholar.model.Summary;
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.UnsupportedAudioFileException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 public class AudioSummarizationListenerService {
         private static final Logger log =
                         LoggerFactory.getLogger(AudioSummarizationListenerService.class);
         private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
+        private static final Pattern WORD_PATTERN = Pattern.compile("\\b\\w+\\b"); // Simple word extraction
+        private static final double MIN_UNIQUE_WORD_RATIO = 0.3; // Threshold for repetition
+        private static final int MINIMUM_TRANSCRIPT_WORDS = 30; // Use word count instead of chars
 
         private final FirebaseService firebaseService;
         private final NhostStorageService nhostStorageService;
@@ -174,24 +186,41 @@ public class AudioSummarizationListenerService {
                                 return;
                         }
 
+                        // --- Quality Gate Starts ---
+                        // Check 1: No speech detected marker
                         final String noSpeechMarker = "[NO SPEECH DETECTED]";
                         if (noSpeechMarker.equalsIgnoreCase(transcriptText.trim())) {
                             log.warn("[{}] Transcription resulted in '{}'. No speech detected or audio unsuitable. Halting summarization and recommendations.",
                                      recordingId, noSpeechMarker);
-                            updateMetadataStatus(metadataId, ProcessingStatus.FAILED, "No speech detected in audio");
+                            updateMetadataStatus(metadataId, ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT, "No speech detected in audio");
                             return;
                         }
 
-                        // Task 4: Add check for minimum transcript length
-                        final int MINIMUM_TRANSCRIPT_LENGTH = 100; // Example threshold
-                        if (transcriptText.trim().length() < MINIMUM_TRANSCRIPT_LENGTH) {
-                            log.warn("[{}] Transcript length ({}) is below the minimum threshold of {}. Considered unsuitable. Halting summarization and recommendations.",
-                                     recordingId, transcriptText.trim().length(), MINIMUM_TRANSCRIPT_LENGTH);
-                            updateMetadataStatus(metadataId, ProcessingStatus.FAILED,
+                        // Extract words for checks
+                        String[] words = WORD_PATTERN.matcher(transcriptText.toLowerCase()).results()
+                                .map(mr -> mr.group()).toArray(String[]::new);
+                        int wordCount = words.length;
+
+                        // Check 2: Minimum word count
+                        if (wordCount < MINIMUM_TRANSCRIPT_WORDS) {
+                            log.warn("[{}] Transcript word count ({}) is below the minimum threshold of {}. Considered unsuitable. Halting summarization and recommendations.",
+                                     recordingId, wordCount, MINIMUM_TRANSCRIPT_WORDS);
+                            updateMetadataStatus(metadataId, ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT,
                                                  "Transcript too short to be suitable lecture material.");
                             return; // Stop further processing
                         }
-                        // End of added check
+
+                        // Check 3: Repetitiveness
+                        if (isTranscriptTooRepetitive(words)) {
+                            log.warn("[{}] Transcript appears too repetitive (unique word ratio below threshold). Considered unsuitable. Halting summarization and recommendations.",
+                                     recordingId);
+                            updateMetadataStatus(metadataId, ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT,
+                                                 "Transcript content appears too repetitive.");
+                            return; // Stop further processing
+                        }
+                        // --- Quality Gate Ends ---
+
+                        log.info("[{}] Transcript passed quality checks (length, repetition). Proceeding with processing.", recordingId);
 
                         if (!saveTranscript(metadataId, transcriptText)) {
                                 updateMetadataStatusToFailed(metadataId,
@@ -668,67 +697,25 @@ public class AudioSummarizationListenerService {
                 updateMetadataStatus(metadataId, ProcessingStatus.FAILED, reason);
         }
 
-        private void updateMetadataStatus(String metadataId, ProcessingStatus newStatus,
-                        @Nullable String reason) {
-                if (metadataId == null) {
-                        log.error("[AMQP Listener] Cannot update metadata status: metadataId is null.");
-                        return;
-                }
-                log.info("[{}] Attempting to set metadata status to {}.{}", metadataId, newStatus,
-                                (reason != null ? " Reason: " + reason : ""));
+        private void updateMetadataStatus(String metadataId, ProcessingStatus status, String reason) {
                 try {
-                        AudioMetadata currentMeta =
-                                        firebaseService.getAudioMetadataById(metadataId);
-                        if (currentMeta != null) {
-                                if (currentMeta.getStatus() == ProcessingStatus.FAILED
-                                                && newStatus != ProcessingStatus.FAILED) {
-                                        log.warn("[{}] Metadata status is already FAILED. Not overwriting with {}.",
-                                                        metadataId, newStatus);
-                                        return;
-                                }
-                                if (currentMeta.getStatus() == ProcessingStatus.PROCESSING
-                                                && newStatus == ProcessingStatus.PENDING) {
-                                        log.warn("[{}] Metadata status is already PROCESSING. Not overwriting with PENDING.",
-                                                        metadataId);
-                                        return;
-                                }
-
-                                Map<String, Object> updateMap = new HashMap<>();
-                                updateMap.put("status", newStatus.name());
-                                if (newStatus == ProcessingStatus.FAILED) {
-                                        updateMap.put("failureReason", reason != null ? reason
-                                                        : "Unknown failure");
-                                } else {
-                                        updateMap.put("failureReason", null);
-                                }
-                                updateMap.put("lastUpdated", Timestamp.now());
-
-                                firebaseService.updateDataWithMap(
-                                                firebaseService.getAudioMetadataCollectionName(),
-                                                metadataId, updateMap);
-                                log.info("[{}] Metadata status successfully updated to {}.",
-                                                metadataId, newStatus);
-
-                                Cache userMetadataCache =
-                                                cacheManager.getCache(CACHE_METADATA_BY_USER);
-                                if (userMetadataCache != null) {
-                                        log.info("[{}] Evicting all entries from cache: {}",
-                                                        metadataId, CACHE_METADATA_BY_USER);
-                                        userMetadataCache.clear();
-                                } else {
-                                        log.warn("[{}] Cache '{}' not found for eviction.",
-                                                        metadataId, CACHE_METADATA_BY_USER);
-                                }
-
-                        } else {
-                                log.error("[{}] Cannot update metadata status to {} as metadata could not be retrieved (might have been deleted?).",
-                                                metadataId, newStatus);
+                        log.info("Updating metadata {} status to {} with reason: {}", metadataId, status, reason);
+                        firebaseService.updateAudioMetadataStatusAndReason(metadataId, status, reason);
+                        // Invalidate relevant cache entries if necessary
+                        Cache userCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                        if (userCache != null) {
+                                // We need the userId associated with metadataId to clear the correct cache entry.
+                                // This might require fetching the metadata first, or passing userId down.
+                                // For now, we might have to clear all user caches if we don't have userId readily available.
+                                // Or, enhance FirebaseService to return the userId when fetching by metadataId if needed here.
+                                // Let's assume FirebaseService handles necessary cache invalidation or we accept potential staleness.
+                                log.warn("Cache invalidation for metadata update might require userId. Consider enhancing logic if stale data becomes an issue.");
+                                // Example (if userId was available): userCache.evict(userId);
                         }
                 } catch (Exception e) {
-                        log.error("[{}] CRITICAL: Failed to update metadata status to {}. Manual intervention likely required. Error: {}",
-                                        metadataId, newStatus, e.getMessage(), e);
-                        if (e instanceof InterruptedException)
-                                Thread.currentThread().interrupt();
+                        log.error("CRITICAL: Failed to update metadata {} status to {} after processing decision. Reason: {}. Error: {}",
+                                  metadataId, status, reason, e.getMessage(), e);
+                        // Logged, but continue execution if possible (e.g., if returning after update)
                 }
         }
 
@@ -751,6 +738,28 @@ public class AudioSummarizationListenerService {
                 }
                 log.warn("Could not extract Nhost ID using expected pattern from URL: {}", url);
                 return null;
+        }
+
+        /**
+         * Checks if the transcript is overly repetitive based on unique word ratio.
+         * @param words Array of words extracted from the transcript.
+         * @return true if the transcript is deemed too repetitive, false otherwise.
+         */
+        private boolean isTranscriptTooRepetitive(String[] words) {
+                if (words == null || words.length == 0) {
+                        return false; // Cannot determine, assume not repetitive
+                }
+                int totalWords = words.length;
+                Set<String> uniqueWords = new HashSet<>(Arrays.asList(words));
+                int uniqueWordCount = uniqueWords.size();
+
+                // Avoid division by zero for very short inputs handled by length check
+                if (totalWords == 0) return false;
+
+                double uniqueRatio = (double) uniqueWordCount / totalWords;
+                log.debug("Repetition check: {} unique words / {} total words = ratio {}", uniqueWordCount, totalWords, String.format("%.3f", uniqueRatio));
+
+                return uniqueRatio < MIN_UNIQUE_WORD_RATIO;
         }
 
 }

@@ -1,4 +1,4 @@
-export const API_BASE_URL = 'https://actively-guided-mackerel.ngrok-free.app';
+export const API_BASE_URL = 'https://mastodon-balanced-randomly.ngrok-free.app/';
 
 /**
  * Sends the Firebase ID token obtained from frontend Firebase authentication

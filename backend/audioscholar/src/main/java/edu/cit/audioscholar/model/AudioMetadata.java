@@ -4,9 +4,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import com.google.cloud.Timestamp;
+import com.google.cloud.firestore.annotation.DocumentId;
 
 public class AudioMetadata {
 
+    @DocumentId
     private String id;
     private String userId;
     private String fileName;
@@ -24,6 +26,7 @@ public class AudioMetadata {
     private String tempFilePath;
     private String failureReason;
     private Integer durationSeconds;
+    private Timestamp lastUpdated;
 
     public AudioMetadata() {}
 
@@ -42,8 +45,6 @@ public class AudioMetadata {
         this.status = initialStatus;
         this.tempFilePath = tempFilePath;
     }
-
-
 
     public String getId() {
         return id;
@@ -181,6 +182,13 @@ public class AudioMetadata {
         this.durationSeconds = durationSeconds;
     }
 
+    public Timestamp getLastUpdated() {
+        return lastUpdated;
+    }
+
+    public void setLastUpdated(Timestamp lastUpdated) {
+        this.lastUpdated = lastUpdated;
+    }
 
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
@@ -217,6 +225,8 @@ public class AudioMetadata {
             map.put("failureReason", failureReason);
         if (durationSeconds != null)
             map.put("durationSeconds", durationSeconds);
+        if (lastUpdated != null)
+            map.put("lastUpdated", lastUpdated);
 
         return map;
     }
@@ -254,9 +264,9 @@ public class AudioMetadata {
         if (durationObj instanceof Number) {
             meta.setDurationSeconds(((Number) durationObj).intValue());
         }
+        meta.setLastUpdated((Timestamp) map.get("lastUpdated"));
         return meta;
     }
-
 
     @Override
     public boolean equals(Object o) {
@@ -265,12 +275,12 @@ public class AudioMetadata {
         if (o == null || getClass() != o.getClass())
             return false;
         AudioMetadata that = (AudioMetadata) o;
-        return Objects.equals(id, that.id) && Objects.equals(userId, that.userId);
+        return Objects.equals(id, that.id) && Objects.equals(userId, that.userId) && Objects.equals(fileName, that.fileName) && Objects.equals(contentType, that.contentType) && Objects.equals(title, that.title) && Objects.equals(description, that.description) && Objects.equals(nhostFileId, that.nhostFileId) && Objects.equals(storageUrl, that.storageUrl) && Objects.equals(uploadTimestamp, that.uploadTimestamp) && status == that.status && Objects.equals(failureReason, that.failureReason) && Objects.equals(recordingId, that.recordingId) && Objects.equals(summaryId, that.summaryId) && Objects.equals(transcriptText, that.transcriptText) && Objects.equals(durationSeconds, that.durationSeconds) && Objects.equals(lastUpdated, that.lastUpdated);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, userId);
+        return Objects.hash(id, userId, fileName, fileSize, contentType, title, description, nhostFileId, storageUrl, uploadTimestamp, status, failureReason, recordingId, summaryId, transcriptText, durationSeconds, lastUpdated);
     }
 
     @Override
@@ -278,6 +288,7 @@ public class AudioMetadata {
         return "AudioMetadata{" + "id='" + id + '\'' + ", userId='" + userId + '\'' + ", fileName='"
                 + fileName + '\'' + ", status=" + status + ", recordingId='" + recordingId + '\''
                 + ", tempFilePath='" + tempFilePath + '\'' + ", storageUrl='" + storageUrl + '\''
-                + '}';
+                + ", transcriptText='" + (transcriptText != null ? transcriptText.substring(0, Math.min(50, transcriptText.length())) + "..." : null) + '\''
+                + ", durationSeconds=" + durationSeconds + ", lastUpdated=" + lastUpdated + '}';
     }
 }

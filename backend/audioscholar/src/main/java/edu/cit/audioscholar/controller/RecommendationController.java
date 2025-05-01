@@ -18,7 +18,7 @@ import org.springframework.security.core.Authentication;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/recommendations")
+@RequestMapping("/api/v1/recommendations")
 public class RecommendationController {
 
     private static final Logger log = LoggerFactory.getLogger(RecommendationController.class);

@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
@@ -17,6 +19,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.Timestamp;
 import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.dto.AudioProcessingMessage;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
@@ -29,6 +32,7 @@ import edu.cit.audioscholar.model.Summary;
 public class AudioSummarizationListenerService {
         private static final Logger log =
                         LoggerFactory.getLogger(AudioSummarizationListenerService.class);
+        private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
 
         private final FirebaseService firebaseService;
         private final NhostStorageService nhostStorageService;
@@ -37,6 +41,7 @@ public class AudioSummarizationListenerService {
         private final RecordingService recordingService;
         private final SummaryService summaryService;
         private final ObjectMapper objectMapper;
+        private final CacheManager cacheManager;
         private final Path tempFileDir;
 
         public AudioSummarizationListenerService(FirebaseService firebaseService,
@@ -44,6 +49,7 @@ public class AudioSummarizationListenerService {
                         LearningMaterialRecommenderService learningMaterialRecommenderService,
                         @Lazy RecordingService recordingService,
                         @Lazy SummaryService summaryService, ObjectMapper objectMapper,
+                        CacheManager cacheManager,
                         @Value("${app.temp-file-dir}") String tempFileDirStr) {
                 this.firebaseService = firebaseService;
                 this.nhostStorageService = nhostStorageService;
@@ -52,6 +58,7 @@ public class AudioSummarizationListenerService {
                 this.recordingService = recordingService;
                 this.summaryService = summaryService;
                 this.objectMapper = objectMapper;
+                this.cacheManager = cacheManager;
                 this.tempFileDir = Paths.get(tempFileDirStr);
                 try {
                         Files.createDirectories(this.tempFileDir);
@@ -454,19 +461,31 @@ public class AudioSummarizationListenerService {
         }
 
         private void finalizeProcessing(String metadataId, String summaryId) {
-                log.info("[{}] Finalizing processing. Attempting to link summaryId {} and set status to COMPLETED.",
+                log.info("[{}] Finalizing processing: linking summaryId {} and setting status to COMPLETED.",
                                 metadataId, summaryId);
                 try {
                         Map<String, Object> updateMap = new HashMap<>();
                         updateMap.put("summaryId", summaryId);
                         updateMap.put("status", ProcessingStatus.COMPLETED.name());
                         updateMap.put("failureReason", null);
+                        updateMap.put("lastUpdated", Timestamp.now());
 
                         firebaseService.updateDataWithMap(
                                         firebaseService.getAudioMetadataCollectionName(),
                                         metadataId, updateMap);
                         log.info("[{}] Successfully updated metadata status to COMPLETED and linked summaryId {}.",
                                         metadataId, summaryId);
+
+                        Cache userMetadataCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                        if (userMetadataCache != null) {
+                                log.info("[{}] Evicting all entries from cache: {}", metadataId,
+                                                CACHE_METADATA_BY_USER);
+                                userMetadataCache.clear();
+                        } else {
+                                log.warn("[{}] Cache '{}' not found for eviction.", metadataId,
+                                                CACHE_METADATA_BY_USER);
+                        }
+
                 } catch (Exception e) {
                         log.error("[{}] CRITICAL: Failed to update metadata status to COMPLETED or link summaryId {} after saving summary. Summary is saved, but metadata might be inconsistent. Error: {}",
                                         metadataId, summaryId, e.getMessage(), e);
@@ -600,8 +619,7 @@ public class AudioSummarizationListenerService {
                                         firebaseService.getAudioMetadataById(metadataId);
                         if (currentMeta != null) {
                                 if (currentMeta.getStatus() == ProcessingStatus.FAILED
-                                                && (newStatus == ProcessingStatus.PENDING
-                                                                || newStatus == ProcessingStatus.PROCESSING)) {
+                                                && newStatus != ProcessingStatus.FAILED) {
                                         log.warn("[{}] Metadata status is already FAILED. Not overwriting with {}.",
                                                         metadataId, newStatus);
                                         return;
@@ -612,6 +630,7 @@ public class AudioSummarizationListenerService {
                                                         metadataId);
                                         return;
                                 }
+
                                 Map<String, Object> updateMap = new HashMap<>();
                                 updateMap.put("status", newStatus.name());
                                 if (newStatus == ProcessingStatus.FAILED) {
@@ -620,11 +639,25 @@ public class AudioSummarizationListenerService {
                                 } else {
                                         updateMap.put("failureReason", null);
                                 }
+                                updateMap.put("lastUpdated", Timestamp.now());
+
                                 firebaseService.updateDataWithMap(
                                                 firebaseService.getAudioMetadataCollectionName(),
                                                 metadataId, updateMap);
                                 log.info("[{}] Metadata status successfully updated to {}.",
                                                 metadataId, newStatus);
+
+                                Cache userMetadataCache =
+                                                cacheManager.getCache(CACHE_METADATA_BY_USER);
+                                if (userMetadataCache != null) {
+                                        log.info("[{}] Evicting all entries from cache: {}",
+                                                        metadataId, CACHE_METADATA_BY_USER);
+                                        userMetadataCache.clear();
+                                } else {
+                                        log.warn("[{}] Cache '{}' not found for eviction.",
+                                                        metadataId, CACHE_METADATA_BY_USER);
+                                }
+
                         } else {
                                 log.error("[{}] Cannot update metadata status to {} as metadata could not be retrieved (might have been deleted?).",
                                                 metadataId, newStatus);

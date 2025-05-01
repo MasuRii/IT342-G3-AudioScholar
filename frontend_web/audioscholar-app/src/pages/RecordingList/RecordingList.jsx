@@ -1,25 +1,35 @@
 import axios from 'axios';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
 
 const RecordingList = () => {
   const navigate = useNavigate();
+  const pollingIntervalRef = useRef(null);
 
   const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchRecordings = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchRecordings = async (isPollingUpdate = false) => {
+    if (!isPollingUpdate) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const token = localStorage.getItem('AuthToken');
 
       if (!token) {
-        setError("User not authenticated. Please log in.");
-        setLoading(false);
+        if (isPollingUpdate) {
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
+        } else {
+          setError("User not authenticated. Please log in.");
+          setLoading(false);
+        }
         navigate('/signin');
         return;
       }
@@ -33,31 +43,79 @@ const RecordingList = () => {
       });
 
       setRecordings(response.data);
-      console.log("Fetched recordings:", response.data);
 
     } catch (err) {
-      console.error('Error fetching recordings:', err);
+      console.error(`Error fetching recordings${isPollingUpdate ? ' (Polling)' : ''}:`, err);
       if (err.response) {
         if (err.response.status === 401 || err.response.status === 403) {
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
           setError("Session expired or not authorized. Please log in again.");
           localStorage.removeItem('AuthToken');
           navigate('/signin');
-        } else {
+        } else if (!isPollingUpdate) {
           setError("Failed to fetch recordings. Status: " + err.response.status);
         }
-      } else if (err.request) {
-        setError("Network error: Could not reach the server.");
-      } else {
-        setError("An unexpected error occurred.");
+      } else if (!isPollingUpdate) {
+        if (err.request) {
+          setError("Network error: Could not reach the server.");
+        } else {
+          setError("An unexpected error occurred.");
+        }
+      }
+      if (isPollingUpdate && pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+        console.log("Polling stopped due to fetch error.");
       }
     } finally {
-      setLoading(false);
+      if (!isPollingUpdate) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchRecordings();
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    const POLLING_INTERVAL_MS = 15000;
+
+    const isProcessing = recordings.some(
+      (rec) => rec.status?.toLowerCase() === 'processing'
+    );
+
+    if (isProcessing && !pollingIntervalRef.current) {
+      console.log("Starting polling for processing recordings...");
+      pollingIntervalRef.current = setInterval(() => {
+        fetchRecordings(true);
+      }, POLLING_INTERVAL_MS);
+    } else if (!isProcessing && pollingIntervalRef.current) {
+      console.log("Stopping polling, no recordings are processing.");
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        const stillProcessing = recordings.some(
+          (rec) => rec.status?.toLowerCase() === 'processing'
+        );
+        if (!stillProcessing) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      }
+    };
+  }, [recordings, navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('AuthToken');
@@ -209,7 +267,7 @@ const RecordingList = () => {
                               ? 'bg-green-100 text-green-800'
                               : recording.status?.toLowerCase() === 'processing'
                                 ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-gray-100 text-gray-800' // Default color for other statuses (e.g., FAILED, UNKNOWN)
+                                : 'bg-gray-100 text-gray-800'
                               }`}>
                               {recording.status || 'Unknown'}
                             </span>

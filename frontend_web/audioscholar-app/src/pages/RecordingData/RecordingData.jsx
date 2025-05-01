@@ -167,6 +167,40 @@ const RecordingData = () => {
     }
   };
 
+  const handleCopySummaryAndVocab = async () => {
+    if (!summaryData) {
+      alert("Summary data is not available to copy.");
+      return;
+    }
+
+    let contentToCopy = "";
+
+    if (summaryData.formattedSummaryText) {
+      contentToCopy += "Summary Details:\n====================\n";
+      contentToCopy += summaryData.formattedSummaryText + "\n\n";
+    }
+
+    if (summaryData.glossary && summaryData.glossary.length > 0) {
+      contentToCopy += "Key Vocabulary:\n=================\n";
+      summaryData.glossary.forEach(item => {
+        contentToCopy += `${item.term}: ${item.definition}\n`;
+      });
+    }
+
+    if (!contentToCopy) {
+      alert("No content available to copy.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(contentToCopy);
+      alert("Summary and Vocabulary copied to clipboard!");
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      alert("Failed to copy content. See console for details.");
+    }
+  };
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Loading recording data...</div>;
   }
@@ -217,11 +251,11 @@ const RecordingData = () => {
               </div>
 
               <div className="flex space-x-3 mt-4 md:mt-0 flex-shrink-0">
-                <button className="inline-flex items-center bg-teal-500 hover:bg-teal-600 text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 ease-in-out shadow hover:shadow-md transform hover:-translate-y-0.5 disabled:opacity-50" disabled>
-                  <DownloadIcon /> Download Summary
-                </button>
-                <button className="inline-flex items-center bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 ease-in-out shadow hover:shadow-md transform hover:-translate-y-0.5 disabled:opacity-50" disabled>
-                  <ShareIcon /> Share
+                <button
+                  onClick={handleCopySummaryAndVocab}
+                  className="inline-flex items-center bg-teal-500 hover:bg-teal-600 text-white font-medium py-2 px-4 rounded-md text-sm transition-all duration-200 ease-in-out shadow hover:shadow-md transform hover:-translate-y-0.5"
+                >
+                  <DownloadIcon /> Copy Summary & Notes
                 </button>
               </div>
             </div>
@@ -246,15 +280,6 @@ const RecordingData = () => {
                   }`}
               >
                 Transcript
-              </button>
-              <button
-                onClick={() => setActiveTab('notes')}
-                className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm transition-colors duration-150 ease-in-out ${activeTab === 'notes'
-                  ? 'border-teal-500 text-teal-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'
-                  }`}
-              >
-                My Notes
               </button>
             </nav>
           </div>
@@ -305,7 +330,7 @@ const RecordingData = () => {
                       {summaryData.glossary && summaryData.glossary.length > 0 && (
                         <div>
                           <h3 className="font-semibold text-lg mb-2 text-gray-800">Key Vocabulary</h3>
-                          <dl className="text-gray-700 space-y-3">
+                          <dl className="text-gray-700 space-y-3 overflow-y-auto pr-2 max-h-[100rem]">
                             {summaryData.glossary.map((item, index) => (
                               <div key={index}>
                                 <dt className="font-medium text-gray-900">{item.term}</dt>
@@ -315,16 +340,6 @@ const RecordingData = () => {
                           </dl>
                         </div>
                       )}
-
-                      <div>
-                        <h3 className="font-semibold text-lg mb-2 text-gray-800">Practice Questions</h3>
-                        <ul className="list-disc list-inside text-gray-700 space-y-1 text-sm">
-                          <li>What are the key differences...?</li>
-                          <li>How do you choose...?</li>
-                          <li>What are common challenges...?</li>
-                          <li className="text-gray-400">(Questions data not available)</li>
-                        </ul>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -337,14 +352,9 @@ const RecordingData = () => {
             {activeTab === 'transcript' && (
               <div>
                 <h2 className="text-xl font-semibold text-gray-800 mb-4">Transcript</h2>
-                <p className="text-gray-500">(Transcript functionality not yet implemented)</p>
-              </div>
-            )}
-
-            {activeTab === 'notes' && (
-              <div>
-                <h2 className="text-xl font-semibold text-gray-800 mb-4">My Notes</h2>
-                <p className="text-gray-500">(Notes functionality not yet implemented)</p>
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-md overflow-x-auto">
+                  {recordingData?.transcriptText || 'Transcript not available.'}
+                </pre>
               </div>
             )}
           </div>
@@ -383,10 +393,8 @@ const RecordingData = () => {
               </div>
             )}
           </div>
-
         </div>
       </main>
-
     </div>
   );
 };

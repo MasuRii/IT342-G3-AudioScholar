@@ -1,283 +1,312 @@
 import axios from 'axios';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { FiAlertTriangle, FiCheckCircle, FiClock, FiExternalLink, FiFile, FiLoader, FiTrash2, FiUploadCloud } from 'react-icons/fi';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
-import { Header } from '../Home/HomePage';
+import { Footer, Header } from '../Home/HomePage';
 
 const RecordingList = () => {
-  const navigate = useNavigate();
-  const pollingIntervalRef = useRef(null);
+    const [recordings, setRecordings] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const navigate = useNavigate();
+    const pollIntervalRef = useRef(null); // Ref to store interval ID
+    const isMountedRef = useRef(true); // Ref to track component mount status
 
-  const [recordings, setRecordings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const fetchRecordings = async (isPollingUpdate = false) => {
-    if (!isPollingUpdate) {
-      setLoading(true);
-      setError(null);
-    }
-
-    try {
-      const token = localStorage.getItem('AuthToken');
-
-      if (!token) {
-        if (isPollingUpdate) {
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-        } else {
-          setError("User not authenticated. Please log in.");
-          setLoading(false);
-        }
-        navigate('/signin');
-        return;
-      }
-
-      const metadataUrl = `${API_BASE_URL}api/audio/metadata`;
-
-      const response = await axios.get(metadataUrl, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-      });
-
-      setRecordings(response.data);
-
-    } catch (err) {
-      console.error(`Error fetching recordings${isPollingUpdate ? ' (Polling)' : ''}:`, err);
-      if (err.response) {
-        if (err.response.status === 401 || err.response.status === 403) {
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-          setError("Session expired or not authorized. Please log in again.");
-          localStorage.removeItem('AuthToken');
-          navigate('/signin');
-        } else if (!isPollingUpdate) {
-          setError("Failed to fetch recordings. Status: " + err.response.status);
-        }
-      } else if (!isPollingUpdate) {
-        if (err.request) {
-          setError("Network error: Could not reach the server.");
-        } else {
-          setError("An unexpected error occurred.");
-        }
-      }
-      if (isPollingUpdate && pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-        console.log("Polling stopped due to fetch error.");
-      }
-    } finally {
-      if (!isPollingUpdate) {
-        setLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    fetchRecordings();
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const POLLING_INTERVAL_MS = 15000;
-
-    const isProcessing = recordings.some(
-      (rec) => rec.status?.toLowerCase() === 'processing'
-    );
-
-    if (isProcessing && !pollingIntervalRef.current) {
-      console.log("Starting polling for processing recordings...");
-      pollingIntervalRef.current = setInterval(() => {
-        fetchRecordings(true);
-      }, POLLING_INTERVAL_MS);
-    } else if (!isProcessing && pollingIntervalRef.current) {
-      console.log("Stopping polling, no recordings are processing.");
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-
-    return () => {
-      if (pollingIntervalRef.current) {
-        const stillProcessing = recordings.some(
-          (rec) => rec.status?.toLowerCase() === 'processing'
-        );
-        if (!stillProcessing) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-      }
-    };
-  }, [recordings, navigate]);
-
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this recording?')) {
-      try {
+    const fetchRecordings = useCallback(async () => {
+        console.log("Fetching recordings...");
         const token = localStorage.getItem('AuthToken');
-
         if (!token) {
-          alert("User not authenticated. Cannot delete.");
-          navigate('/signin');
-          return;
-        }
-
-        const deleteUrl = `${API_BASE_URL}api/audio/metadata/${id}`;
-
-        await axios.delete(deleteUrl, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        setRecordings(recordings.filter(recording => recording.id !== id));
-        console.log(`Recording with ID ${id} deleted successfully.`);
-
-      } catch (err) {
-        console.error('Error deleting recording:', err);
-        if (err.response) {
-          if (err.response.status === 401 || err.response.status === 403) {
-            alert("Unauthorized to delete this recording.");
-            localStorage.removeItem('AuthToken');
+            setError("User not authenticated. Please log in.");
+            setLoading(false);
             navigate('/signin');
-          } else if (err.response.status === 404) {
-            alert("Recording not found.");
-            setRecordings(recordings.filter(recording => recording.id !== id));
-          } else {
-            alert(`Failed to delete recording. Status: ${err.response.status}`);
-          }
-        } else {
-          alert("Network error or unexpected issue during deletion.");
+            return null; // Return null to indicate fetch didn't complete
         }
-      }
-    }
-  };
 
+        try {
+            const url = `${API_BASE_URL}api/audio/metadata`;
+            const response = await axios.get(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            // Sort recordings by upload timestamp descending
+            const sortedRecordings = response.data.sort((a, b) => 
+                (b.uploadTimestamp?.seconds ?? 0) - (a.uploadTimestamp?.seconds ?? 0)
+            );
+            
+            console.log("Fetched recordings:", sortedRecordings);
+            return sortedRecordings; // Return the fetched data
+        
+        } catch (err) {
+            console.error('Error fetching recordings:', err);
+            if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+                setError("Session expired or not authorized. Please log in again.");
+                localStorage.removeItem('AuthToken');
+                navigate('/signin');
+            } else {
+                setError('Failed to fetch recordings. Please try again later.');
+            }
+            return null; // Return null on error
+        }
+    }, [navigate]); // Include navigate in dependency array
 
-  return (
-    <div className="min-h-screen flex flex-col">
-      <title>AudioScholar - Recordings</title>
-      <Header />
+    const startPolling = useCallback((initialData) => {
+        // Clear any existing interval
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+            console.log("Cleared existing poll interval");
+        }
 
-      <main className="flex-grow bg-gray-50">
-        <div className="container mx-auto px-4 py-12">
-          <div className="max-w-6xl mx-auto">
-            <div className="flex justify-between items-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-800">Recording List</h1>
-              <Link
-                to="/upload"
-                className="bg-[#2D8A8A] text-white py-2 px-5 rounded-lg font-medium hover:bg-[#236b6b] transition-colors duration-200 flex items-center shadow hover:shadow-md transform hover:-translate-y-0.5"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 12v6m0 0l-3-3m3 3l3-3" />
-                </svg>
-                New Upload
-              </Link>
-            </div>
+        // Check if polling is needed (Processing OR Uploading)
+        const needsPolling = initialData?.some(rec => 
+            rec.status === 'PROCESSING' || rec.status === 'UPLOADING_TO_STORAGE'
+        );
+        if (!needsPolling) {
+            console.log("No recordings are processing or uploading. Polling not started.");
+            return; 
+        }
 
-            {loading && (
-              <div className="text-center text-gray-600">Loading recordings...</div>
-            )}
+        console.log("Starting polling for active recordings...");
+        pollIntervalRef.current = setInterval(async () => {
+            if (!isMountedRef.current) {
+                 console.log("Component unmounted, stopping poll interval.");
+                 clearInterval(pollIntervalRef.current);
+                 pollIntervalRef.current = null;
+                 return;
+            }
+            console.log("Polling for updates...");
+            const newData = await fetchRecordings();
+            if (newData && isMountedRef.current) {
+                setRecordings(newData);
+                // Check if polling should stop (No Processing AND No Uploading)
+                const stillActive = newData.some(rec => 
+                    rec.status === 'PROCESSING' || rec.status === 'UPLOADING_TO_STORAGE'
+                );
+                if (!stillActive) {
+                    console.log("All recordings processed/uploaded. Stopping polling.");
+                    clearInterval(pollIntervalRef.current);
+                    pollIntervalRef.current = null;
+                }
+            } else if (!newData && isMountedRef.current) {
+                 // Handle fetch error during polling - maybe stop polling?
+                 console.error("Error fetching data during poll, stopping polling.");
+                 clearInterval(pollIntervalRef.current);
+                 pollIntervalRef.current = null;
+                 // Optionally set an error state related to polling failure
+            }
+        }, 7000); // Poll every 7 seconds (adjust as needed)
 
-            {error && (
-              <div className="text-center text-red-500 mb-4">{error}</div>
-            )}
+    }, [fetchRecordings]); // Depend on fetchRecordings
 
-            {!loading && !error && recordings.length === 0 && (
-              <div className="text-center text-gray-600">No recordings found. Upload one to get started!</div>
-            )}
+    // Initial fetch and setup polling
+    useEffect(() => {
+         isMountedRef.current = true;
+         setLoading(true);
+         fetchRecordings().then(initialData => {
+             if (initialData && isMountedRef.current) {
+                 setRecordings(initialData);
+                 startPolling(initialData); // Start polling only if initial fetch succeeded
+             }
+             if (isMountedRef.current) { // Check mount status before setting loading state
+                 setLoading(false);
+             }
+         });
 
-            {!loading && !error && recordings.length > 0 && (
-              <div className="bg-white rounded-lg shadow-md overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Title</th>
-                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Duration</th>
-                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">View Data</th>
-                        <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {recordings.map((recording) => (
-                        <tr key={recording.id} className="hover:bg-gray-50 transition-colors duration-150">
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {recording.title || 'Untitled Recording'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">
-                              {recording.uploadTimestamp
-                                ? new Date(recording.uploadTimestamp.seconds * 1000 + recording.uploadTimestamp.nanos / 1000000).toLocaleDateString('en-US', {
-                                  month: 'long',
-                                  day: '2-digit',
-                                  year: 'numeric',
-                                })
-                                : 'N/A'}
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{recording.duration || 'N/A'}</div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed'
-                              ? 'bg-green-100 text-green-800'
-                              : recording.status?.toLowerCase() === 'processing'
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : 'bg-gray-100 text-gray-800'
-                              }`}>
-                              {recording.status || 'Unknown'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap text-sm font-medium">
-                            {(recording.status?.toLowerCase() === 'processed' || recording.status?.toLowerCase() === 'completed') ? (
-                              <Link to={`/recordings/${recording.id}`} className="text-[#2D8A8A] hover:text-[#236b6b] transition-colors duration-150">
-                                View Data
-                              </Link>
-                            ) : (
-                              <span className="text-gray-400 cursor-not-allowed">
-                                View Data
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap text-sm font-medium">
-                            <button
-                              onClick={() => handleDelete(recording.id)}
-                              className="text-red-600 hover:text-red-800 transition-colors duration-150"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+         // Cleanup function
+         return () => {
+             console.log("RecordingList component unmounting, clearing interval.");
+             isMountedRef.current = false; // Set mount status to false
+             if (pollIntervalRef.current) {
+                 clearInterval(pollIntervalRef.current);
+                 pollIntervalRef.current = null;
+             }
+         };
+    }, [fetchRecordings, startPolling]); // Dependencies for initial setup
+
+    const handleDelete = async (idToDelete, nhostFileId) => {
+        if (!window.confirm('Are you sure you want to delete this recording and its summary? This action cannot be undone.')) {
+            return;
+        }
+
+        const token = localStorage.getItem('AuthToken');
+        if (!token) {
+            setError("Authentication required.");
+            navigate('/signin');
+            return;
+        }
+
+        try {
+            // Optional: Delete from Nhost first (consider atomicity)
+            // if (nhostFileId) { ... Nhost delete logic ... }
+
+            // Delete metadata and trigger backend cleanup
+            const url = `${API_BASE_URL}api/audio/metadata/${idToDelete}`;
+            const response = await axios.delete(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (response.status === 200 || response.status === 204) {
+                setRecordings(prev => prev.filter(rec => rec.id !== idToDelete));
+                setError(null); // Clear any previous errors
+                console.log(`Recording ${idToDelete} deleted successfully.`);
+            } else {
+                 throw new Error(`Failed to delete. Status: ${response.status}`);
+            }
+        } catch (err) {
+            console.error('Error deleting recording:', err);
+             if (err.response && (err.response.status === 401 || err.response.status === 403)) {
+                 setError("Session expired or not authorized. Please log in again.");
+                 localStorage.removeItem('AuthToken');
+                 navigate('/signin');
+             } else {
+                 setError('Failed to delete recording. Please try again.');
+             }
+        }
+    };
+
+    const formatDate = (timestamp) => {
+        if (!timestamp?.seconds) return 'N/A';
+        return new Date(timestamp.seconds * 1000).toLocaleDateString();
+    };
+
+    const formatDuration = (seconds) => {
+        if (seconds === null || typeof seconds !== 'number') return 'N/A';
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.round(seconds % 60);
+        return `${minutes}m ${remainingSeconds}s`;
+    };
+
+    const getStatusBadge = (status, failureReason) => {
+        const originalStatus = status; // Keep original value for logging
+        status = status?.toLowerCase() ?? 'unknown'; // Default to 'unknown' if null/undefined
+        let bgColor = 'bg-gray-100';
+        let textColor = 'text-gray-800';
+        let Icon = FiClock;
+        let displayStatus = 'Unknown'; // Default display text
+
+        switch (status) {
+            case 'completed':
+            case 'processed':
+                bgColor = 'bg-green-100';
+                textColor = 'text-green-800';
+                Icon = FiCheckCircle;
+                displayStatus = 'Completed';
+                break;
+            case 'uploading_to_storage': // Handle new status
+                bgColor = 'bg-blue-100';
+                textColor = 'text-blue-800';
+                Icon = FiUploadCloud; // Use upload icon
+                displayStatus = 'Uploading';
+                break;
+            case 'processing':
+                bgColor = 'bg-yellow-100';
+                textColor = 'text-yellow-800';
+                Icon = FiLoader;
+                displayStatus = 'Processing';
+                break;
+            case 'failed':
+            case 'processing_halted_unsuitable_content':
+                bgColor = 'bg-red-100';
+                textColor = 'text-red-800';
+                Icon = FiAlertTriangle;
+                displayStatus = 'Failed';
+                break;
+            // Add more cases here if other statuses are expected (e.g., 'pending', 'queued')
+            // case 'pending':
+            //     bgColor = 'bg-blue-100';
+            //     textColor = 'text-blue-800';
+            //     Icon = FiClock;
+            //     displayStatus = 'Pending';
+            //     break;
+            default:
+                // Keep default gray style for unknown, but log the actual status received
+                if (status !== 'unknown') { // Only log if it wasn't originally null/undefined
+                     console.warn('Unknown recording status received:', originalStatus);
+                 }
+                // Use FiClock or maybe FiHelpCircle for Unknown
+                break;
+        }
+
+        return (
+            <span
+                title={displayStatus === 'Failed' ? failureReason || 'Processing failed' : displayStatus}
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor} ${textColor}`}
+            >
+                 <Icon className={`mr-1 h-3 w-3 ${displayStatus === 'Processing' || displayStatus === 'Uploading' ? 'animate-spin' : ''}`} />
+                {displayStatus} 
+            </span>
+        );
+    };
+
+    return (
+        <>
+            <Header />
+            <main className="flex-grow py-12 bg-gray-50">
+                 <title>AudioScholar - My Recordings</title>
+                <div className="container mx-auto px-4">
+                    <h1 className="text-3xl font-bold text-gray-800 mb-8">My Recordings</h1>
+
+                    {loading && (
+                        <div className="text-center py-10">
+                            <FiLoader className="animate-spin h-8 w-8 mx-auto text-teal-600" />
+                            <p className="mt-2 text-gray-600">Loading recordings...</p>
+                        </div>
+                    )}
+
+                    {error && (
+                        <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-lg text-center">
+                            <p>{error}</p>
+                        </div>
+                    )}
+
+                    {!loading && recordings.length === 0 && !error && (
+                        <div className="text-center py-10 bg-white rounded-lg shadow p-6">
+                            <FiFile className="mx-auto h-12 w-12 text-gray-400 mb-4"/>
+                            <p className="text-gray-600">You haven't uploaded any recordings yet.</p>
+                            <Link to="/upload" className="mt-4 inline-block bg-[#2D8A8A] hover:bg-[#236b6b] text-white font-medium py-2 px-5 rounded-md transition">
+                                Upload Your First Recording
+                            </Link>
+                        </div>
+                    )}
+
+                    {!loading && recordings.length > 0 && (
+                        <div className="bg-white rounded-lg shadow overflow-hidden">
+                            <ul className="divide-y divide-gray-200">
+                                {recordings.map((recording) => (
+                                    <li key={recording.id} className="px-6 py-4 hover:bg-gray-50 transition duration-150 ease-in-out">
+                                        <div className="flex items-center justify-between flex-wrap gap-4">
+                                            <div className="flex-1 min-w-0">
+                                                <Link to={`/recordings/${recording.id}`} className="text-lg font-semibold text-teal-700 hover:text-teal-900 truncate block" title={recording.title}>
+                                                    {recording.title || 'Untitled Recording'}
+                                                </Link>
+                                                <p className="text-sm text-gray-500 mt-1">Uploaded: {formatDate(recording.uploadTimestamp)}</p>
+                                            </div>
+                                            <div className="flex items-center space-x-4 flex-shrink-0">
+                                                 {/* <span className="text-sm text-gray-500">{formatDuration(recording.durationSeconds)}</span> */} 
+                                                 {getStatusBadge(recording.status, recording.failureReason)}
+                                                <Link to={`/recordings/${recording.id}`} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center" title="View Details">
+                                                     View Details <FiExternalLink className="ml-1 h-3 w-3"/>
+                                                 </Link>
+                                                <button
+                                                    onClick={() => handleDelete(recording.id, recording.nhostFileId)}
+                                                    className="text-red-500 hover:text-red-700 p-1 rounded-md hover:bg-red-100 transition"
+                                                    title="Delete Recording"
+                                                >
+                                                    <FiTrash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                 </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      </main>
-
-      <footer className="bg-gray-100 py-12">
-        <div className="container mx-auto text-center text-gray-600">
-          &copy; {new Date().getFullYear()} AudioScholar. All rights reserved.
-        </div>
-      </footer>
-    </div>
-  );
+            </main>
+            <Footer />
+        </>
+    );
 };
 
 export default RecordingList;

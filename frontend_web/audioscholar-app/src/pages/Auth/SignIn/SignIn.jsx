@@ -158,9 +158,9 @@ const SignIn = () => {
         return (
                 <>
                         <Header />
-                        <main className="flex-grow flex items-center justify-center py-12 bg-gray-50">
+                        <main className="flex-grow flex items-center justify-center py-12 bg-gray-50 overflow-hidden">
                                 <title>AudioScholar - Sign In</title>
-                                <div className="container mx-auto px-4">
+                                <div className="container mx-auto px-4 animate-fade-in-up">
                                         <div className="max-w-4xl mx-auto grid md:grid-cols-2 rounded-lg shadow-xl overflow-hidden">
                                                 <div className="hidden md:block bg-[#2D8A8A] p-10 text-white flex flex-col justify-center">
                                                         <h2 className="text-3xl font-bold mb-4">Welcome Back <br /> to AudioScholar</h2>

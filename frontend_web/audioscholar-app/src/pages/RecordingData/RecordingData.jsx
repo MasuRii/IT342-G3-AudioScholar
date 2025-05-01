@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
 import { Header } from '../Home/HomePage';
+import { FiHeadphones } from 'react-icons/fi';
 
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
 const ShareIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" /></svg>;
@@ -248,6 +249,32 @@ const RecordingData = () => {
               </div>
             </div>
           </div>
+
+          {/* === Audio Playback Section === */}
+          {recordingData.storageUrl ? (
+            <div className="mb-8 bg-white rounded-lg shadow p-6 border border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
+                <FiHeadphones className="mr-2 h-5 w-5 text-teal-600" /> Play Recording
+              </h2>
+              <audio
+                controls
+                src={recordingData.storageUrl} // Use storageUrl from fetched data
+                className="w-full h-14 rounded-md bg-gray-100 shadow-inner"
+                preload="metadata"
+              >
+                Your browser does not support the audio element.
+              </audio>
+              <p className="text-xs text-gray-500 mt-2">Streaming audio from secure storage.</p>
+            </div>
+          ) : (
+            <div className="mb-8 bg-white rounded-lg shadow p-6 border border-gray-200">
+               <h2 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
+                  <FiHeadphones className="mr-2 h-5 w-5 text-gray-400" /> Play Recording
+               </h2>
+               <p className="text-gray-500 italic text-sm">Audio file not available for playback (missing storage URL).</p>
+             </div>
+          )}
+          {/* === End Audio Playback Section === */}
 
           <div className="mb-6 border-b border-gray-300">
             <nav className="-mb-px flex space-x-8" aria-label="Tabs">

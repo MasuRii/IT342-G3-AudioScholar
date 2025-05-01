@@ -191,6 +191,13 @@
 			<version>9.4.3</version>
 		</dependency>
 
+		<!-- JAudioTagger for robust audio metadata reading -->
+		<dependency>
+			<groupId>net.jthink</groupId>
+			<artifactId>jaudiotagger</artifactId>
+			<version>3.0.1</version>
+		</dependency>
+
 	</dependencies>
 
 	<build>

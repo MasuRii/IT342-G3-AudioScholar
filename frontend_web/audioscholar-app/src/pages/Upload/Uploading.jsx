@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
+import { Header } from '../Home/HomePage';
 
 const VALID_AUDIO_TYPES = [
   'audio/mpeg', 'audio/mp3',
@@ -22,6 +23,7 @@ const Uploading = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -41,12 +43,6 @@ const Uploading = () => {
     };
   }, [loading]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('AuthToken');
-    localStorage.removeItem('userId');
-    navigate('/');
-  };
-
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     setError('');
@@ -64,7 +60,9 @@ const Uploading = () => {
       setError(`Please upload only audio files. Allowed types: ${VALID_EXTENSIONS.join(', ').toUpperCase()}`);
       setSelectedFile(null);
       setFileName('');
-      document.getElementById('fileInput').value = '';
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
@@ -74,8 +72,8 @@ const Uploading = () => {
   };
 
   const handleClick = () => {
-    if (!loading) {
-      document.getElementById('fileInput').click();
+    if (!loading && fileInputRef.current) {
+      fileInputRef.current.click();
     }
   };
 
@@ -84,7 +82,9 @@ const Uploading = () => {
     setFileName('');
     setTitle('');
     setDescription('');
-    document.getElementById('fileInput').value = '';
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setError('');
   };
 
@@ -169,43 +169,7 @@ const Uploading = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <title>AudioScholar - Upload Recording</title>
-      <header className="bg-[#1A365D] shadow-sm py-4">
-        <div className="container mx-auto px-4 flex justify-between items-center">
-          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
-          <div className="flex items-center space-x-2">
-            <Link
-              to="/dashboard"
-              className={`text-gray-300 hover:text-indigo-400 transition-colors py-2 px-4 rounded hover:bg-white hover:bg-opacity-10 ${loading ? 'opacity-50 pointer-events-none' : ''}`}
-              onClick={(e) => { if (loading) e.preventDefault(); }}
-            >
-              Back to Dashboard
-            </Link>
-            <Link
-              to="/profile"
-              className={`flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10 ${loading ? 'opacity-50 pointer-events-none' : ''}`}
-              onClick={(e) => { if (loading) e.preventDefault(); }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span className="hidden sm:inline">Profile</span>
-              <span className="sm:hidden"></span>
-            </Link>
-            <button
-              onClick={handleLogout}
-              className={`flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10 ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              disabled={loading}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span className="hidden sm:inline">Logout</span>
-              <span className="sm:hidden"></span>
-            </button>
-          </div>
-        </div>
-      </header>
-
+      <Header />
 
       <main className="flex-grow flex items-center justify-center py-12 bg-gray-50">
         <div className="container mx-auto px-4 max-w-4xl">
@@ -215,6 +179,7 @@ const Uploading = () => {
             <input
               type="file"
               id="fileInput"
+              ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"
               accept={VALID_AUDIO_TYPES.join(',')}

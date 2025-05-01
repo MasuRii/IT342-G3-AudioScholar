@@ -2,6 +2,7 @@ import axios from 'axios';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
+import { Header } from '../Home/HomePage';
 
 const RecordingList = () => {
   const navigate = useNavigate();
@@ -117,11 +118,6 @@ const RecordingList = () => {
     };
   }, [recordings, navigate]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('AuthToken');
-    navigate('/');
-  };
-
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this recording?')) {
       try {
@@ -168,43 +164,7 @@ const RecordingList = () => {
   return (
     <div className="min-h-screen flex flex-col">
       <title>AudioScholar - Recordings</title>
-      <header className="bg-[#1A365D] shadow-sm py-4">
-        <div className="container mx-auto px-4 flex justify-between items-center">
-          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
-          <div className="flex items-center space-x-2">
-            <Link
-              to="/dashboard"
-              className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <span className="hidden sm:inline">Dashboard</span>
-              <span className="sm:hidden"></span>
-            </Link>
-            <Link
-              to="/profile"
-              className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span className="hidden sm:inline">Profile</span>
-              <span className="sm:hidden"></span>
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="flex items-center text-gray-300 hover:text-indigo-400 transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              <span className="hidden sm:inline">Logout</span>
-              <span className="sm:hidden"></span>
-            </button>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-grow bg-gray-50">
         <div className="container mx-auto px-4 py-12">

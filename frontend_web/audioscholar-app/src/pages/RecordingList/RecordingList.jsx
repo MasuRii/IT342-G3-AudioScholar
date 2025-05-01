@@ -257,7 +257,15 @@ const RecordingList = () => {
                             </div>
                           </td>
                           <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="text-sm text-gray-500">{new Date(recording.uploadDate).toLocaleDateString()}</div>
+                            <div className="text-sm text-gray-500">
+                              {recording.uploadTimestamp
+                                ? new Date(recording.uploadTimestamp.seconds * 1000 + recording.uploadTimestamp.nanos / 1000000).toLocaleDateString('en-US', {
+                                  month: 'long',
+                                  day: '2-digit',
+                                  year: 'numeric',
+                                })
+                                : 'N/A'}
+                            </div>
                           </td>
                           <td className="px-6 py-5 whitespace-nowrap">
                             <div className="text-sm text-gray-500">{recording.duration || 'N/A'}</div>

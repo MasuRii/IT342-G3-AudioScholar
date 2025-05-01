@@ -19,6 +19,7 @@ import edu.cit.audioscholar.dto.NhostUploadMessage;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.ProcessingStatus;
 import edu.cit.audioscholar.model.Recording;
+import org.springframework.lang.Nullable;
 
 @Service
 public class NhostUploadListenerService {
@@ -53,6 +54,7 @@ public class NhostUploadListenerService {
                                 metadataId, recordingId);
 
                 AudioMetadata metadata = null;
+                String userId = null;
                 File tempFile = null;
                 String tempFilePath = null;
 
@@ -68,6 +70,7 @@ public class NhostUploadListenerService {
                                 return;
                         }
 
+                        userId = metadata.getUserId();
                         tempFilePath = metadata.getTempFilePath();
 
                         if (metadata.getStatus() != ProcessingStatus.UPLOAD_PENDING) {
@@ -82,8 +85,8 @@ public class NhostUploadListenerService {
                         if (tempFilePath == null || tempFilePath.isBlank()) {
                                 log.error("[Nhost Upload Listener] Metadata {} has status UPLOAD_PENDING but tempFilePath is missing. Cannot proceed.",
                                                 metadataId);
-                                updateMetadataStatusToFailed(metadataId,
-                                                "Temporary file path missing in metadata.", null);
+                                firebaseService.updateAudioMetadataStatusAndReason(metadataId, userId, ProcessingStatus.FAILED,
+                                                "Temporary file path missing in metadata.");
                                 return;
                         }
 
@@ -91,15 +94,15 @@ public class NhostUploadListenerService {
                         if (!tempFile.exists() || !tempFile.canRead()) {
                                 log.error("[Nhost Upload Listener] Temporary file does not exist or cannot be read: {}. Cannot proceed.",
                                                 tempFilePath);
-                                updateMetadataStatusToFailed(metadataId,
-                                                "Temporary file missing or unreadable: "
-                                                                + tempFilePath,
-                                                tempFilePath);
+                                firebaseService.updateAudioMetadataStatusAndReason(metadataId, userId, ProcessingStatus.FAILED,
+                                                "Temporary file missing or unreadable: " + tempFilePath);
+                                deleteTempFile(tempFilePath, metadataId);
                                 return;
                         }
 
-                        updateMetadataStatus(metadataId, ProcessingStatus.UPLOADING_TO_STORAGE,
-                                        null);
+                        firebaseService.updateAudioMetadataStatusAndReason(metadataId, userId, ProcessingStatus.UPLOADING_TO_STORAGE,
+                                null);
+                        log.info("[Nhost Upload Listener] Updated status for metadata {} to UPLOADING_TO_STORAGE.", metadataId);
 
                         log.info("[Nhost Upload Listener] Starting Nhost upload for temp file: {}",
                                         tempFilePath);
@@ -120,31 +123,42 @@ public class NhostUploadListenerService {
                                                 + " disappeared after successful Nhost upload.");
                         }
 
+                        String currentUserId = currentMetadata.getUserId();
+                        if (currentUserId == null) {
+                                log.error("[Nhost Upload Listener] CRITICAL: User ID is null in metadata {} just before creating Recording.", metadataId);
+                                firebaseService.updateAudioMetadataStatusAndReason(metadataId, null, ProcessingStatus.FAILED,
+                                        "User ID missing in metadata before Recording creation.");
+                                throw new IllegalStateException("User ID missing for metadata " + metadataId);
+                        }
 
                         Recording recording = new Recording();
                         recording.setRecordingId(recordingId);
-                        recording.setUserId(currentMetadata.getUserId());
+                        recording.setUserId(currentUserId);
                         recording.setAudioUrl(storageUrl);
                         recording.setFileName(currentMetadata.getFileName());
                         recording.setTitle(currentMetadata.getTitle());
                         recordingService.createRecording(recording);
                         log.info("[Nhost Upload Listener] Recording document {} created and linked to user {}.",
-                                        recordingId, currentMetadata.getUserId());
+                                        recordingId, currentUserId);
 
                         Map<String, Object> finalMetaUpdates = new HashMap<>();
                         finalMetaUpdates.put("nhostFileId", nhostFileId);
                         finalMetaUpdates.put("storageUrl", storageUrl);
-                        finalMetaUpdates.put("status", ProcessingStatus.PENDING.name());
                         finalMetaUpdates.put("tempFilePath", null);
                         finalMetaUpdates.put("failureReason", null);
+                        finalMetaUpdates.put("lastUpdated", com.google.cloud.Timestamp.now());
+
                         firebaseService.updateDataWithMap(
                                         firebaseService.getAudioMetadataCollectionName(),
                                         metadataId, finalMetaUpdates);
-                        log.info("[Nhost Upload Listener] Metadata {} updated with Nhost details and status PENDING.",
+                        log.info("[Nhost Upload Listener] Metadata {} updated with Nhost details.",
                                         metadataId);
 
+                        firebaseService.updateAudioMetadataStatusAndReason(metadataId, currentUserId, ProcessingStatus.PENDING, null);
+                        log.info("[Nhost Upload Listener] Metadata {} status updated to PENDING.", metadataId);
+
                         AudioProcessingMessage nextMessage = new AudioProcessingMessage(recordingId,
-                                        currentMetadata.getUserId(), metadataId);
+                                        currentUserId, metadataId);
                         try {
                                 log.info("[Nhost Upload Listener] Sending message to processing queue '{}' for metadataId: {}",
                                                 RabbitMQConfig.PROCESSING_QUEUE_NAME, metadataId);
@@ -157,10 +171,8 @@ public class NhostUploadListenerService {
                                 log.error("[Nhost Upload Listener] CRITICAL: Failed to send message to processing queue '{}' for metadataId {}. Manual intervention likely needed to trigger processing. Error: {}",
                                                 RabbitMQConfig.PROCESSING_QUEUE_NAME, metadataId,
                                                 e.getMessage(), e);
-                                updateMetadataStatusToFailed(metadataId,
-                                                "Upload successful, but failed to queue for processing.",
-                                                tempFilePath);
-                                throw e;
+                                firebaseService.updateAudioMetadataStatusAndReason(metadataId, currentUserId, ProcessingStatus.FAILED,
+                                        "Upload successful, but failed to queue for processing.");
                         }
 
                         deleteTempFile(tempFilePath, metadataId);
@@ -170,7 +182,12 @@ public class NhostUploadListenerService {
                                         metadataId, e.getMessage(), e);
 
                         String failureReason = "Upload/Processing failed: " + e.getMessage();
-                        updateMetadataStatusToFailed(metadataId, failureReason, tempFilePath);
+                        try {
+                                firebaseService.updateAudioMetadataStatusAndReason(metadataId, userId, ProcessingStatus.FAILED, failureReason);
+                        } catch (Exception updateEx) {
+                                log.error("[Nhost Upload Listener] Further error setting status to FAILED for {}: {}", metadataId, updateEx.getMessage());
+                        }
+                        deleteTempFile(tempFilePath, metadataId);
 
                         if (e instanceof RuntimeException) {
                                 throw (RuntimeException) e;
@@ -178,43 +195,6 @@ public class NhostUploadListenerService {
                                 throw new RuntimeException(
                                                 "Processing failed for message: " + message, e);
                         }
-                }
-        }
-
-        private void updateMetadataStatusToFailed(String metadataId, String reason,
-                        String tempFilePathToDelete) {
-                log.error("[Nhost Upload Listener] Setting metadata {} status to FAILED. Reason: {}",
-                                metadataId, reason);
-                updateMetadataStatus(metadataId, ProcessingStatus.FAILED, reason);
-                if (tempFilePathToDelete != null) {
-                        deleteTempFile(tempFilePathToDelete, metadataId);
-                }
-        }
-
-        private void updateMetadataStatus(String metadataId, ProcessingStatus newStatus,
-                        String reason) {
-                if (metadataId == null) {
-                        log.warn("[Nhost Upload Listener] Attempted to update status for null metadataId.");
-                        return;
-                }
-                try {
-                        Map<String, Object> updates = new HashMap<>();
-                        updates.put("status", newStatus.name());
-                        if (reason != null) {
-                                updates.put("failureReason", reason);
-                        }
-                        if (newStatus == ProcessingStatus.FAILED) {
-                                updates.put("tempFilePath", null);
-                        }
-
-                        firebaseService.updateDataWithMap(
-                                        firebaseService.getAudioMetadataCollectionName(),
-                                        metadataId, updates);
-                        log.info("[Nhost Upload Listener] Updated status for metadata {} to {}.",
-                                        metadataId, newStatus);
-                } catch (Exception e) {
-                        log.error("[Nhost Upload Listener] Failed to update metadata {} status to {} in Firestore: {}",
-                                        metadataId, newStatus, e.getMessage(), e);
                 }
         }
 
@@ -226,12 +206,11 @@ public class NhostUploadListenerService {
                                         log.info("[Nhost Upload Listener] Deleted temporary file: {}",
                                                         tempFilePath);
                                 } else {
-                                        log.warn("[Nhost Upload Listener] Temporary file not found for deletion (might have been deleted already or never existed): {}",
-                                                        tempFilePath);
+                                        log.debug("[Nhost Upload Listener] Temporary file not found for deletion (already deleted?): {}", tempFilePath);
                                 }
                         } catch (IOException e) {
-                                log.error("[Nhost Upload Listener] Failed to delete temporary file {} for metadata {}: {}",
-                                                tempFilePath, metadataId, e.getMessage(), e);
+                                log.warn("[Nhost Upload Listener] Failed to delete temporary file for metadata {}: {}. Error: {}",
+                                        metadataId, tempFilePath, e.getMessage());
                         }
                 } else {
                         log.debug("[Nhost Upload Listener] No temporary file path provided for deletion (metadataId: {}).",

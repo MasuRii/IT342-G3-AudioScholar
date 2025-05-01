@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -211,6 +212,41 @@ public class SummaryController {
                     e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "An unexpected error occurred.");
+        }
+    }
+
+    // Added DELETE endpoint for Recording
+    @DeleteMapping("/recordings/{recordingId}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteRecording(@PathVariable String recordingId, Authentication authentication) {
+        String currentUserId = getCurrentUserId(authentication);
+        log.info("User {} requesting deletion of recording with ID: {}", currentUserId, recordingId);
+
+        try {
+            // First, authorize: check if user owns the recording
+            authorizeAccessForRecordingInternal(recordingId, currentUserId, "delete recording");
+
+            // If authorized, proceed with deletion
+            // Note: recordingService.deleteRecording returns void, assumes success if no exception
+            recordingService.deleteRecording(recordingId);
+
+            log.info("User {} successfully deleted recording {}", currentUserId, recordingId);
+            return ResponseEntity.noContent().build();
+
+        } catch (AccessDeniedException e) {
+            log.warn("Access denied for user {} trying to delete recording {}: {}",
+                    currentUserId, recordingId, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied to delete this recording.");
+        } catch (ResponseStatusException e) {
+            // Re-throw exceptions from authorizeAccessForRecordingInternal (e.g., 404 if recording not found)
+            throw e;
+        } catch (ExecutionException | InterruptedException e) {
+            log.error("Error deleting recording {}: {}", recordingId, e.getMessage(), e);
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to delete recording.");
+        } catch (Exception e) {
+            log.error("Unexpected error processing deleteRecording for {}: {}", recordingId, e.getMessage(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
         }
     }
 

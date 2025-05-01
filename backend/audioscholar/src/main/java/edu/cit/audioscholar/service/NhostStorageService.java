@@ -298,4 +298,53 @@ public class NhostStorageService {
         baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         return baseUrl + "/v1/files/" + fileId;
     }
+
+    public void deleteFile(String fileId) {
+        if (fileId == null || fileId.isEmpty()) {
+            LOGGER.log(Level.WARNING, "Attempted to delete Nhost file with null or empty ID.");
+            // Optionally throw an exception or just return
+            return;
+        }
+
+        String deleteUrl = nhostStorageUrl + "/" + fileId;
+        LOGGER.log(Level.INFO, "Attempting to delete Nhost file with ID: {0} using URL: {1}",
+                new Object[] {fileId, deleteUrl});
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("x-hasura-admin-secret", nhostAdminSecret);
+        HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(deleteUrl, HttpMethod.DELETE,
+                    requestEntity, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                LOGGER.log(Level.INFO, "Successfully deleted Nhost file ID: {0} (Status: {1})",
+                        new Object[] {fileId, response.getStatusCode()});
+            } else {
+                // This case might not be reached if RestTemplate throws exceptions for non-2xx
+                LOGGER.log(Level.WARNING,
+                        "Nhost file deletion returned non-success status: {0} for file ID: {1}",
+                        new Object[] {response.getStatusCode(), fileId});
+            }
+        } catch (HttpClientErrorException | HttpServerErrorException e) {
+            LOGGER.log(Level.SEVERE,
+                    "Error deleting Nhost file ID: " + fileId + ". Status: " + e.getStatusCode()
+                            + ", Response: " + e.getResponseBodyAsString(),
+                    e);
+            // Handle specific errors (e.g., 404 Not Found might be acceptable)
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
+                LOGGER.log(Level.WARNING,
+                        "Nhost file ID: {0} not found during deletion attempt (already deleted?).",
+                        fileId);
+            } else {
+                // Rethrow or handle other errors as needed
+                throw new RuntimeException("Failed to delete Nhost file: " + fileId, e);
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE,
+                    "An unexpected error occurred during Nhost file deletion for ID: " + fileId,
+                    e);
+            throw new RuntimeException("Unexpected error deleting Nhost file: " + fileId, e);
+        }
+    }
 }

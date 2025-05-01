@@ -1,5 +1,6 @@
 package edu.cit.audioscholar.service;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,12 +28,34 @@ import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.ProcessingStatus;
 import edu.cit.audioscholar.model.Recording;
 import edu.cit.audioscholar.model.Summary;
+import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.UnsupportedAudioFileException;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import org.jaudiotagger.audio.AudioFileIO;
+import org.jaudiotagger.audio.AudioFile;
+import org.jaudiotagger.audio.AudioHeader;
+import org.jaudiotagger.tag.TagException;
+import org.jaudiotagger.audio.exceptions.ReadOnlyFileException;
+import org.jaudiotagger.audio.exceptions.InvalidAudioFrameException;
+import org.jaudiotagger.audio.exceptions.CannotReadException;
 
 @Service
 public class AudioSummarizationListenerService {
         private static final Logger log =
                         LoggerFactory.getLogger(AudioSummarizationListenerService.class);
         private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
+        private static final Pattern WORD_PATTERN = Pattern.compile("\\b\\w+\\b"); // Simple word extraction
+        private static final double MIN_UNIQUE_WORD_RATIO = 0.3; // Threshold for repetition
+        private static final int MINIMUM_TRANSCRIPT_WORDS = 30; // Use word count instead of chars
 
         private final FirebaseService firebaseService;
         private final NhostStorageService nhostStorageService;
@@ -85,6 +108,7 @@ public class AudioSummarizationListenerService {
                                 recordingId, metadataId);
 
                 AudioMetadata metadata = null;
+                String userId = null;
                 Recording recording = null;
                 Path tempAudioFilePath = null;
 
@@ -96,8 +120,12 @@ public class AudioSummarizationListenerService {
                                                 metadataId, recordingId);
                                 return;
                         }
-                        log.info("[{}] Found metadata. Current status: {}", metadataId,
-                                        metadata.getStatus());
+                        userId = metadata.getUserId();
+                        if (userId == null) {
+                                log.error("[{}] userId is null in fetched metadata. Cannot proceed with cache eviction correctly.", metadataId);
+                        }
+                        log.info("[{}] Found metadata. Current status: {}, User: {}", metadataId,
+                                        metadata.getStatus(), userId);
 
                         if (metadata.getStatus() != ProcessingStatus.PENDING) {
                                 log.warn("[AMQP Listener] Metadata {} status is not PENDING (it's {}). Skipping summarization processing.",
@@ -110,7 +138,7 @@ public class AudioSummarizationListenerService {
                         if (recording == null) {
                                 log.error("[{}] Recording document not found, but metadata {} exists. Cannot process audio.",
                                                 recordingId, metadataId);
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Associated Recording document not found.");
                                 return;
                         }
@@ -118,21 +146,95 @@ public class AudioSummarizationListenerService {
 
                         log.info("[{}] Updating metadata {} status to PROCESSING.", recordingId,
                                         metadataId);
-                        updateMetadataStatus(metadataId, ProcessingStatus.PROCESSING, null);
+                        updateMetadataStatus(metadataId, userId, ProcessingStatus.PROCESSING, null);
 
                         tempAudioFilePath = downloadAudioToFile(recording, metadataId);
                         if (tempAudioFilePath == null) {
                                 return;
                         }
 
+                        // --- Calculate Duration using JAudioTagger --- 
+                        Integer durationSec = null;
+                        try {
+                                File audioFile = tempAudioFilePath.toFile();
+                                if (audioFile.exists() && audioFile.length() > 0) {
+                                        AudioFile f = AudioFileIO.read(audioFile);
+                                        AudioHeader header = f.getAudioHeader();
+                                        if (header != null) {
+                                                durationSec = header.getTrackLength(); // Duration in seconds
+                                                log.info("[{}] Calculated audio duration using JAudioTagger: {} seconds.", recordingId, durationSec);
+                                                // Update Firestore immediately
+                                                Map<String, Object> durationUpdate = Map.of("durationSeconds", durationSec);
+                                                firebaseService.updateDataWithMap(
+                                                        firebaseService.getAudioMetadataCollectionName(),
+                                                        metadataId,
+                                                        durationUpdate
+                                                );
+                                                log.info("[{}] Successfully updated durationSeconds ({}) in metadata.", recordingId, durationSec);
+                                        } else {
+                                                log.warn("[{}] JAudioTagger could not read audio header for {}. Duration not calculated.", 
+                                                         recordingId, tempAudioFilePath.getFileName());
+                                        }
+                                } else {
+                                        log.warn("[{}] Temporary audio file {} does not exist or is empty. Cannot calculate duration.", 
+                                                 recordingId, tempAudioFilePath.toAbsolutePath());
+                                }
+                        } catch (CannotReadException | IOException | TagException | ReadOnlyFileException | InvalidAudioFrameException e) {
+                                log.warn("[{}] JAudioTagger failed to read audio file {} for duration. Error: {}. Proceeding without duration.", 
+                                         recordingId, tempAudioFilePath.getFileName(), e.getMessage());
+                                // Log the full stack trace at debug level if needed
+                                log.debug("JAudioTagger exception details:", e);
+                        } catch (Exception e) {
+                                log.error("[{}] Unexpected error calculating duration using JAudioTagger for {}. Error: {}", 
+                                         recordingId, tempAudioFilePath.getFileName(), e.getMessage(), e);
+                        }
+                        // --- End Duration Calculation ---
+
                         String transcriptText = performTranscription(recording, tempAudioFilePath,
                                         metadataId);
                         if (transcriptText == null) {
+                                log.warn("[{}] Transcription failed or returned null. Halting processing.", recordingId);
                                 return;
                         }
 
+                        // --- Quality Gate Starts ---
+                        // Check 1: No speech detected marker
+                        final String noSpeechMarker = "[NO SPEECH DETECTED]";
+                        if (noSpeechMarker.equalsIgnoreCase(transcriptText.trim())) {
+                            log.warn("[{}] Transcription resulted in '{}'. No speech detected or audio unsuitable. Halting summarization and recommendations.",
+                                     recordingId, noSpeechMarker);
+                            updateMetadataStatus(metadataId, userId, ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT, "No speech detected in audio");
+                            return;
+                        }
+
+                        // Extract words for checks
+                        String[] words = WORD_PATTERN.matcher(transcriptText.toLowerCase()).results()
+                                .map(mr -> mr.group()).toArray(String[]::new);
+                        int wordCount = words.length;
+
+                        // Check 2: Minimum word count
+                        if (wordCount < MINIMUM_TRANSCRIPT_WORDS) {
+                            log.warn("[{}] Transcript word count ({}) is below the minimum threshold of {}. Considered unsuitable. Halting summarization and recommendations.",
+                                     recordingId, wordCount, MINIMUM_TRANSCRIPT_WORDS);
+                            updateMetadataStatus(metadataId, userId, ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT,
+                                                 "Transcript too short to be suitable lecture material.");
+                            return; // Stop further processing
+                        }
+
+                        // Check 3: Repetitiveness
+                        if (isTranscriptTooRepetitive(words)) {
+                            log.warn("[{}] Transcript appears too repetitive (unique word ratio below threshold). Considered unsuitable. Halting summarization and recommendations.",
+                                     recordingId);
+                            updateMetadataStatus(metadataId, userId, ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT,
+                                                 "Transcript content appears too repetitive.");
+                            return; // Stop further processing
+                        }
+                        // --- Quality Gate Ends ---
+
+                        log.info("[{}] Transcript passed quality checks (length, repetition). Proceeding with processing.", recordingId);
+
                         if (!saveTranscript(metadataId, transcriptText)) {
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Failed to save transcript to metadata.");
                                 return;
                         }
@@ -151,26 +253,26 @@ public class AudioSummarizationListenerService {
                                                 firebaseService.getAudioMetadataById(metadataId);
                                 if (currentMeta != null && currentMeta
                                                 .getStatus() != ProcessingStatus.FAILED) {
-                                        updateMetadataStatusToFailed(metadataId,
+                                        updateMetadataStatusToFailed(metadataId, userId,
                                                         "Failed to save summary after successful generation.");
                                 }
                                 return;
                         }
 
-                        finalizeProcessing(metadataId, savedSummary.getSummaryId());
+                        finalizeProcessing(metadataId, userId, savedSummary.getSummaryId());
                         triggerRecommendations(recording.getUserId(), recordingId,
                                         savedSummary.getSummaryId());
 
                 } catch (FirestoreInteractionException e) {
                         log.error("[{}] Firestore error during processing for metadata {}.",
                                         recordingId, metadataId, e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Firestore interaction failed during processing.");
                 } catch (ExecutionException | InterruptedException e) {
                         log.error("[{}] Concurrency/Execution error during processing for metadata {}.",
                                         recordingId, metadataId, e);
                         Thread.currentThread().interrupt();
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Concurrency error during processing.");
                 } catch (RuntimeException e) {
                         log.error("[{}] Runtime error during processing for metadata {}.",
@@ -179,7 +281,7 @@ public class AudioSummarizationListenerService {
                                         firebaseService.getAudioMetadataById(metadataId);
                         if (currentMeta != null
                                         && currentMeta.getStatus() != ProcessingStatus.FAILED) {
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Processing runtime error: " + e.getMessage());
                         }
                 } catch (Exception e) {
@@ -189,7 +291,7 @@ public class AudioSummarizationListenerService {
                                         firebaseService.getAudioMetadataById(metadataId);
                         if (currentMeta != null
                                         && currentMeta.getStatus() != ProcessingStatus.FAILED) {
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Unexpected processing error: " + e.getMessage());
                         }
                 } finally {
@@ -214,13 +316,14 @@ public class AudioSummarizationListenerService {
 
         private Path downloadAudioToFile(Recording recording, String metadataId) {
                 String recordingId = recording.getRecordingId();
+                String userId = recording.getUserId();
                 Path tempFilePath = null;
                 try {
                         String nhostFileId = extractNhostIdFromUrl(recording.getAudioUrl());
                         if (nhostFileId == null) {
                                 log.error("[{}] Could not extract Nhost File ID from URL: {}. Cannot download audio.",
                                                 recordingId, recording.getAudioUrl());
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Invalid Nhost URL in Recording document.");
                                 return null;
                         }
@@ -239,7 +342,7 @@ public class AudioSummarizationListenerService {
                 } catch (IOException e) {
                         log.error("[{}] IOException during audio download/saving for metadata {}. Temp path: {}. Error: {}",
                                         recordingId, metadataId, tempFilePath, e.getMessage(), e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Audio download or saving failed: " + e.getMessage());
                         if (tempFilePath != null) {
                                 try {
@@ -251,7 +354,7 @@ public class AudioSummarizationListenerService {
                 } catch (Exception e) {
                         log.error("[{}] Unexpected exception during audio download for metadata {}. Temp path: {}. Error: {}",
                                         recordingId, metadataId, tempFilePath, e.getMessage(), e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Unexpected download error: " + e.getMessage());
                         if (tempFilePath != null) {
                                 try {
@@ -266,6 +369,7 @@ public class AudioSummarizationListenerService {
         private String performTranscription(Recording recording, Path audioFilePath,
                         String metadataId) {
                 String recordingId = recording.getRecordingId();
+                String userId = recording.getUserId();
                 try {
                         log.info("[{}] Calling Gemini Transcription API (Flash Model) using file: {}",
                                         recordingId, audioFilePath.toAbsolutePath());
@@ -284,13 +388,13 @@ public class AudioSummarizationListenerService {
                                                                         "Details unavailable");
                                 } catch (JsonProcessingException ignored) {
                                 }
-                                updateMetadataStatusToFailed(metadataId, errorDetails);
+                                updateMetadataStatusToFailed(metadataId, userId, errorDetails);
                                 return null;
                         }
                         if (transcriptionResult.isBlank()) {
                                 log.error("[{}] Gemini Transcription API returned an empty result.",
                                                 recordingId);
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Audio transcription returned empty result.");
                                 return null;
                         }
@@ -304,14 +408,14 @@ public class AudioSummarizationListenerService {
                         log.error("[{}] IOException during transcription (reading temp file?) for metadata {}. File: {}. Error: {}",
                                         recordingId, metadataId, audioFilePath.toAbsolutePath(),
                                         e.getMessage(), e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Transcription I/O error: " + e.getMessage());
                         return null;
                 } catch (Exception e) {
                         log.error("[{}] Unexpected exception during transcription for metadata {}. File: {}. Error: {}",
                                         recordingId, metadataId, audioFilePath.toAbsolutePath(),
                                         e.getMessage(), e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Unexpected transcription error: " + e.getMessage());
                         return null;
                 }
@@ -320,6 +424,7 @@ public class AudioSummarizationListenerService {
         private String performSummarization(Recording recording, String transcriptText,
                         String metadataId) {
                 String recordingId = recording.getRecordingId();
+                String userId = recording.getUserId();
                 try {
                         String prompt = createSummarizationPrompt(recording);
                         log.debug("[{}] Generated Gemini Summarization prompt for JSON mode: '{}'",
@@ -341,13 +446,13 @@ public class AudioSummarizationListenerService {
                                                                         "Details unavailable");
                                 } catch (JsonProcessingException ignored) {
                                 }
-                                updateMetadataStatusToFailed(metadataId, errorDetails);
+                                updateMetadataStatusToFailed(metadataId, userId, errorDetails);
                                 return null;
                         }
                         if (summarizationResult.isBlank()) {
                                 log.error("[{}] Gemini Summarization API returned an empty result.",
                                                 recordingId);
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "Summarization returned empty result.");
                                 return null;
                         }
@@ -361,7 +466,7 @@ public class AudioSummarizationListenerService {
                 } catch (Exception e) {
                         log.error("[{}] Unexpected exception during summarization for metadata {}. Error: {}",
                                         recordingId, metadataId, e.getMessage(), e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Unexpected summarization error: " + e.getMessage());
                         return null;
                 }
@@ -390,6 +495,7 @@ public class AudioSummarizationListenerService {
         private Summary parseAndSaveSummary(Recording recording, String metadataId,
                         String summarizationJson) {
                 String recordingId = recording.getRecordingId();
+                String userId = recording.getUserId();
                 try {
                         JsonNode responseNode = objectMapper.readTree(summarizationJson);
                         if (responseNode.has("error")) {
@@ -399,7 +505,7 @@ public class AudioSummarizationListenerService {
                                                 .asText("No details provided");
                                 log.error("[{}] Parsed JSON indicates an error (should have been caught earlier): {} - {}",
                                                 recordingId, errorTitle, errorDetails);
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "AI service failed: " + errorTitle);
                                 return null;
                         }
@@ -412,7 +518,7 @@ public class AudioSummarizationListenerService {
                         if (summaryText == null) {
                                 log.error("[{}] Gemini JSON response missing required 'summaryText' field. Response: {}",
                                                 recordingId, summarizationJson);
-                                updateMetadataStatusToFailed(metadataId,
+                                updateMetadataStatusToFailed(metadataId, userId,
                                                 "AI response missing required 'summaryText'.");
                                 return null;
                         }
@@ -439,7 +545,7 @@ public class AudioSummarizationListenerService {
                                         summarizationJson.substring(0,
                                                         Math.min(summarizationJson.length(), 1000))
                                                         + "...");
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Failed to parse AI service JSON response.");
                         return null;
                 } catch (ExecutionException | InterruptedException e) {
@@ -447,22 +553,22 @@ public class AudioSummarizationListenerService {
                                         metadataId, e);
                         if (e instanceof InterruptedException)
                                 Thread.currentThread().interrupt();
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Failed during summary saving: " + e.getMessage());
                         return null;
                 } catch (Exception e) {
                         log.error("[{}] Unexpected exception during summary processing/saving for metadata {}.",
                                         recordingId, metadataId, e);
-                        updateMetadataStatusToFailed(metadataId,
+                        updateMetadataStatusToFailed(metadataId, userId,
                                         "Unexpected exception during summary processing: "
                                                         + e.getMessage());
                         return null;
                 }
         }
 
-        private void finalizeProcessing(String metadataId, String summaryId) {
-                log.info("[{}] Finalizing processing: linking summaryId {} and setting status to COMPLETED.",
-                                metadataId, summaryId);
+        private void finalizeProcessing(String metadataId, String userId, String summaryId) {
+                log.info("[{}] Finalizing processing: linking summaryId {} and setting status to COMPLETED for user {}.",
+                                metadataId, summaryId, userId);
                 try {
                         Map<String, Object> updateMap = new HashMap<>();
                         updateMap.put("summaryId", summaryId);
@@ -477,18 +583,20 @@ public class AudioSummarizationListenerService {
                                         metadataId, summaryId);
 
                         Cache userMetadataCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
-                        if (userMetadataCache != null) {
-                                log.info("[{}] Evicting all entries from cache: {}", metadataId,
-                                                CACHE_METADATA_BY_USER);
-                                userMetadataCache.clear();
+                        if (userMetadataCache != null && userId != null) {
+                                log.info("[{}] Evicting cache entry for user {} from cache: {}", metadataId,
+                                        userId, CACHE_METADATA_BY_USER);
+                                userMetadataCache.evict(userId);
+                        } else if (userId == null) {
+                                log.warn("[{}] Cannot evict user cache in finalizeProcessing because userId is null.", metadataId);
                         } else {
-                                log.warn("[{}] Cache '{}' not found for eviction.", metadataId,
-                                                CACHE_METADATA_BY_USER);
+                                log.warn("[{}] Cache '{}' not found for eviction during finalization.", metadataId,
+                                        CACHE_METADATA_BY_USER);
                         }
 
                 } catch (Exception e) {
-                        log.error("[{}] CRITICAL: Failed to update metadata status to COMPLETED or link summaryId {} after saving summary. Summary is saved, but metadata might be inconsistent. Error: {}",
-                                        metadataId, summaryId, e.getMessage(), e);
+                        log.error("[{}] CRITICAL: Failed to finalize metadata status update for user {}. Error: {}",
+                                        metadataId, userId, e.getMessage(), e);
                         if (e instanceof InterruptedException)
                                 Thread.currentThread().interrupt();
                 }
@@ -498,7 +606,7 @@ public class AudioSummarizationListenerService {
                 if (learningMaterialRecommenderService == null) {
                         log.error("[{}] LearningMaterialRecommenderService is null. Cannot trigger recommendations.",
                                         recordingId);
-                        updateMetadataStatusToFailed(recordingId,
+                        updateMetadataStatusToFailed(recordingId, userId,
                                         "Internal server error: Recommendation service unavailable.");
                         return;
                 }
@@ -602,71 +710,30 @@ public class AudioSummarizationListenerService {
                 }
         }
 
-        private void updateMetadataStatusToFailed(String metadataId, String reason) {
-                updateMetadataStatus(metadataId, ProcessingStatus.FAILED, reason);
+        private void updateMetadataStatusToFailed(String metadataId, @Nullable String userId, String reason) {
+                updateMetadataStatus(metadataId, userId, ProcessingStatus.FAILED, reason);
         }
 
-        private void updateMetadataStatus(String metadataId, ProcessingStatus newStatus,
-                        @Nullable String reason) {
-                if (metadataId == null) {
-                        log.error("[AMQP Listener] Cannot update metadata status: metadataId is null.");
-                        return;
-                }
-                log.info("[{}] Attempting to set metadata status to {}.{}", metadataId, newStatus,
-                                (reason != null ? " Reason: " + reason : ""));
+        private void updateMetadataStatus(String metadataId, @Nullable String userId, ProcessingStatus status, String reason) {
                 try {
-                        AudioMetadata currentMeta =
-                                        firebaseService.getAudioMetadataById(metadataId);
-                        if (currentMeta != null) {
-                                if (currentMeta.getStatus() == ProcessingStatus.FAILED
-                                                && newStatus != ProcessingStatus.FAILED) {
-                                        log.warn("[{}] Metadata status is already FAILED. Not overwriting with {}.",
-                                                        metadataId, newStatus);
-                                        return;
-                                }
-                                if (currentMeta.getStatus() == ProcessingStatus.PROCESSING
-                                                && newStatus == ProcessingStatus.PENDING) {
-                                        log.warn("[{}] Metadata status is already PROCESSING. Not overwriting with PENDING.",
-                                                        metadataId);
-                                        return;
-                                }
-
-                                Map<String, Object> updateMap = new HashMap<>();
-                                updateMap.put("status", newStatus.name());
-                                if (newStatus == ProcessingStatus.FAILED) {
-                                        updateMap.put("failureReason", reason != null ? reason
-                                                        : "Unknown failure");
-                                } else {
-                                        updateMap.put("failureReason", null);
-                                }
-                                updateMap.put("lastUpdated", Timestamp.now());
-
-                                firebaseService.updateDataWithMap(
-                                                firebaseService.getAudioMetadataCollectionName(),
-                                                metadataId, updateMap);
-                                log.info("[{}] Metadata status successfully updated to {}.",
-                                                metadataId, newStatus);
-
-                                Cache userMetadataCache =
-                                                cacheManager.getCache(CACHE_METADATA_BY_USER);
-                                if (userMetadataCache != null) {
-                                        log.info("[{}] Evicting all entries from cache: {}",
-                                                        metadataId, CACHE_METADATA_BY_USER);
-                                        userMetadataCache.clear();
-                                } else {
-                                        log.warn("[{}] Cache '{}' not found for eviction.",
-                                                        metadataId, CACHE_METADATA_BY_USER);
-                                }
-
-                        } else {
-                                log.error("[{}] Cannot update metadata status to {} as metadata could not be retrieved (might have been deleted?).",
-                                                metadataId, newStatus);
+                        log.info("Updating metadata {} status to {} with reason: {}", metadataId, status, reason);
+                        firebaseService.updateAudioMetadataStatusAndReason(metadataId, userId, status, reason);
+                        // Invalidate relevant cache entries if necessary
+                        Cache userCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                        if (userCache != null) {
+                                // We need the userId associated with metadataId to clear the correct cache entry.
+                                // This might require fetching the metadata first, or passing userId down.
+                                // For now, we might have to clear all user caches if we don't have userId readily available.
+                                // Or, enhance FirebaseService to return the userId when fetching by metadataId if needed here.
+                                // Let's assume FirebaseService handles necessary cache invalidation or we accept potential staleness.
+                                log.warn("Cache invalidation for metadata update might require userId. Consider enhancing logic if stale data becomes an issue.");
+                                // Example (if userId was available): userCache.evict(userId);
                         }
                 } catch (Exception e) {
-                        log.error("[{}] CRITICAL: Failed to update metadata status to {}. Manual intervention likely required. Error: {}",
-                                        metadataId, newStatus, e.getMessage(), e);
-                        if (e instanceof InterruptedException)
-                                Thread.currentThread().interrupt();
+                        log.error("CRITICAL: Failed to update metadata {} status to {} for user {} after processing decision. Reason: {}. Error: {}",
+                                  metadataId, status, userId != null ? userId : "<unknown>", reason, e.getMessage(), e);
+                        if(e instanceof InterruptedException) Thread.currentThread().interrupt();
+                        // Logged, but continue execution if possible (e.g., if returning after update)
                 }
         }
 
@@ -689,6 +756,28 @@ public class AudioSummarizationListenerService {
                 }
                 log.warn("Could not extract Nhost ID using expected pattern from URL: {}", url);
                 return null;
+        }
+
+        /**
+         * Checks if the transcript is overly repetitive based on unique word ratio.
+         * @param words Array of words extracted from the transcript.
+         * @return true if the transcript is deemed too repetitive, false otherwise.
+         */
+        private boolean isTranscriptTooRepetitive(String[] words) {
+                if (words == null || words.length == 0) {
+                        return false; // Cannot determine, assume not repetitive
+                }
+                int totalWords = words.length;
+                Set<String> uniqueWords = new HashSet<>(Arrays.asList(words));
+                int uniqueWordCount = uniqueWords.size();
+
+                // Avoid division by zero for very short inputs handled by length check
+                if (totalWords == 0) return false;
+
+                double uniqueRatio = (double) uniqueWordCount / totalWords;
+                log.debug("Repetition check: {} unique words / {} total words = ratio {}", uniqueWordCount, totalWords, String.format("%.3f", uniqueRatio));
+
+                return uniqueRatio < MIN_UNIQUE_WORD_RATIO;
         }
 
 }

@@ -32,6 +32,12 @@ import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.LearningRecommendation;
 import edu.cit.audioscholar.model.ProcessingStatus;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.Cache;
+import org.springframework.lang.Nullable;
+import org.springframework.cache.annotation.Caching;
 
 @Service
 public class FirebaseService {
@@ -57,14 +63,19 @@ public class FirebaseService {
     @Value("classpath:firebase-service-account.json")
     private Resource serviceAccountResource;
 
+    private final CacheManager cacheManager;
+    private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
+    private static final String CACHE_METADATA_BY_ID = "audioMetadataById";
+
     public FirebaseService(
             @Value("${firebase.firestore.collection.audiometadata}") String audioMetadataCollectionName,
             @Value("${firebase.firestore.collection.recommendations}") String recommendationsCollectionName,
-            FirebaseApp firebaseApp, @Lazy UserService userService) {
+            FirebaseApp firebaseApp, @Lazy UserService userService, CacheManager cacheManager) {
         this.audioMetadataCollectionName = audioMetadataCollectionName;
         this.recommendationsCollectionName = recommendationsCollectionName;
         this.firebaseApp = firebaseApp;
         this.userService = userService;
+        this.cacheManager = cacheManager;
     }
 
     @PostConstruct
@@ -441,6 +452,7 @@ public class FirebaseService {
         }
     }
 
+    @Cacheable(value = CACHE_METADATA_BY_USER, key = "#userId", condition = "#userId != null")
     public List<AudioMetadata> getAudioMetadataByUserId(String userId, int pageSize,
             String lastDocumentId) {
         if (!StringUtils.hasText(userId)) {
@@ -540,6 +552,7 @@ public class FirebaseService {
         }
     }
 
+    @Cacheable(value = CACHE_METADATA_BY_ID, key = "#metadataId", unless = "#result == null")
     public AudioMetadata getAudioMetadataById(String metadataId) {
         if (!StringUtils.hasText(metadataId)) {
             log.warn("Attempted to get AudioMetadata with blank ID.");
@@ -688,6 +701,9 @@ public class FirebaseService {
             metadata.setRecordingId(getString(data, "recordingId", document.getId()));
             metadata.setSummaryId(getString(data, "summaryId", document.getId()));
             metadata.setTranscriptText(getString(data, "transcriptText", document.getId()));
+            metadata.setDurationSeconds(getInteger(data, "durationSeconds", document.getId()));
+            metadata.setLastUpdated(getTimestamp(data, "lastUpdated", document.getId()));
+            metadata.setFailureReason(getString(data, "failureReason", document.getId()));
 
             String statusStr = getString(data, "status", document.getId());
             if (StringUtils.hasText(statusStr)) {
@@ -750,6 +766,19 @@ public class FirebaseService {
             log.warn(
                     "Field '{}' was not a Timestamp for document ID: {}. Type: {}. Returning null.",
                     key, docId, value.getClass().getName());
+        } else {
+            log.trace("Field '{}' not found or null for document ID: {}", key, docId);
+        }
+        return null;
+    }
+
+    private Integer getInteger(Map<String, Object> data, String key, String docId) {
+        Object value = data.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        } else if (value != null) {
+            log.warn("Field '{}' was not a Number for document ID: {}. Type: {}. Returning null.", key,
+                    docId, value.getClass().getName());
         } else {
             log.trace("Field '{}' not found or null for document ID: {}", key, docId);
         }
@@ -864,6 +893,71 @@ public class FirebaseService {
                 log.error("Error during FCM token cleanup for user {}: {}", userId, e.getMessage(),
                         e);
             }
+        }
+    }
+
+    /**
+     * Updates the status and optionally the failure reason of an AudioMetadata document.
+     * Clears relevant caches (individual ID via annotation, user list manually).
+     *
+     * @param metadataId The ID of the AudioMetadata document to update.
+     * @param userId     The ID of the user who owns the metadata (for cache eviction).
+     * @param status     The new ProcessingStatus.
+     * @param reason     The reason for the status change, can be null.
+     * @throws ExecutionException If Firestore update fails.
+     * @throws InterruptedException If the thread is interrupted.
+     */
+    @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId", condition = "#metadataId != null")
+    public void updateAudioMetadataStatusAndReason(String metadataId, @Nullable String userId, ProcessingStatus status, String reason)
+            throws ExecutionException, InterruptedException {
+        if (metadataId == null || status == null) {
+            log.error("Cannot update metadata status: metadataId or status is null.");
+            throw new IllegalArgumentException("Metadata ID and Status cannot be null.");
+        }
+
+        DocumentReference docRef = getFirestore().collection(audioMetadataCollectionName).document(metadataId);
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("status", status.name());
+        updates.put("lastUpdated", Timestamp.now());
+
+        if (status == ProcessingStatus.FAILED || status == ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT) {
+            updates.put("failureReason", reason != null ? reason : "No specific reason provided.");
+        } else {
+            updates.put("failureReason", null);
+        }
+
+        log.info("Updating Firestore document {} in collection {} for user {} with status: {}, reason: '{}'", 
+                 metadataId, audioMetadataCollectionName, userId != null ? userId : "<unknown>", status, reason);
+        ApiFuture<WriteResult> writeResult = docRef.update(updates);
+        
+        try {
+             // Wait for the update to complete
+             WriteResult result = writeResult.get(); 
+             log.info("Successfully updated Firestore document {} at {}. Attempting manual cache eviction.", metadataId, result.getUpdateTime());
+
+             // --- Manual Cache Eviction for User List --- 
+             if (userId != null) {
+                 try {
+                     Cache userListCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                     if (userListCache != null) {
+                         log.info("Manually evicting user list cache entry for user {} in cache {}", userId, CACHE_METADATA_BY_USER);
+                         userListCache.evict(userId);
+                     } else {
+                         log.warn("Cache '{}' not found for manual user list eviction.", CACHE_METADATA_BY_USER);
+                     }
+                 } catch (Exception e) {
+                     log.error("Error during manual user list cache eviction for user {}: {}", userId, e.getMessage(), e);
+                     // Log but continue, Firestore update was successful
+                 }
+             } else {
+                  log.warn("Cannot manually evict user list cache for metadata {} because userId was null.", metadataId);
+             }
+             // --- End Manual Cache Eviction ---
+
+        } catch (ExecutionException | InterruptedException e) {
+             log.error("Firestore update failed for document {}. Cache eviction will not be attempted. Error: {}", metadataId, e.getMessage(), e);
+             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+             throw e; // Re-throw the exception
         }
     }
 }

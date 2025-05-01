@@ -62,7 +62,6 @@ public class FirebaseService {
     private Resource serviceAccountResource;
 
     private final CacheManager cacheManager;
-    private static final String AUDIO_METADATA_COLLECTION = "audioMetadata";
     private static final String CACHE_METADATA_BY_USER = "audioMetadataByUser";
     private static final String CACHE_METADATA_BY_ID = "audioMetadataById";
 
@@ -912,7 +911,7 @@ public class FirebaseService {
             throw new IllegalArgumentException("Metadata ID and Status cannot be null.");
         }
 
-        DocumentReference docRef = firestore.collection(AUDIO_METADATA_COLLECTION).document(metadataId);
+        DocumentReference docRef = getFirestore().collection(audioMetadataCollectionName).document(metadataId);
         Map<String, Object> updates = new HashMap<>();
         updates.put("status", status.name());
         updates.put("lastUpdated", Timestamp.now());
@@ -925,7 +924,8 @@ public class FirebaseService {
             updates.put("failureReason", null);
         }
 
-        log.info("Updating Firestore document {} with status: {}, reason: '{}'", metadataId, status, reason);
+        log.info("Updating Firestore document {} in collection {} with status: {}, reason: '{}'", 
+                 metadataId, audioMetadataCollectionName, status, reason);
         ApiFuture<WriteResult> writeResult = docRef.update(updates);
         writeResult.get(); // Wait for the update to complete and handle potential exceptions
 
@@ -934,7 +934,7 @@ public class FirebaseService {
         // For user-based cache, we need the userId. Fetch it if not readily available.
         // This adds an extra read, consider if this is acceptable performance-wise.
         try {
-            DocumentSnapshot snapshot = docRef.get().get();
+            DocumentSnapshot snapshot = getFirestore().collection(audioMetadataCollectionName).document(metadataId).get().get();
             if (snapshot.exists()) {
                 String userId = snapshot.getString("userId");
                 if (userId != null) {

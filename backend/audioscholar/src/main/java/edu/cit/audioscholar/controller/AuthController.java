@@ -153,40 +153,71 @@ public class AuthController {
                         FirebaseToken decodedToken = firebaseService
                                         .verifyFirebaseIdToken(tokenRequest.getIdToken());
                         String uid = decodedToken.getUid();
-                        String email = decodedToken.getEmail();
-                        String name = decodedToken.getName();
-                        String photoUrl = decodedToken.getPicture();
-                        String provider = (String) decodedToken.getClaims()
-                                        .getOrDefault("firebase.sign_in_provider", "firebase");
-                        Object providerSpecificData = decodedToken.getClaims().get("firebase");
+                        log.info("Firebase token verified for UID: {}. Now fetching full UserRecord.",
+                                        uid);
+
+                        UserRecord userRecord = FirebaseAuth
+                                        .getInstance(firebaseService.getFirebaseApp()).getUser(uid);
+                        log.info("Fetched UserRecord - UID: {}, Email: {}, DisplayName: {}, PhotoURL: {}",
+                                        userRecord.getUid(), userRecord.getEmail(),
+                                        userRecord.getDisplayName(), userRecord.getPhotoUrl());
+
+                        String email = null;
+
+                        String provider = "unknown";
                         String providerId = uid;
-                        if (providerSpecificData instanceof Map) {
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> firebaseInfo =
-                                                (Map<String, Object>) providerSpecificData;
-                                if (firebaseInfo.get("sign_in_provider") != null && !firebaseInfo
-                                                .get("sign_in_provider").equals("custom")) {
+                        Map<String, Object> claims = decodedToken.getClaims();
+
+                        if (claims != null && claims.containsKey("firebase")) {
+                                Object firebaseClaim = claims.get("firebase");
+                                if (firebaseClaim instanceof Map) {
                                         @SuppressWarnings("unchecked")
-                                        Map<String, Object> identities =
-                                                        (Map<String, Object>) firebaseInfo
-                                                                        .get("identities");
-                                        if (identities != null
-                                                        && identities.containsKey(provider)) {
+                                        Map<String, Object> firebaseInfo =
+                                                        (Map<String, Object>) firebaseClaim;
+                                        provider = (String) firebaseInfo.getOrDefault(
+                                                        "sign_in_provider", "firebase");
+
+                                        if (!"custom".equals(provider)
+                                                        && firebaseInfo.containsKey("identities")) {
                                                 @SuppressWarnings("unchecked")
-                                                List<String> providerUids =
-                                                                (List<String>) identities
-                                                                                .get(provider);
-                                                if (providerUids != null
-                                                                && !providerUids.isEmpty()) {
-                                                        providerId = providerUids.get(0);
+                                                Map<String, Object> identities =
+                                                                (Map<String, Object>) firebaseInfo
+                                                                                .get("identities");
+                                                if (identities != null && identities
+                                                                .containsKey(provider)) {
+                                                        @SuppressWarnings("unchecked")
+                                                        List<String> providerUids =
+                                                                        (List<String>) identities
+                                                                                        .get(provider);
+                                                        if (providerUids != null && !providerUids
+                                                                        .isEmpty()) {
+                                                                providerId = providerUids.get(0);
+                                                        }
                                                 }
                                         }
                                 }
                         }
 
-                        log.info("Firebase token verified for UID: {}. Provider: {}, ProviderId: {}. Finding or creating user profile.",
-                                        uid, provider, providerId);
-                        log.debug("Extracted Photo URL from Firebase Token: {}", photoUrl);
+                        if ("google.com".equals(provider) && claims.containsKey("email")) {
+                                email = (String) claims.get("email");
+                                log.info("Extracted email from Google provider token claim: {}",
+                                                email);
+                        }
+
+                        if (email == null) {
+                                email = userRecord.getEmail();
+                                log.info("Using email from UserRecord (either fallback or non-Google provider): {}",
+                                                email);
+                        }
+
+                        String name = userRecord.getDisplayName();
+                        String photoUrl = userRecord.getPhotoUrl();
+
+                        log.info("Using Email: {} for UID: {}. Provider: {}, ProviderId: {}. Finding or creating user profile.",
+                                        email, uid, provider, providerId);
+                        log.debug("UserRecord Display Name: {}", name);
+                        log.debug("UserRecord Photo URL: {}", photoUrl);
+
 
                         User user = userService.findOrCreateUserByFirebaseDetails(uid, email, name,
                                         provider, providerId, photoUrl);
@@ -207,9 +238,18 @@ public class AuthController {
                         return ResponseEntity.ok(response);
 
                 } catch (FirebaseAuthException e) {
-                        log.warn("Firebase ID token verification failed: {}", e.getMessage());
+                        log.warn("Firebase token verification or UserRecord fetch failed: {}",
+                                        e.getMessage());
+                        if (AuthErrorCode.USER_NOT_FOUND.equals(e.getAuthErrorCode())) {
+                                log.error("UserRecord not found for UID {} after token verification. This shouldn't normally happen.",
+                                                e.getMessage());
+                                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                                                .body(new AuthResponse(false,
+                                                                "User account inconsistency detected."));
+                        }
                         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new AuthResponse(
-                                        false, "Invalid Firebase token: " + e.getMessage()));
+                                        false, "Invalid Firebase token or user lookup failed: "
+                                                        + e.getMessage()));
                 } catch (FirestoreInteractionException e) {
                         log.error("Firestore error during user profile lookup/creation after Firebase token verification: {}",
                                         e.getMessage(), e);
@@ -242,7 +282,10 @@ public class AuthController {
                         GoogleIdToken.Payload payload = idToken.getPayload();
                         String googleUserId = payload.getSubject();
                         String email = payload.getEmail();
-                        boolean emailVerified = payload.getEmailVerified();
+                        Boolean emailVerifiedPayload = payload.getEmailVerified();
+                        boolean emailVerified = (emailVerifiedPayload != null)
+                                        ? emailVerifiedPayload.booleanValue()
+                                        : false;
                         String name = (String) payload.get("name");
                         String pictureUrl = (String) payload.get("picture");
 

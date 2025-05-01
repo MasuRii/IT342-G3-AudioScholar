@@ -4,7 +4,7 @@ import { FaGithub } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
 import { Link, useNavigate } from 'react-router-dom';
 import { firebaseApp } from '../../../config/firebaseConfig';
-import { verifyFirebaseTokenWithBackend } from '../../../services/authService';
+import { verifyFirebaseTokenWithBackend, verifyGoogleTokenWithBackend } from '../../../services/authService';
 
 const SignIn = () => {
         const [email, setEmail] = useState('');
@@ -22,7 +22,7 @@ const SignIn = () => {
                         console.log('Sending Firebase ID token to backend for verification...');
                         const backendResponse = await verifyFirebaseTokenWithBackend(idToken);
 
-                        console.log('Backend verification successful:', backendResponse);
+                        console.log('Backend verification successful (Firebase Token):', backendResponse);
 
                         localStorage.setItem('AuthToken', backendResponse.token);
                         localStorage.setItem('userId', backendResponse.userId);
@@ -30,7 +30,7 @@ const SignIn = () => {
                         navigate('/dashboard');
 
                 } catch (err) {
-                        console.error('Backend verification error:', err);
+                        console.error('Backend verification error (Firebase Token):', err);
                         setError(err.message || 'Failed to verify authentication with backend.');
                 } finally {
                         setLoading(false);
@@ -86,19 +86,34 @@ const SignIn = () => {
                 setError(null);
                 setLoading(true);
                 const provider = new GoogleAuthProvider();
+                provider.addScope('email');
+                provider.addScope('profile');
                 try {
                         console.log('Attempting Firebase sign-in with Google Popup...');
                         const result = await signInWithPopup(auth, provider);
                         const user = result.user;
                         console.log('Firebase Google sign-in successful for user:', user.uid);
 
-                        const idToken = await user.getIdToken();
-                        console.log('Obtained Firebase ID Token.');
+                        const credential = GoogleAuthProvider.credentialFromResult(result);
+                        const googleIdToken = credential?.idToken;
 
-                        await handleBackendVerification(idToken);
+                        if (!googleIdToken) {
+                                console.error("Could not extract Google ID Token from Firebase credential.");
+                                throw new Error('Failed to get necessary Google credential.');
+                        }
+                        console.log('Obtained Google ID Token.');
+
+                        console.log('Sending Google ID token to backend for verification...');
+                        const backendResponse = await verifyGoogleTokenWithBackend(googleIdToken);
+                        console.log('Backend verification successful (Google Token):', backendResponse);
+
+                        localStorage.setItem('AuthToken', backendResponse.token);
+                        localStorage.setItem('userId', backendResponse.userId);
+
+                        navigate('/dashboard');
 
                 } catch (err) {
-                        console.error('Firebase Google sign-in error:', err);
+                        console.error('Firebase Google sign-in or Backend verification error:', err);
                         let errorMessage = 'Failed to sign in with Google.';
                         if (err.code) {
                                 switch (err.code) {

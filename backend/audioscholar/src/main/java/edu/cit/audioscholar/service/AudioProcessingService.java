@@ -30,6 +30,10 @@ import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.exception.InvalidAudioFileException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.ProcessingStatus;
+import edu.cit.audioscholar.service.NhostStorageService;
+import edu.cit.audioscholar.service.SummaryService;
+import edu.cit.audioscholar.service.LearningMaterialRecommenderService;
+import edu.cit.audioscholar.service.RecordingService;
 
 @Service
 public class AudioProcessingService {
@@ -40,15 +44,27 @@ public class AudioProcessingService {
 
         private final FirebaseService firebaseService;
         private final RabbitTemplate rabbitTemplate;
+        private final NhostStorageService nhostStorageService;
+        private final SummaryService summaryService;
+        private final LearningMaterialRecommenderService learningMaterialRecommenderService;
+        private final RecordingService recordingService;
         private final String maxFileSizeValue;
         private final Path tempFileDir;
 
         public AudioProcessingService(FirebaseService firebaseService,
                         RabbitTemplate rabbitTemplate,
+                        NhostStorageService nhostStorageService,
+                        SummaryService summaryService,
+                        LearningMaterialRecommenderService learningMaterialRecommenderService,
+                        RecordingService recordingService,
                         @Value("${spring.servlet.multipart.max-file-size}") String maxFileSizeValue,
                         @Value("${app.temp-file-dir}") String tempFileDirStr) {
                 this.firebaseService = firebaseService;
                 this.rabbitTemplate = rabbitTemplate;
+                this.nhostStorageService = nhostStorageService;
+                this.summaryService = summaryService;
+                this.learningMaterialRecommenderService = learningMaterialRecommenderService;
+                this.recordingService = recordingService;
                 this.maxFileSizeValue = maxFileSizeValue;
 
                 this.tempFileDir = Paths.get(tempFileDirStr);
@@ -229,38 +245,107 @@ public class AudioProcessingService {
                 }
         }
 
-        @Caching(evict = {@CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId"),
-                        @CacheEvict(value = CACHE_METADATA_BY_USER, allEntries = true)})
+        @Caching(evict = { @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId"),
+                        @CacheEvict(value = CACHE_METADATA_BY_USER, allEntries = true) })
         public boolean deleteAudioMetadata(String metadataId) {
-                log.warn("Attempting to delete ONLY AudioMetadata with ID: {}. Associated Recording/Summary/File NOT deleted by this method.",
-                                metadataId);
+                log.info("Initiating cascading delete for AudioMetadata ID: {}", metadataId);
+                AudioMetadata metadata = null;
                 try {
-                        AudioMetadata metadata = getAudioMetadataById(metadataId);
-                        if (metadata != null && metadata.getTempFilePath() != null && (metadata
-                                        .getStatus() == ProcessingStatus.UPLOAD_PENDING
-                                        || metadata.getStatus() == ProcessingStatus.FAILED)) {
-                                try {
-                                        Files.deleteIfExists(Paths.get(metadata.getTempFilePath()));
-                                        log.info("Deleted associated temporary file for failed/pending metadata {}",
-                                                        metadataId);
-                                } catch (IOException e) {
-                                        log.warn("Could not delete temporary file {} for metadata {}",
-                                                        metadata.getTempFilePath(), metadataId, e);
-                                }
+                        // Step 1: Retrieve metadata
+                        metadata = getAudioMetadataById(metadataId);
+
+                        if (metadata == null) {
+                                log.warn("AudioMetadata not found for ID: {}. Cannot perform deletion.", metadataId);
+                                return false;
                         }
 
+                        String nhostFileId = metadata.getNhostFileId();
+                        String recordingId = metadata.getRecordingId();
+
+                        // Step 2: Delete Nhost file
+                        if (StringUtils.hasText(nhostFileId)) {
+                                try {
+                                        log.info("Attempting to delete Nhost file ID: {} associated with metadata {}",
+                                                        nhostFileId, metadataId);
+                                        nhostStorageService.deleteFile(nhostFileId);
+                                        log.info("Successfully requested deletion of Nhost file ID: {}", nhostFileId);
+                                } catch (Exception e) {
+                                        log.error(
+                                                        "Failed to delete Nhost file ID {} for metadata {}. Error: {}",
+                                                        nhostFileId, metadataId, e.getMessage());
+                                        // Logged error, but continue deletion process
+                                }
+                        } else {
+                                log.warn("No NhostFileId found in metadata {} to delete.", metadataId);
+                        }
+
+                        // Step 3: Delete Recording and potentially related data (Summary, Recommendations)
+                        // Assuming RecordingService.deleteRecording handles cascading deletes for its related entities
+                        if (StringUtils.hasText(recordingId)) {
+                                // Delete Recommendations first (as RecordingService doesn't handle this)
+                                try {
+                                        log.info("Attempting to delete Learning Recommendations for Recording ID: {} associated with metadata {}",
+                                                        recordingId, metadataId);
+                                        learningMaterialRecommenderService.deleteRecommendationsByRecordingId(recordingId);
+                                        log.info("Successfully initiated deletion for Learning Recommendations for Recording ID: {}", recordingId);
+                                } catch (Exception e) {
+                                        log.error(
+                                                        "Failed to delete Learning Recommendations for Recording ID {} for metadata {}. Error: {}",
+                                                        recordingId, metadataId, e.getMessage());
+                                        // Logged error, but continue deletion process
+                                }
+
+                                // Then delete Recording (which handles deleting Summary)
+                                try {
+                                        log.info("Attempting to delete Recording ID: {} and its related Summary associated with metadata {}",
+                                                        recordingId, metadataId);
+                                        recordingService.deleteRecording(recordingId);
+                                        log.info("Successfully initiated deletion for Recording ID: {}", recordingId);
+                                } catch (Exception e) {
+                                        log.error(
+                                                        "Failed to delete Recording ID {} (and potentially related data) for metadata {}. Error: {}",
+                                                        recordingId, metadataId, e.getMessage());
+                                        // Logged error, but continue deletion process
+                                }
+                        } else {
+                                 log.warn("No RecordingId found in metadata {}. Cannot delete associated Recording, Summary, or Recommendations.", metadataId);
+                        }
+
+                        // Step 4: Delete the metadata itself
+                        log.info("Attempting to delete AudioMetadata document ID: {}", metadataId);
                         firebaseService.deleteData(firebaseService.getAudioMetadataCollectionName(),
-                                        metadataId);
-                        log.info("Successfully deleted AudioMetadata from Firestore with ID: {} and evicted related caches.",
-                                        metadataId);
+                                metadataId);
+                        log.info("Successfully deleted AudioMetadata document ID: {}", metadataId);
+
+                        // Step 5: Clean up local temp file
+                         if (metadata.getTempFilePath() != null && !metadata.getTempFilePath().isBlank()) {
+                                 try {
+                                         Files.deleteIfExists(Paths.get(metadata.getTempFilePath()));
+                                         log.info("Deleted associated temporary file: {}", metadata.getTempFilePath());
+                                 } catch (IOException e) {
+                                         log.warn("Could not delete temporary file {} for metadata {}",
+                                                         metadata.getTempFilePath(), metadataId, e);
+                                 }
+                         }
+
                         return true;
+
                 } catch (FirestoreInteractionException e) {
-                        log.error("Firestore interaction failed during metadata deletion process for ID {}",
-                                        metadataId, e);
+                        log.error(
+                                "Firestore error during cascading delete process for metadata ID {}: {}",
+                                metadataId, e.getMessage(), e);
+                        // Attempt cleanup of temp file even on Firestore error during retrieval/deletion
+                         if (metadata != null && metadata.getTempFilePath() != null && !metadata.getTempFilePath().isBlank()) {
+                                 try { Files.deleteIfExists(Paths.get(metadata.getTempFilePath())); } catch (IOException ignored) {}
+                         }
                         return false;
-                } catch (RuntimeException e) {
-                        log.error("Unexpected runtime exception during metadata deletion for ID {}",
-                                        metadataId, e);
+                } catch (Exception e) {
+                        log.error("Unexpected error during cascading delete for metadata ID {}: {}",
+                                metadataId, e.getMessage(), e);
+                         // Attempt cleanup of temp file even on unexpected error
+                         if (metadata != null && metadata.getTempFilePath() != null && !metadata.getTempFilePath().isBlank()) {
+                                 try { Files.deleteIfExists(Paths.get(metadata.getTempFilePath())); } catch (IOException ignored) {}
+                         }
                         return false;
                 }
         }

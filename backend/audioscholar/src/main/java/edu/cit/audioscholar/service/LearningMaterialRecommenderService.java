@@ -333,4 +333,72 @@ public class LearningMaterialRecommenderService {
             return Collections.emptyList();
         }
     }
+
+    // Method to delete recommendations by Recording ID (already exists/used elsewhere)
+    public void deleteRecommendationsByRecordingId(String recordingId) {
+        if (!StringUtils.hasText(recordingId)) {
+            log.warn("Attempted to delete recommendations with null or empty recordingId.");
+            return;
+        }
+        log.warn("Attempting to delete ALL recommendations for recording ID: {}", recordingId);
+        CollectionReference recommendationsRef = firestore.collection(recommendationsCollectionName);
+        Query query = recommendationsRef.whereEqualTo("recordingId", recordingId);
+        ApiFuture<QuerySnapshot> future = query.get();
+        int deletedCount = 0;
+        try {
+            QuerySnapshot snapshot = future.get();
+            List<QueryDocumentSnapshot> documents = snapshot.getDocuments();
+            if (documents.isEmpty()) {
+                log.info("No recommendations found for recording ID {} to delete.", recordingId);
+                return;
+            }
+            WriteBatch batch = firestore.batch();
+            for (QueryDocumentSnapshot document : documents) {
+                log.debug("Adding recommendation {} to delete batch for recordingId {}.", document.getId(), recordingId);
+                batch.delete(document.getReference());
+                deletedCount++;
+            }
+            ApiFuture<List<WriteResult>> batchFuture = batch.commit();
+            batchFuture.get(); // Wait for completion
+            log.info("Successfully deleted {} recommendations for recording ID: {}", deletedCount, recordingId);
+        } catch (ExecutionException | InterruptedException e) {
+            log.error("Error deleting recommendations for recording ID {}: {}", recordingId, e.getMessage(), e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            // Consider re-throwing or handling more robustly
+        } catch (Exception e) {
+            log.error("Unexpected error deleting recommendations for recording ID {}: {}", recordingId, e.getMessage(), e);
+        }
+    }
+
+    // New method to delete a single recommendation by its ID
+    public boolean deleteRecommendation(String recommendationId) {
+        if (!StringUtils.hasText(recommendationId)) {
+            log.warn("Attempted to delete recommendation with null or empty ID.");
+            return false;
+        }
+        log.info("Attempting to delete LearningRecommendation with ID: {}", recommendationId);
+        try {
+            DocumentReference docRef = firestore.collection(recommendationsCollectionName).document(recommendationId);
+            ApiFuture<WriteResult> future = docRef.delete();
+            future.get(); // Wait for deletion to complete
+            log.info("Successfully deleted LearningRecommendation with ID: {}", recommendationId);
+            // Note: This does not automatically remove the ID from the associated Recording's list.
+            // That would require fetching the Recording, updating the list, and saving it back.
+            return true;
+        } catch (ExecutionException e) {
+            // Check if the cause is DocumentDoesNotExistException if Firestore API provides it
+            log.error("ExecutionException while deleting recommendation {}: {}", recommendationId, e.getMessage(), e);
+            // Consider checking e.getCause() for specific Firestore exceptions like NOT_FOUND
+            return false;
+        } catch (InterruptedException e) {
+            log.error("InterruptedException while deleting recommendation {}: {}", recommendationId, e.getMessage(), e);
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.error("Unexpected error deleting recommendation {}: {}", recommendationId, e.getMessage(), e);
+            return false;
+        }
+    }
 }

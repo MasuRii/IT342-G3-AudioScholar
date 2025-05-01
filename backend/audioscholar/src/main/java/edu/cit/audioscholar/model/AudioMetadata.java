@@ -23,6 +23,7 @@ public class AudioMetadata {
     private String transcriptText;
     private String tempFilePath;
     private String failureReason;
+    private Integer durationSeconds;
 
     public AudioMetadata() {}
 
@@ -172,6 +173,14 @@ public class AudioMetadata {
         this.failureReason = failureReason;
     }
 
+    public Integer getDurationSeconds() {
+        return durationSeconds;
+    }
+
+    public void setDurationSeconds(Integer durationSeconds) {
+        this.durationSeconds = durationSeconds;
+    }
+
 
     public Map<String, Object> toMap() {
         Map<String, Object> map = new HashMap<>();
@@ -206,6 +215,8 @@ public class AudioMetadata {
             map.put("tempFilePath", tempFilePath);
         if (failureReason != null)
             map.put("failureReason", failureReason);
+        if (durationSeconds != null)
+            map.put("durationSeconds", durationSeconds);
 
         return map;
     }
@@ -239,6 +250,10 @@ public class AudioMetadata {
         meta.setTranscriptText((String) map.get("transcriptText"));
         meta.setTempFilePath((String) map.get("tempFilePath"));
         meta.setFailureReason((String) map.get("failureReason"));
+        Object durationObj = map.get("durationSeconds");
+        if (durationObj instanceof Number) {
+            meta.setDurationSeconds(((Number) durationObj).intValue());
+        }
         return meta;
     }
 

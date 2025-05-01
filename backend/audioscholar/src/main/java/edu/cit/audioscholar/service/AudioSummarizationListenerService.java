@@ -1,5 +1,6 @@
 package edu.cit.audioscholar.service;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +28,9 @@ import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.ProcessingStatus;
 import edu.cit.audioscholar.model.Recording;
 import edu.cit.audioscholar.model.Summary;
+import javax.sound.sampled.AudioFileFormat;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.UnsupportedAudioFileException;
 
 @Service
 public class AudioSummarizationListenerService {
@@ -125,11 +129,69 @@ public class AudioSummarizationListenerService {
                                 return;
                         }
 
+                        // Task 5: Calculate and save audio duration
+                        try {
+                                File audioFile = tempAudioFilePath.toFile();
+                                AudioFileFormat fileFormat = AudioSystem.getAudioFileFormat(audioFile);
+                                if (fileFormat != null && fileFormat.getFrameLength() != AudioSystem.NOT_SPECIFIED) {
+                                        long frameLength = fileFormat.getFrameLength();
+                                        float frameRate = fileFormat.getFormat().getFrameRate();
+                                        if (frameRate > 0) {
+                                                int durationSec = Math.round(frameLength / frameRate);
+                                                log.info("[{}] Calculated audio duration: {} seconds.", recordingId, durationSec);
+                                                // Update Firestore
+                                                Map<String, Object> durationUpdate = Map.of("durationSeconds", durationSec);
+                                                firebaseService.updateDataWithMap(
+                                                        firebaseService.getAudioMetadataCollectionName(),
+                                                        metadataId,
+                                                        durationUpdate
+                                                );
+                                                log.info("[{}] Successfully updated durationSeconds in metadata.", recordingId);
+                                        } else {
+                                                log.warn("[{}] Frame rate is not positive ({}), cannot calculate duration for {}.",
+                                                         recordingId, frameRate, tempAudioFilePath.getFileName());
+                                        }
+                                } else {
+                                        log.warn("[{}] Could not determine frame length or audio file format is null for {}. Duration not calculated.",
+                                                 recordingId, tempAudioFilePath.getFileName());
+                                }
+                        } catch (UnsupportedAudioFileException e) {
+                                log.warn("[{}] Audio file format not supported by Java Sound API for {}. Duration not calculated. Error: {}",
+                                         recordingId, tempAudioFilePath.getFileName(), e.getMessage());
+                        } catch (IOException e) {
+                                log.error("[{}] IOException while reading audio file {} for duration calculation. Error: {}",
+                                          recordingId, tempAudioFilePath.getFileName(), e.getMessage(), e);
+                        } catch (Exception e) {
+                                log.error("[{}] Unexpected error calculating duration for {}. Error: {}",
+                                          recordingId, tempAudioFilePath.getFileName(), e.getMessage(), e);
+                        }
+                        // End Task 5 logic
+
                         String transcriptText = performTranscription(recording, tempAudioFilePath,
                                         metadataId);
                         if (transcriptText == null) {
+                                log.warn("[{}] Transcription failed or returned null. Halting processing.", recordingId);
                                 return;
                         }
+
+                        final String noSpeechMarker = "[NO SPEECH DETECTED]";
+                        if (noSpeechMarker.equalsIgnoreCase(transcriptText.trim())) {
+                            log.warn("[{}] Transcription resulted in '{}'. No speech detected or audio unsuitable. Halting summarization and recommendations.",
+                                     recordingId, noSpeechMarker);
+                            updateMetadataStatus(metadataId, ProcessingStatus.FAILED, "No speech detected in audio");
+                            return;
+                        }
+
+                        // Task 4: Add check for minimum transcript length
+                        final int MINIMUM_TRANSCRIPT_LENGTH = 100; // Example threshold
+                        if (transcriptText.trim().length() < MINIMUM_TRANSCRIPT_LENGTH) {
+                            log.warn("[{}] Transcript length ({}) is below the minimum threshold of {}. Considered unsuitable. Halting summarization and recommendations.",
+                                     recordingId, transcriptText.trim().length(), MINIMUM_TRANSCRIPT_LENGTH);
+                            updateMetadataStatus(metadataId, ProcessingStatus.FAILED,
+                                                 "Transcript too short to be suitable lecture material.");
+                            return; // Stop further processing
+                        }
+                        // End of added check
 
                         if (!saveTranscript(metadataId, transcriptText)) {
                                 updateMetadataStatusToFailed(metadataId,

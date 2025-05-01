@@ -92,7 +92,7 @@ public class GeminiService {
                         generateHeaders.setContentType(MediaType.APPLICATION_JSON);
 
                         String promptText =
-                                        "Transcribe the following audio content accurately. Output only the spoken text.";
+                                        "Transcribe the following audio content accurately. If the audio contains no speech or only silence, output the exact text '[NO SPEECH DETECTED]'. Otherwise, output only the spoken text.";
                         Map<String, Object> textPart = Map.of("text", promptText);
                         Map<String, Object> fileDataPart = Map.of("file_data",
                                         Map.of("mime_type", mimeType, "file_uri", fileUri));

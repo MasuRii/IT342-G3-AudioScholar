@@ -37,6 +37,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.Cache;
 import org.springframework.lang.Nullable;
+import org.springframework.cache.annotation.Caching;
 
 @Service
 public class FirebaseService {
@@ -451,6 +452,7 @@ public class FirebaseService {
         }
     }
 
+    @Cacheable(value = CACHE_METADATA_BY_USER, key = "#userId", condition = "#userId != null")
     public List<AudioMetadata> getAudioMetadataByUserId(String userId, int pageSize,
             String lastDocumentId) {
         if (!StringUtils.hasText(userId)) {
@@ -896,7 +898,7 @@ public class FirebaseService {
 
     /**
      * Updates the status and optionally the failure reason of an AudioMetadata document.
-     * Clears relevant caches (both individual ID and user list).
+     * Clears relevant caches (both individual ID and user list) using annotations.
      *
      * @param metadataId The ID of the AudioMetadata document to update.
      * @param userId     The ID of the user who owns the metadata (for cache eviction).
@@ -905,7 +907,10 @@ public class FirebaseService {
      * @throws ExecutionException If Firestore update fails.
      * @throws InterruptedException If the thread is interrupted.
      */
-    @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId", condition = "#metadataId != null")
+    @Caching(evict = {
+        @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId", condition = "#metadataId != null"),
+        @CacheEvict(value = CACHE_METADATA_BY_USER, key = "#userId", condition = "#userId != null")
+    })
     public void updateAudioMetadataStatusAndReason(String metadataId, @Nullable String userId, ProcessingStatus status, String reason)
             throws ExecutionException, InterruptedException {
         if (metadataId == null || status == null) {
@@ -927,27 +932,14 @@ public class FirebaseService {
         log.info("Updating Firestore document {} in collection {} for user {} with status: {}, reason: '{}'", 
                  metadataId, audioMetadataCollectionName, userId != null ? userId : "<unknown>", status, reason);
         ApiFuture<WriteResult> writeResult = docRef.update(updates);
-        writeResult.get(); // Wait for the update to complete
-
-        // --- Cache Eviction for User List --- 
-        if (userId != null) {
-            try {
-                Cache userCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
-                if (userCache != null) {
-                    log.info("Evicting user list cache entry for user {} in cache {}", userId, CACHE_METADATA_BY_USER);
-                    userCache.evict(userId);
-                } else {
-                    log.warn("Cache '{}' not found for user list eviction.", CACHE_METADATA_BY_USER);
-                }
-            } catch (Exception e) {
-                log.error("Error during user list cache eviction for user {}: {}", userId, e.getMessage(), e);
-                // Continue even if cache eviction fails
-            }
-        } else {
-             log.warn("Cannot evict user list cache for metadata {} because userId was null.", metadataId);
+        
+        try {
+             writeResult.get(); // Wait for the update to complete
+             log.info("Successfully updated Firestore document {}. Cache eviction should be handled by annotations.", metadataId);
+        } catch (ExecutionException | InterruptedException e) {
+             log.error("Firestore update failed for document {}. Cache eviction might not occur. Error: {}", metadataId, e.getMessage(), e);
+             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+             throw e; // Re-throw the exception so the transaction might roll back if applicable
         }
-        // --- End Cache Eviction ---
-
-        log.info("Successfully updated Firestore document {} and handled cache eviction.", metadataId);
     }
 }

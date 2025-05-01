@@ -26,11 +26,11 @@ const Dashboard = () => {
                 className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer border border-gray-200"
               >
                 <div className="flex items-center mb-4">
-                  <div className="bg-[#2D8A8A] bg-opacity-20 p-3 rounded-full mr-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[#2D8A8A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                  </div>
+                  <img 
+                    src="/uploadAudiologo.png"
+                    alt="Upload Icon" 
+                    className="h-10 w-10 mr-4"
+                  />
                   <h2 className="text-xl font-semibold text-gray-800">Upload Audio</h2>
                 </div>
                 <p className="text-gray-600">Upload new audio files to generate summaries and notes.</p>

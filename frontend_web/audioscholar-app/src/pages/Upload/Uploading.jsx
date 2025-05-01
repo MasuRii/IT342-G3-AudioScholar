@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
 import { Header } from '../Home/HomePage';
+import { FiCheckCircle, FiFile, FiLoader, FiUpload, FiXCircle } from 'react-icons/fi';
 
 const VALID_AUDIO_TYPES = [
   'audio/mpeg', 'audio/mp3',
@@ -22,14 +23,16 @@ const Uploading = () => {
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [success, setSuccess] = useState(null);
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     const handleBeforeUnload = (event) => {
       event.preventDefault();
-      event.returnValue = '';
-      return 'Are you sure you want to leave? Your upload is still in progress.';
+      event.returnValue = 'Upload in progress. Are you sure you want to leave?';
+      return 'Upload in progress. Are you sure you want to leave?';
     };
 
     if (loading) {
@@ -46,6 +49,7 @@ const Uploading = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     setError('');
+    setSuccess(null);
 
     if (!file) return;
 
@@ -54,12 +58,13 @@ const Uploading = () => {
     console.log(`Selected File: ${file.name}, Type: ${file.type}, Ext: ${fileExt}`);
 
     if (
-      !VALID_AUDIO_TYPES.includes(file.type.toLowerCase()) ||
+      !VALID_AUDIO_TYPES.includes(file.type.toLowerCase()) && 
       !VALID_EXTENSIONS.includes(fileExt)
     ) {
       setError(`Please upload only audio files. Allowed types: ${VALID_EXTENSIONS.join(', ').toUpperCase()}`);
       setSelectedFile(null);
       setFileName('');
+      setPreviewUrl(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -69,6 +74,18 @@ const Uploading = () => {
     setSelectedFile(file);
     setFileName(file.name);
     setTitle(file.name.replace(/\.[^/.]+$/, ""));
+
+    // Create a preview URL
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewUrl(reader.result);
+    };
+    reader.onerror = () => {
+      console.error("Error reading file for preview");
+      setError("Could not generate file preview.");
+      setPreviewUrl(null); // Clear preview on error
+    };
+    reader.readAsDataURL(file); // Read file as Data URL
   };
 
   const handleClick = () => {
@@ -82,20 +99,27 @@ const Uploading = () => {
     setFileName('');
     setTitle('');
     setDescription('');
+    setPreviewUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     setError('');
+    setSuccess(null);
   };
 
   const handleFileUpload = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess(null);
 
     if (!selectedFile) {
       setError('Please select an audio file first');
       return;
     }
+     if (!title.trim()) {
+       setError('Please enter a title for the recording.');
+       return;
+     }
 
     setLoading(true);
 
@@ -110,14 +134,12 @@ const Uploading = () => {
 
     const formData = new FormData();
     formData.append('file', selectedFile);
-    if (title) {
-      formData.append('title', title.trim());
-    }
-    if (description) {
+    formData.append('title', title.trim());
+    if (description.trim()) {
       formData.append('description', description.trim());
     }
 
-    console.log("Preparing to upload file:", selectedFile.name);
+    console.log("Preparing to upload file:", selectedFile.name, "with title:", title.trim());
 
     try {
       const UPLOAD_URL = `${API_BASE_URL}api/audio/upload`;
@@ -143,6 +165,7 @@ const Uploading = () => {
         }
         console.error("Upload failed:", errorMsg);
         setError(errorMsg);
+        setSuccess(null);
         if (response.status === 401) {
           console.log("Token expired or invalid, redirecting to sign in.");
           localStorage.removeItem('AuthToken');
@@ -153,13 +176,20 @@ const Uploading = () => {
       } else {
         const result = await response.json();
         console.log("Upload successful:", result);
-        setError('Upload successful!');
-        removeFile();
+        setSuccess('File uploaded successfully! Processing has started.');
+        setSelectedFile(null);
+        setFileName('');
+        setDescription('');
+        setPreviewUrl(null);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
 
     } catch (err) {
       console.error("Error during file upload:", err);
       setError(`An error occurred during upload: ${err.message}`);
+      setSuccess(null);
     } finally {
       setLoading(false);
     }
@@ -167,14 +197,22 @@ const Uploading = () => {
 
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="relative min-h-screen flex flex-col">
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex flex-col items-center justify-center">
+          <FiLoader className="animate-spin h-10 w-10 text-white mb-3" />
+          <p className="text-white text-lg font-medium">Uploading, please wait...</p>
+          <p className="text-gray-300 text-sm mt-1">Navigating away may interrupt the upload.</p>
+        </div>
+      )}
+
       <title>AudioScholar - Upload Recording</title>
       <Header />
 
       <main className="flex-grow flex items-center justify-center py-12 bg-gray-50">
         <div className="container mx-auto px-4 max-w-4xl">
           <div className="bg-white rounded-lg shadow-xl p-8 md:p-10">
-            <h1 className="text-3xl font-bold text-gray-800 mb-6">Upload Audio</h1>
+            <h1 className="text-3xl font-bold text-gray-800 mb-6 text-center">Upload Audio</h1>
 
             <input
               type="file"
@@ -183,18 +221,17 @@ const Uploading = () => {
               onChange={handleFileChange}
               className="hidden"
               accept={VALID_AUDIO_TYPES.join(',')}
+              disabled={loading}
             />
 
             <div className="mb-6">
               <div
                 onClick={handleClick}
-                className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 ${loading ? 'opacity-60 cursor-not-allowed bg-gray-100' : 'hover:bg-gray-100 hover:border-teal-400'}`}
+                className={`border-2 border-dashed border-gray-300 rounded-lg p-10 text-center transition-colors duration-200 ${loading ? 'opacity-60 cursor-not-allowed bg-gray-100' : 'cursor-pointer hover:bg-gray-100 hover:border-teal-400'}`}
               >
                 {fileName ? (
                   <div className="flex flex-col items-center justify-center gap-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                    </svg>
+                    <FiFile className="h-10 w-10 text-teal-600" />
                     <p className="text-gray-800 font-medium text-lg truncate max-w-xs">{fileName}</p>
                     {!loading && (
                       <button
@@ -203,20 +240,17 @@ const Uploading = () => {
                           e.stopPropagation();
                           removeFile();
                         }}
-                        className="text-red-600 hover:text-red-800 transition-colors duration-150 p-1 rounded-full hover:bg-red-100"
+                        className="mt-2 text-red-600 hover:text-red-800 transition-colors duration-150 p-1 rounded-full hover:bg-red-100 inline-flex items-center gap-1 text-xs font-medium"
+                        title="Remove file"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                        </svg>
+                        <FiXCircle className="h-4 w-4"/> Remove
                       </button>
                     )}
                   </div>
                 ) : (
                   <div>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                    </svg>
-                    <p className="text-gray-600 mb-2">Click to select audio file or drag and drop</p>
+                    <FiUpload className="mx-auto h-12 w-12 text-gray-400" />
+                    <p className="text-gray-600 mt-2 mb-1">Click to select audio file or drag and drop</p>
                     <p className="text-xs text-gray-500">Supports: {VALID_EXTENSIONS.join(', ').toUpperCase()}</p>
                   </div>
                 )}
@@ -224,8 +258,17 @@ const Uploading = () => {
               {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
             </div>
 
+            {previewUrl && !loading && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Preview:</h3>
+                <audio controls src={previewUrl} className="w-full h-10" >
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            )}
+
             <form onSubmit={handleFileUpload} className="space-y-6">
-              <div className="mb-0">
+              <div>
                 <label htmlFor="audio-title" className="block text-sm font-medium text-gray-700 mb-1">
                   <span className="font-bold">Title:</span>
                   <span className="ml-1 text-gray-500">Enter title for your audio</span>
@@ -233,21 +276,22 @@ const Uploading = () => {
                 <input
                   type="text"
                   id="audio-title"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition duration-150 ease-in-out shadow-sm"
-                  placeholder="Enter title for your upload"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition duration-150 ease-in-out shadow-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  placeholder="Enter title for your upload (required)"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   disabled={loading}
+                  required
                 />
               </div>
 
-              <div className="mb-0">
+              <div>
                 <label htmlFor="audio-description" className="block text-sm font-medium text-gray-700 mb-1">
                   <span className="font-bold">Description (Optional):</span>
                 </label>
                 <textarea
                   id="audio-description"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 min-h-[100px] transition duration-150 ease-in-out shadow-sm"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 min-h-[100px] transition duration-150 ease-in-out shadow-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="Add a description for your upload"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -255,14 +299,17 @@ const Uploading = () => {
                 />
               </div>
 
+              <div className="h-6">
+                {success && <p className="text-sm text-green-600 text-center flex items-center justify-center gap-1"><FiCheckCircle/>{success}</p>}
+              </div>
 
               <button
                 type="submit"
-                disabled={!selectedFile || loading}
-                className={`w-full bg-[#2D8A8A] text-white py-3 px-4 rounded-lg font-medium hover:bg-[#236b6b] transition-all duration-200 ease-in-out ${(!selectedFile || loading) ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-md transform hover:-translate-y-0.5'
+                disabled={!selectedFile || loading || !title.trim()}
+                className={`w-full bg-[#2D8A8A] text-white py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-all duration-200 ease-in-out ${(!selectedFile || loading || !title.trim()) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#236b6b] hover:shadow-md transform hover:-translate-y-0.5'
                   }`}
               >
-                {loading ? 'Uploading...' : 'Upload Audio'}
+                {loading ? <><FiLoader className="animate-spin h-5 w-5" /> Uploading...</> : <><FiUpload className="h-5 w-5"/> Upload Audio</>}
               </button>
             </form>
           </div>

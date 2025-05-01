@@ -10,6 +10,7 @@ import Uploading from '../../pages/Upload/Uploading';
 import UserProfile from '../../pages/UserProfile/UserProfile';
 import UserProfileEdit from '../../pages/UserProfileEdit/UserProfileEdit';
 import ProtectedRoute from '../common/ProtectedRoute';
+import AboutPage from '../../pages/About/AboutPage';
 
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
       <div className="min-h-screen flex flex-col">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/auth/github/callback" element={<GithubAuthCallback />} />

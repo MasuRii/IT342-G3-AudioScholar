@@ -898,7 +898,7 @@ public class FirebaseService {
 
     /**
      * Updates the status and optionally the failure reason of an AudioMetadata document.
-     * Clears relevant caches (both individual ID and user list) using annotations.
+     * Clears relevant caches (individual ID via annotation, user list manually).
      *
      * @param metadataId The ID of the AudioMetadata document to update.
      * @param userId     The ID of the user who owns the metadata (for cache eviction).
@@ -907,10 +907,7 @@ public class FirebaseService {
      * @throws ExecutionException If Firestore update fails.
      * @throws InterruptedException If the thread is interrupted.
      */
-    @Caching(evict = {
-        @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId", condition = "#metadataId != null"),
-        @CacheEvict(value = CACHE_METADATA_BY_USER, key = "#userId", condition = "#userId != null")
-    })
+    @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId", condition = "#metadataId != null")
     public void updateAudioMetadataStatusAndReason(String metadataId, @Nullable String userId, ProcessingStatus status, String reason)
             throws ExecutionException, InterruptedException {
         if (metadataId == null || status == null) {
@@ -934,12 +931,33 @@ public class FirebaseService {
         ApiFuture<WriteResult> writeResult = docRef.update(updates);
         
         try {
-             writeResult.get(); // Wait for the update to complete
-             log.info("Successfully updated Firestore document {}. Cache eviction should be handled by annotations.", metadataId);
+             // Wait for the update to complete
+             WriteResult result = writeResult.get(); 
+             log.info("Successfully updated Firestore document {} at {}. Attempting manual cache eviction.", metadataId, result.getUpdateTime());
+
+             // --- Manual Cache Eviction for User List --- 
+             if (userId != null) {
+                 try {
+                     Cache userListCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                     if (userListCache != null) {
+                         log.info("Manually evicting user list cache entry for user {} in cache {}", userId, CACHE_METADATA_BY_USER);
+                         userListCache.evict(userId);
+                     } else {
+                         log.warn("Cache '{}' not found for manual user list eviction.", CACHE_METADATA_BY_USER);
+                     }
+                 } catch (Exception e) {
+                     log.error("Error during manual user list cache eviction for user {}: {}", userId, e.getMessage(), e);
+                     // Log but continue, Firestore update was successful
+                 }
+             } else {
+                  log.warn("Cannot manually evict user list cache for metadata {} because userId was null.", metadataId);
+             }
+             // --- End Manual Cache Eviction ---
+
         } catch (ExecutionException | InterruptedException e) {
-             log.error("Firestore update failed for document {}. Cache eviction might not occur. Error: {}", metadataId, e.getMessage(), e);
+             log.error("Firestore update failed for document {}. Cache eviction will not be attempted. Error: {}", metadataId, e.getMessage(), e);
              if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-             throw e; // Re-throw the exception so the transaction might roll back if applicable
+             throw e; // Re-throw the exception
         }
     }
 }

@@ -1,7 +1,8 @@
 import axios from 'axios';
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
+import { Header } from '../Home/HomePage';
 
 const UserProfileEdit = () => {
   const navigate = useNavigate();
@@ -223,21 +224,7 @@ const UserProfileEdit = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
       <title>AudioScholar - Edit Profile</title>
-      <header className="bg-[#1A365D] shadow-sm py-4">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-          <Link to="/dashboard" className="text-2xl font-bold text-white">AudioScholar</Link>
-          <Link
-            to="/dashboard"
-            className="flex items-center text-gray-300 hover:text-white transition-colors py-2 px-3 rounded hover:bg-white hover:bg-opacity-10 text-sm"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 sm:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span className="hidden sm:inline">Back to Dashboard</span>
-            <span className="sm:hidden">Dashboard</span>
-          </Link>
-        </div>
-      </header>
+      <Header />
 
       <main className="flex-grow flex items-center justify-center py-12">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -248,7 +235,7 @@ const UserProfileEdit = () => {
               <div className="flex flex-col items-center space-y-4 mb-4">
                 <label className="block text-sm font-medium text-gray-700">Profile Picture</label>
                 <img
-                  src={avatarPreview || currentProfileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(initialFirstName || '')} ${encodeURIComponent(initialLastName || '')}&background=1A365D&color=fff&size=128`}
+                  src={avatarPreview || currentProfileImageUrl || '/icon-512.png'}
                   alt="Avatar Preview"
                   className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 shadow-md"
                 />
@@ -371,12 +358,6 @@ const UserProfileEdit = () => {
           </div>
         </div>
       </main>
-
-      <footer className="bg-gray-100 py-6 mt-auto">
-        <div className="container mx-auto text-center text-gray-500 text-xs">
-          &copy; {new Date().getFullYear()} AudioScholar. All rights reserved.
-        </div>
-      </footer>
     </div>
   );
 };

@@ -1,6 +1,14 @@
 package edu.cit.audioscholar.service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -8,8 +16,17 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import com.google.api.core.ApiFuture;
-import com.google.api.services.youtube.model.*;
-import com.google.cloud.firestore.*;
+import com.google.api.services.youtube.model.ResourceId;
+import com.google.api.services.youtube.model.SearchResult;
+import com.google.api.services.youtube.model.SearchResultSnippet;
+import com.google.cloud.firestore.CollectionReference;
+import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.cloud.firestore.QuerySnapshot;
+import com.google.cloud.firestore.WriteBatch;
+import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.messaging.MulticastMessage;
 import edu.cit.audioscholar.dto.AnalysisResults;
 import edu.cit.audioscholar.integration.YouTubeAPIClient;
@@ -28,6 +45,20 @@ public class LearningMaterialRecommenderService {
     private final UserService userService;
     private final String recommendationsCollectionName = "learningRecommendations";
     private static final int MAX_RECOMMENDATIONS_TO_FETCH = 10;
+    private static final int SEARCH_RESULTS_POOL_SIZE = 50;
+    private static final String EDUCATIONAL_CONTEXT = "lecture educational tutorial";
+    private static final Set<String> EDUCATIONAL_DOMAINS =
+            Set.of("edu", "education", "academic", "university", "school", "college", "course");
+    private static final String TARGET_LANGUAGE = "english";
+    private static final Set<String> FOREIGN_LANGUAGE_INDICATORS =
+            Set.of("hindi", "urdu", "español", "arabic", "العربية", "中文", "chinese", "русский",
+                    "russian", "française", "français", "french", "日本語", "japanese", "한국어",
+                    "korean", "deutsch", "german", "italiano", "italian", "português", "portuguese",
+                    "bahasa", "indonesian", "malayalam", "tamil", "telugu", "bengali", "marathi");
+    private static final Set<String> NON_ENGLISH_REGIONS = Set.of("india", "pakistan", "russia",
+            "china", "japan", "korea", "spain", "méxico", "mexico", "brazil", "brasil", "indonesia",
+            "malaysia", "thailand", "vietnam", "türkiye", "turkey", "arabic", "saudi", "ukraine",
+            "czech", "poland", "hungary", "romania");
 
     public LearningMaterialRecommenderService(
             LectureContentAnalyzerService lectureContentAnalyzerService,
@@ -61,9 +92,23 @@ public class LearningMaterialRecommenderService {
             return Collections.emptyList();
         }
         log.debug("Keywords extracted for recording ID {}: {}", recordingId, keywords);
+
+        List<String> enhancedKeywords = enhanceKeywordsWithEducationalContext(keywords);
+
+        if (!enhancedKeywords.isEmpty()) {
+            String firstKeyword = enhancedKeywords.get(0);
+            enhancedKeywords.set(0, firstKeyword + " " + TARGET_LANGUAGE);
+            if (enhancedKeywords.size() > 2) {
+                String secondKeyword = enhancedKeywords.get(2);
+                enhancedKeywords.set(2, secondKeyword + " " + TARGET_LANGUAGE);
+            }
+        }
+
+        log.debug("Enhanced keywords for recording ID {}: {}", recordingId, enhancedKeywords);
+
         try {
             List<SearchResult> youtubeResults =
-                    youTubeAPIClient.searchVideos(keywords, MAX_RECOMMENDATIONS_TO_FETCH);
+                    youTubeAPIClient.searchVideos(enhancedKeywords, SEARCH_RESULTS_POOL_SIZE);
             if (youtubeResults.isEmpty()) {
                 log.info(
                         "YouTube search returned no results for keywords related to recording ID: {}",
@@ -72,8 +117,20 @@ public class LearningMaterialRecommenderService {
             }
             log.info("Retrieved {} potential recommendations from YouTube for recording ID: {}",
                     youtubeResults.size(), recordingId);
+
+            List<SearchResult> filteredResults =
+                    filterAndRankResults(youtubeResults, enhancedKeywords);
+
+            List<SearchResult> languageFilteredResults = filterByLanguage(filteredResults);
+            log.info(
+                    "Filtered to {} relevant results after language filtering for recording ID: {}",
+                    languageFilteredResults.size(), recordingId);
+
+            List<SearchResult> topResults = languageFilteredResults.stream()
+                    .limit(MAX_RECOMMENDATIONS_TO_FETCH).collect(Collectors.toList());
+
             List<LearningRecommendation> recommendations =
-                    processYouTubeResults(youtubeResults, recordingId);
+                    processYouTubeResults(topResults, recordingId);
             if (recommendations.isEmpty()) {
                 log.info("No valid recommendations processed for recording ID: {}", recordingId);
                 return Collections.emptyList();
@@ -159,14 +216,31 @@ public class LearningMaterialRecommenderService {
                 newRecommendationIds.size(), recordingId);
         boolean linkSuccess = false;
         try {
+            if (recordingId == null || recordingId.trim().isEmpty()) {
+                log.error("Cannot link recommendations to null or empty recordingId");
+                return;
+            }
+
             Recording recording = recordingService.getRecordingById(recordingId);
             if (recording != null) {
-                if (!Objects.equals(userId, recording.getUserId())) {
+                if (recording.getUserId() == null || recording.getUserId().trim().isEmpty()) {
+                    log.warn("Recording {} is missing userId. Using passed userId: {}", recordingId,
+                            userId);
+                    recording.setUserId(userId);
+                } else if (!Objects.equals(userId, recording.getUserId())) {
                     log.warn(
                             "User ID mismatch! Passed userId {} does not match recording owner {} for recordingId {}. Using recording owner for notification.",
                             userId, recording.getUserId(), recordingId);
                     userId = recording.getUserId();
                 }
+
+                if (recording.getRecordingId() == null
+                        || recording.getRecordingId().trim().isEmpty()) {
+                    log.warn("Recording object has null/empty recordingId. Setting it to: {}",
+                            recordingId);
+                    recording.setRecordingId(recordingId);
+                }
+
                 List<String> currentIds = recording.getRecommendationIds();
                 if (currentIds == null) {
                     currentIds = new ArrayList<>();
@@ -181,12 +255,31 @@ public class LearningMaterialRecommenderService {
                     }
                 }
                 if (updated) {
-                    recording.setRecommendationIds(currentIds);
-                    recordingService.updateRecording(recording);
-                    log.info(
-                            "Successfully linked {} new recommendations. Total recommendations linked for Recording ID {}: {}",
-                            newRecommendationIds.size(), recordingId, currentIds.size());
-                    linkSuccess = true;
+                    try {
+                        recording.setRecommendationIds(currentIds);
+                        recordingService.updateRecording(recording);
+                        log.info(
+                                "Successfully linked {} new recommendations. Total recommendations linked for Recording ID {}: {}",
+                                newRecommendationIds.size(), recordingId, currentIds.size());
+                        linkSuccess = true;
+                    } catch (IllegalArgumentException e) {
+                        log.error("Failed to update recording - validation error: {}",
+                                e.getMessage());
+                        try {
+                            Map<String, Object> updates = new HashMap<>();
+                            updates.put("recommendationIds", currentIds);
+                            updates.put("updatedAt", new Date());
+                            firestore.collection("recordings").document(recordingId).update(updates)
+                                    .get();
+                            log.info(
+                                    "Successfully updated recommendations using direct Firestore update for recordingId {}",
+                                    recordingId);
+                            linkSuccess = true;
+                        } catch (Exception ex) {
+                            log.error("Failed even with direct Firestore update: {}",
+                                    ex.getMessage());
+                        }
+                    }
                 } else {
                     log.info(
                             "No *new* recommendations to link. Recording ID {} already contains these recommendation IDs.",
@@ -196,6 +289,20 @@ public class LearningMaterialRecommenderService {
             } else {
                 log.warn("Recording {} not found. Cannot link recommendations: {}", recordingId,
                         newRecommendationIds);
+                try {
+                    log.info("Attempting to create minimal recording object for ID: {}",
+                            recordingId);
+                    Recording newRecording =
+                            new Recording(recordingId, userId, "Recording " + recordingId, null);
+                    newRecording.setRecommendationIds(newRecommendationIds);
+                    recordingService.createRecording(newRecording);
+                    log.info(
+                            "Successfully created minimal recording with recommendations for ID: {}",
+                            recordingId);
+                    linkSuccess = true;
+                } catch (Exception e) {
+                    log.error("Failed to create minimal recording: {}", e.getMessage());
+                }
             }
         } catch (ExecutionException | InterruptedException e) {
             log.error("Error fetching or updating recording {} to link recommendations: {}",
@@ -263,23 +370,106 @@ public class LearningMaterialRecommenderService {
                 continue;
             }
             String description = snippet.getDescription();
-            ThumbnailDetails thumbnails = snippet.getThumbnails();
-            String thumbnailUrl = null;
-            if (thumbnails != null) {
-                Thumbnail defaultThumbnail = thumbnails.getDefault();
-                if (defaultThumbnail != null) {
-                    thumbnailUrl = defaultThumbnail.getUrl();
+            String channelTitle = snippet.getChannelTitle();
+
+            String thumbnailUrl = "https://i.ytimg.com/vi/" + videoId + "/maxresdefault.jpg";
+
+            String fallbackThumbnailUrl = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+
+            Map<String, String> thumbnailOptions = new HashMap<>();
+            thumbnailOptions.put("maxres", thumbnailUrl);
+            thumbnailOptions.put("hq", fallbackThumbnailUrl);
+            thumbnailOptions.put("mq", "https://i.ytimg.com/vi/" + videoId + "/mqdefault.jpg");
+            thumbnailOptions.put("sd", "https://i.ytimg.com/vi/" + videoId + "/sddefault.jpg");
+            thumbnailOptions.put("default", "https://i.ytimg.com/vi/" + videoId + "/default.jpg");
+
+            log.debug("Using max resolution thumbnail URL for videoId {}: {} (with fallbacks)",
+                    videoId, thumbnailUrl);
+
+            int relevanceScore = 0;
+
+            relevanceScore += Math.min(title.length() / 5, 10);
+
+            if (description != null) {
+                relevanceScore += Math.min(description.length() / 20, 15);
+            }
+
+            boolean isEducational = false;
+
+            if (channelTitle != null) {
+                String lowerChannelTitle = channelTitle.toLowerCase();
+                for (String eduTerm : EDUCATIONAL_DOMAINS) {
+                    if (lowerChannelTitle.contains(eduTerm)) {
+                        isEducational = true;
+                        relevanceScore += 20;
+                        break;
+                    }
                 }
             }
-            if (thumbnailUrl == null) {
-                log.warn(
-                        "Could not extract default thumbnail URL for videoId: {}. Setting to null.",
-                        videoId);
+
+            if (!isEducational && title != null) {
+                String lowerTitle = title.toLowerCase();
+                for (String eduTerm : EDUCATIONAL_DOMAINS) {
+                    if (lowerTitle.contains(eduTerm)) {
+                        isEducational = true;
+                        relevanceScore += 15;
+                        break;
+                    }
+                }
             }
-            LearningRecommendation recommendation = new LearningRecommendation(videoId, title,
-                    description, thumbnailUrl, recordingId);
+
+            if (title != null) {
+                String lowerTitle = title.toLowerCase();
+                if (lowerTitle.contains("tutorial") || lowerTitle.contains("course")
+                        || lowerTitle.contains("lecture") || lowerTitle.contains("learn")
+                        || lowerTitle.contains("lesson")) {
+                    relevanceScore += 25;
+                    isEducational = true;
+                }
+            }
+
+            boolean likelyEnglish = true;
+            if (title != null) {
+                String lowerTitle = title.toLowerCase();
+
+                for (String indicator : FOREIGN_LANGUAGE_INDICATORS) {
+                    if (lowerTitle.contains(indicator)) {
+                        likelyEnglish = false;
+                        break;
+                    }
+                }
+
+                if (likelyEnglish) {
+                    long nonAsciiCount = lowerTitle.chars().filter(c -> c > 127).count();
+                    double nonAsciiRatio =
+                            lowerTitle.isEmpty() ? 0 : (double) nonAsciiCount / lowerTitle.length();
+                    if (nonAsciiRatio > 0.3) {
+                        likelyEnglish = false;
+                    }
+                }
+            }
+
+            if (!likelyEnglish) {
+                relevanceScore -= 100;
+            } else {
+                relevanceScore += 10;
+            }
+
+            LearningRecommendation recommendation =
+                    new LearningRecommendation(videoId, title, description, thumbnailUrl,
+                            recordingId, relevanceScore, isEducational, channelTitle);
+
+            recommendation.setFallbackThumbnailUrl(fallbackThumbnailUrl);
+
             recommendations.add(recommendation);
         }
+
+        recommendations.sort((r1, r2) -> {
+            Integer score1 = r1.getRelevanceScore() != null ? r1.getRelevanceScore() : 0;
+            Integer score2 = r2.getRelevanceScore() != null ? r2.getRelevanceScore() : 0;
+            return score2.compareTo(score1);
+        });
+
         return recommendations;
     }
 
@@ -334,14 +524,14 @@ public class LearningMaterialRecommenderService {
         }
     }
 
-    // Method to delete recommendations by Recording ID (already exists/used elsewhere)
     public void deleteRecommendationsByRecordingId(String recordingId) {
         if (!StringUtils.hasText(recordingId)) {
             log.warn("Attempted to delete recommendations with null or empty recordingId.");
             return;
         }
         log.warn("Attempting to delete ALL recommendations for recording ID: {}", recordingId);
-        CollectionReference recommendationsRef = firestore.collection(recommendationsCollectionName);
+        CollectionReference recommendationsRef =
+                firestore.collection(recommendationsCollectionName);
         Query query = recommendationsRef.whereEqualTo("recordingId", recordingId);
         ApiFuture<QuerySnapshot> future = query.get();
         int deletedCount = 0;
@@ -354,25 +544,27 @@ public class LearningMaterialRecommenderService {
             }
             WriteBatch batch = firestore.batch();
             for (QueryDocumentSnapshot document : documents) {
-                log.debug("Adding recommendation {} to delete batch for recordingId {}.", document.getId(), recordingId);
+                log.debug("Adding recommendation {} to delete batch for recordingId {}.",
+                        document.getId(), recordingId);
                 batch.delete(document.getReference());
                 deletedCount++;
             }
             ApiFuture<List<WriteResult>> batchFuture = batch.commit();
-            batchFuture.get(); // Wait for completion
-            log.info("Successfully deleted {} recommendations for recording ID: {}", deletedCount, recordingId);
+            batchFuture.get();
+            log.info("Successfully deleted {} recommendations for recording ID: {}", deletedCount,
+                    recordingId);
         } catch (ExecutionException | InterruptedException e) {
-            log.error("Error deleting recommendations for recording ID {}: {}", recordingId, e.getMessage(), e);
+            log.error("Error deleting recommendations for recording ID {}: {}", recordingId,
+                    e.getMessage(), e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            // Consider re-throwing or handling more robustly
         } catch (Exception e) {
-            log.error("Unexpected error deleting recommendations for recording ID {}: {}", recordingId, e.getMessage(), e);
+            log.error("Unexpected error deleting recommendations for recording ID {}: {}",
+                    recordingId, e.getMessage(), e);
         }
     }
 
-    // New method to delete a single recommendation by its ID
     public boolean deleteRecommendation(String recommendationId) {
         if (!StringUtils.hasText(recommendationId)) {
             log.warn("Attempted to delete recommendation with null or empty ID.");
@@ -380,25 +572,172 @@ public class LearningMaterialRecommenderService {
         }
         log.info("Attempting to delete LearningRecommendation with ID: {}", recommendationId);
         try {
-            DocumentReference docRef = firestore.collection(recommendationsCollectionName).document(recommendationId);
+            DocumentReference docRef =
+                    firestore.collection(recommendationsCollectionName).document(recommendationId);
             ApiFuture<WriteResult> future = docRef.delete();
-            future.get(); // Wait for deletion to complete
+            future.get();
             log.info("Successfully deleted LearningRecommendation with ID: {}", recommendationId);
-            // Note: This does not automatically remove the ID from the associated Recording's list.
-            // That would require fetching the Recording, updating the list, and saving it back.
             return true;
         } catch (ExecutionException e) {
-            // Check if the cause is DocumentDoesNotExistException if Firestore API provides it
-            log.error("ExecutionException while deleting recommendation {}: {}", recommendationId, e.getMessage(), e);
-            // Consider checking e.getCause() for specific Firestore exceptions like NOT_FOUND
+            log.error("ExecutionException while deleting recommendation {}: {}", recommendationId,
+                    e.getMessage(), e);
             return false;
         } catch (InterruptedException e) {
-            log.error("InterruptedException while deleting recommendation {}: {}", recommendationId, e.getMessage(), e);
+            log.error("InterruptedException while deleting recommendation {}: {}", recommendationId,
+                    e.getMessage(), e);
             Thread.currentThread().interrupt();
             return false;
         } catch (Exception e) {
-            log.error("Unexpected error deleting recommendation {}: {}", recommendationId, e.getMessage(), e);
+            log.error("Unexpected error deleting recommendation {}: {}", recommendationId,
+                    e.getMessage(), e);
             return false;
         }
+    }
+
+    private List<String> enhanceKeywordsWithEducationalContext(List<String> originalKeywords) {
+        if (originalKeywords == null || originalKeywords.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<String> enhancedKeywords = new ArrayList<>();
+
+        for (String keyword : originalKeywords) {
+            if (keyword.length() < 3)
+                continue;
+
+            enhancedKeywords.add(keyword);
+
+            if (keyword.length() > 5) {
+                enhancedKeywords.add(keyword + " " + EDUCATIONAL_CONTEXT);
+            }
+        }
+
+        if (originalKeywords.size() >= 2) {
+            for (int i = 0; i < originalKeywords.size() - 1 && i < 3; i++) {
+                String k1 = originalKeywords.get(i);
+                for (int j = i + 1; j < originalKeywords.size() && j < i + 3; j++) {
+                    String k2 = originalKeywords.get(j);
+                    enhancedKeywords.add(k1 + " " + k2 + " " + EDUCATIONAL_CONTEXT);
+                }
+            }
+        }
+
+        return enhancedKeywords;
+    }
+
+    private List<SearchResult> filterAndRankResults(List<SearchResult> results,
+            List<String> keywords) {
+        if (results == null || results.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<SearchResult, Integer> resultScores = new HashMap<>();
+
+        for (SearchResult result : results) {
+            if (result.getSnippet() == null)
+                continue;
+
+            int score = 0;
+            String title = result.getSnippet().getTitle() != null
+                    ? result.getSnippet().getTitle().toLowerCase()
+                    : "";
+            String description = result.getSnippet().getDescription() != null
+                    ? result.getSnippet().getDescription().toLowerCase()
+                    : "";
+            String channelTitle = result.getSnippet().getChannelTitle() != null
+                    ? result.getSnippet().getChannelTitle().toLowerCase()
+                    : "";
+
+            for (String keyword : keywords) {
+                String lowerKeyword = keyword.toLowerCase();
+                if (title.contains(lowerKeyword)) {
+                    score += 10;
+                }
+                if (description.contains(lowerKeyword)) {
+                    score += 5;
+                }
+            }
+
+            for (String eduDomain : EDUCATIONAL_DOMAINS) {
+                if (channelTitle.contains(eduDomain)) {
+                    score += 15;
+                    break;
+                }
+            }
+
+            for (String eduDomain : EDUCATIONAL_DOMAINS) {
+                if (title.contains(eduDomain)) {
+                    score += 8;
+                    break;
+                }
+            }
+
+            if (title.length() < 15) {
+                score -= 5;
+            }
+            if (description.length() < 30) {
+                score -= 3;
+            }
+
+            resultScores.put(result, score);
+        }
+
+        return resultScores.entrySet().stream()
+                .sorted(Map.Entry.<SearchResult, Integer>comparingByValue().reversed())
+                .map(Map.Entry::getKey).collect(Collectors.toList());
+    }
+
+    private List<SearchResult> filterByLanguage(List<SearchResult> results) {
+        if (results == null || results.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return results.stream().filter(result -> {
+            if (result.getSnippet() == null)
+                return false;
+
+            String title = result.getSnippet().getTitle() != null
+                    ? result.getSnippet().getTitle().toLowerCase()
+                    : "";
+            String description = result.getSnippet().getDescription() != null
+                    ? result.getSnippet().getDescription().toLowerCase()
+                    : "";
+            String channelTitle = result.getSnippet().getChannelTitle() != null
+                    ? result.getSnippet().getChannelTitle().toLowerCase()
+                    : "";
+
+            for (String indicator : FOREIGN_LANGUAGE_INDICATORS) {
+                if (title.contains(indicator) || channelTitle.contains(indicator)) {
+                    log.debug("Filtering out likely non-English video: {} ({})", title, indicator);
+                    return false;
+                }
+            }
+
+            for (String region : NON_ENGLISH_REGIONS) {
+                String regex = "\\b" + region + "\\b";
+                if (title.matches(".*" + regex + ".*") || channelTitle.matches(".*" + regex + ".*")
+                        || description.matches(".*" + regex + ".*")) {
+                    log.debug("Filtering out likely non-English region video: {} ({})", title,
+                            region);
+                    return false;
+                }
+            }
+
+            long nonAsciiCount = title.chars().filter(c -> c > 127).count();
+            double nonAsciiRatio = title.isEmpty() ? 0 : (double) nonAsciiCount / title.length();
+
+            if (nonAsciiRatio > 0.3) {
+                log.debug("Filtering out likely non-English video due to high non-ASCII ratio: {}",
+                        title);
+                return false;
+            }
+
+            if (channelTitle.contains("official") && nonAsciiRatio > 0.1) {
+                log.debug("Filtering out likely non-English official channel: {}", channelTitle);
+                return false;
+            }
+
+            return true;
+        }).collect(Collectors.toList());
     }
 }

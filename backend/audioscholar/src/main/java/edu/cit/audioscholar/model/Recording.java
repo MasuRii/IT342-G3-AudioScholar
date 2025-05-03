@@ -1,6 +1,11 @@
 package edu.cit.audioscholar.model;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 public class Recording {
 
@@ -144,6 +149,66 @@ public class Recording {
         }
         Recording recording = new Recording();
         recording.recordingId = (String) map.get("recordingId");
+        recording.userId = (String) map.get("userId");
+        recording.title = (String) map.get("title");
+        recording.audioUrl = (String) map.get("audioUrl");
+
+        Object createdAtObj = map.get("createdAt");
+        if (createdAtObj instanceof com.google.cloud.Timestamp) {
+            recording.createdAt = ((com.google.cloud.Timestamp) createdAtObj).toDate();
+        } else if (createdAtObj instanceof Date) {
+            recording.createdAt = (Date) createdAtObj;
+        }
+
+        Object updatedAtObj = map.get("updatedAt");
+        if (updatedAtObj instanceof com.google.cloud.Timestamp) {
+            recording.updatedAt = ((com.google.cloud.Timestamp) updatedAtObj).toDate();
+        } else if (updatedAtObj instanceof Date) {
+            recording.updatedAt = (Date) updatedAtObj;
+        }
+
+        recording.duration = (String) map.get("duration");
+        recording.summaryId = (String) map.get("summaryId");
+        recording.fileName = (String) map.get("fileName");
+
+        Object recIdsObj = map.get("recommendationIds");
+        if (recIdsObj instanceof List) {
+            try {
+                List<?> rawList = (List<?>) recIdsObj;
+                List<String> stringList = new ArrayList<>();
+                for (Object item : rawList) {
+                    if (item instanceof String) {
+                        stringList.add((String) item);
+                    } else if (item != null) {
+                        System.err.println(
+                                "Warning: Non-string item found in recommendationIds list: "
+                                        + item.getClass().getName());
+                        stringList.add(item.toString());
+                    }
+                }
+                recording.recommendationIds = stringList;
+            } catch (ClassCastException e) {
+                System.err.println(
+                        "Warning: Could not cast recommendationIds list items to String. List content: "
+                                + recIdsObj);
+                recording.recommendationIds = new ArrayList<>();
+            }
+        } else if (recIdsObj != null) {
+            System.err.println("Warning: recommendationIds field is not a List. Type: "
+                    + recIdsObj.getClass().getName());
+            recording.recommendationIds = new ArrayList<>();
+        }
+
+        return recording;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Recording fromMap(String documentId, Map<String, Object> map) {
+        if (map == null) {
+            return null;
+        }
+        Recording recording = new Recording();
+        recording.recordingId = documentId;
         recording.userId = (String) map.get("userId");
         recording.title = (String) map.get("title");
         recording.audioUrl = (String) map.get("audioUrl");

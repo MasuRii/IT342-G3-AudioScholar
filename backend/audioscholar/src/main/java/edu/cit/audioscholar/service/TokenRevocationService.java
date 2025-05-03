@@ -77,59 +77,41 @@ public class TokenRevocationService {
     }
 
     public boolean isTokenRevoked(String token) {
-        String jti = null;
         try {
-            jti = jwtTokenProvider.getJtiFromJWT(token);
-            log.debug("Checking denylist for token jti: {}", jti);
+            String tokenId = jwtTokenProvider.getJtiFromJWT(token);
+            log.debug("Checking denylist for token jti: {}", tokenId);
 
-            Cache cache = cacheManager.getCache(CACHE_NAME);
-            if (cache != null) {
-                Cache.ValueWrapper cachedValue = cache.get(jti);
-                if (cachedValue != null) {
-                    log.debug("Token jti {} found in cache '{}'. Access denied.", jti, CACHE_NAME);
-                    return true;
-                } else {
-                    log.debug("Token jti {} not found in cache '{}'. Checking Firestore.", jti,
-                            CACHE_NAME);
+            Cache jwtDenylistCache = cacheManager.getCache(CACHE_NAME);
+            if (jwtDenylistCache != null) {
+                Boolean cachedResult = jwtDenylistCache.get(tokenId, Boolean.class);
+                if (cachedResult != null) {
+                    log.debug("Token jti {} found in cache '{}'. Revoked: {}", tokenId, CACHE_NAME,
+                            cachedResult);
+                    return cachedResult;
                 }
-            } else {
-                log.warn("Cache '{}' not found. Proceeding with Firestore check for jti: {}",
-                        CACHE_NAME, jti);
+                log.debug("Token jti {} not found in cache '{}'. Checking Firestore.", tokenId,
+                        CACHE_NAME);
             }
 
-
-            Map<String, Object> data = firebaseService.getData(DENYLIST_COLLECTION, jti);
-            boolean revoked = data != null;
-
-            if (revoked) {
-                log.warn("Token with jti {} found in Firestore denylist. Access denied.", jti);
-                if (cache != null) {
-                    cache.put(jti, Boolean.TRUE);
-                    log.debug("Added jti {} to cache '{}' after Firestore lookup.", jti,
-                            CACHE_NAME);
+            try {
+                Map<String, Object> denylistEntry =
+                        firebaseService.getData(DENYLIST_COLLECTION, tokenId);
+                if (jwtDenylistCache != null) {
+                    jwtDenylistCache.put(tokenId, Boolean.TRUE);
                 }
-            } else {
+                log.debug("Token with jti {} found in Firestore denylist. Access denied.", tokenId);
+                return true;
+            } catch (FirestoreInteractionException e) {
+                if (jwtDenylistCache != null) {
+                    jwtDenylistCache.put(tokenId, Boolean.FALSE);
+                }
                 log.debug(
                         "Token with jti {} not found in Firestore denylist. Access allowed (pending other checks).",
-                        jti);
+                        tokenId);
+                return false;
             }
-            return revoked;
-
-        } catch (ExpiredJwtException e) {
-            log.debug(
-                    "Token is already expired (jti: {}), check is effectively false (handled by standard validation).",
-                    e.getClaims().getId());
-            return false;
-        } catch (FirestoreInteractionException e) {
-            log.error("Firestore error while checking denylist for token jti {}: {}", jti,
-                    e.getMessage(), e);
-            return true;
-        } catch (JwtException e) {
-            log.error("Error processing JWT during revocation check: {}", e.getMessage());
-            return true;
         } catch (Exception e) {
-            log.error("Unexpected error while checking token revocation status (jti: {}): {}", jti,
-                    e.getMessage(), e);
+            log.error("Error checking token revocation status: {}", e.getMessage(), e);
             return true;
         }
     }

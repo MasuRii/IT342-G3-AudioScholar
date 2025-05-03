@@ -1,6 +1,8 @@
 package edu.cit.audioscholar.dto;
 
 import java.io.Serializable;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class AudioProcessingMessage implements Serializable {
 
@@ -12,7 +14,9 @@ public class AudioProcessingMessage implements Serializable {
 
     public AudioProcessingMessage() {}
 
-    public AudioProcessingMessage(String recordingId, String userId, String metadataId) {
+    @JsonCreator
+    public AudioProcessingMessage(@JsonProperty("recordingId") String recordingId,
+            @JsonProperty("userId") String userId, @JsonProperty("metadataId") String metadataId) {
         this.recordingId = recordingId;
         this.userId = userId;
         this.metadataId = metadataId;
@@ -44,10 +48,7 @@ public class AudioProcessingMessage implements Serializable {
 
     @Override
     public String toString() {
-        return "AudioProcessingMessage{" +
-                "recordingId='" + recordingId + '\'' +
-                ", userId='" + userId + '\'' +
-                ", metadataId='" + metadataId + '\'' +
-                '}';
+        return "AudioProcessingMessage{" + "recordingId='" + recordingId + '\'' + ", userId='"
+                + userId + '\'' + ", metadataId='" + metadataId + '\'' + '}';
     }
 }

@@ -2,6 +2,7 @@ package edu.cit.audioscholar.service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -96,7 +97,7 @@ public class RecordingService {
             return null;
         }
         log.debug("Data found for recording ID {}, converting from map.", recordingId);
-        return Recording.fromMap(data);
+        return Recording.fromMap(recordingId, data);
     }
 
     public Recording updateRecording(Recording recording)
@@ -202,7 +203,10 @@ public class RecordingService {
         List<java.util.Map<String, Object>> results =
                 firebaseService.queryCollection(RECORDINGS_COLLECTION, "userId", userId);
         log.debug("Found {} recording documents for user {}", results.size(), userId);
-        return results.stream().map(Recording::fromMap).collect(Collectors.toList());
+        return results.stream()
+                .map(data -> Recording.fromMap((String) data.get("recordingId"), data))
+                .filter(Objects::nonNull).filter(r -> r.getRecordingId() != null)
+                .collect(Collectors.toList());
     }
 
     private String extractNhostIdFromUrl(String url) {

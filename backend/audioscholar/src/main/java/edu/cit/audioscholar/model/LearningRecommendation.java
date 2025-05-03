@@ -14,7 +14,12 @@ public class LearningRecommendation {
     private String title;
     private String descriptionSnippet;
     private String thumbnailUrl;
+    private String fallbackThumbnailUrl;
+    private String thumbnailQuality;
     private String recordingId;
+    private Integer relevanceScore;
+    private Boolean isEducational;
+    private String channelTitle;
     @ServerTimestamp
     private Date createdAt;
 
@@ -27,6 +32,25 @@ public class LearningRecommendation {
         this.descriptionSnippet = descriptionSnippet;
         this.thumbnailUrl = thumbnailUrl;
         this.recordingId = recordingId;
+        this.relevanceScore = 0;
+        this.isEducational = false;
+        this.thumbnailQuality = "default";
+        this.fallbackThumbnailUrl = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+    }
+
+    public LearningRecommendation(String videoId, String title, String descriptionSnippet,
+            String thumbnailUrl, String recordingId, Integer relevanceScore, Boolean isEducational,
+            String channelTitle) {
+        this.videoId = videoId;
+        this.title = title;
+        this.descriptionSnippet = descriptionSnippet;
+        this.thumbnailUrl = thumbnailUrl;
+        this.recordingId = recordingId;
+        this.relevanceScore = relevanceScore;
+        this.isEducational = isEducational;
+        this.channelTitle = channelTitle;
+        this.thumbnailQuality = "maxres";
+        this.fallbackThumbnailUrl = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
     }
 
     public String getRecommendationId() {
@@ -69,12 +93,52 @@ public class LearningRecommendation {
         this.thumbnailUrl = thumbnailUrl;
     }
 
+    public String getFallbackThumbnailUrl() {
+        return fallbackThumbnailUrl;
+    }
+
+    public void setFallbackThumbnailUrl(String fallbackThumbnailUrl) {
+        this.fallbackThumbnailUrl = fallbackThumbnailUrl;
+    }
+
+    public String getThumbnailQuality() {
+        return thumbnailQuality;
+    }
+
+    public void setThumbnailQuality(String thumbnailQuality) {
+        this.thumbnailQuality = thumbnailQuality;
+    }
+
     public String getRecordingId() {
         return recordingId;
     }
 
     public void setRecordingId(String recordingId) {
         this.recordingId = recordingId;
+    }
+
+    public Integer getRelevanceScore() {
+        return relevanceScore;
+    }
+
+    public void setRelevanceScore(Integer relevanceScore) {
+        this.relevanceScore = relevanceScore;
+    }
+
+    public Boolean getIsEducational() {
+        return isEducational;
+    }
+
+    public void setIsEducational(Boolean isEducational) {
+        this.isEducational = isEducational;
+    }
+
+    public String getChannelTitle() {
+        return channelTitle;
+    }
+
+    public void setChannelTitle(String channelTitle) {
+        this.channelTitle = channelTitle;
     }
 
     public Date getCreatedAt() {
@@ -91,7 +155,12 @@ public class LearningRecommendation {
         map.put("title", title);
         map.put("descriptionSnippet", descriptionSnippet);
         map.put("thumbnailUrl", thumbnailUrl);
+        map.put("fallbackThumbnailUrl", fallbackThumbnailUrl);
+        map.put("thumbnailQuality", thumbnailQuality);
         map.put("recordingId", recordingId);
+        map.put("relevanceScore", relevanceScore);
+        map.put("isEducational", isEducational);
+        map.put("channelTitle", channelTitle);
         map.put("createdAt", createdAt);
         return map;
     }
@@ -102,7 +171,34 @@ public class LearningRecommendation {
         recommendation.title = (String) map.get("title");
         recommendation.descriptionSnippet = (String) map.get("descriptionSnippet");
         recommendation.thumbnailUrl = (String) map.get("thumbnailUrl");
+        recommendation.fallbackThumbnailUrl = (String) map.get("fallbackThumbnailUrl");
+        recommendation.thumbnailQuality = (String) map.get("thumbnailQuality");
         recommendation.recordingId = (String) map.get("recordingId");
+        recommendation.channelTitle = (String) map.get("channelTitle");
+
+        if (recommendation.fallbackThumbnailUrl == null && recommendation.videoId != null) {
+            recommendation.fallbackThumbnailUrl =
+                    "https://i.ytimg.com/vi/" + recommendation.videoId + "/hqdefault.jpg";
+        }
+
+        if (recommendation.thumbnailQuality == null) {
+            recommendation.thumbnailQuality = "unknown";
+        }
+
+        Object scoreObj = map.get("relevanceScore");
+        if (scoreObj instanceof Number) {
+            recommendation.relevanceScore = ((Number) scoreObj).intValue();
+        } else {
+            recommendation.relevanceScore = 0;
+        }
+
+        Object isEduObj = map.get("isEducational");
+        if (isEduObj instanceof Boolean) {
+            recommendation.isEducational = (Boolean) isEduObj;
+        } else {
+            recommendation.isEducational = false;
+        }
+
         Object createdAtObj = map.get("createdAt");
         if (createdAtObj instanceof Timestamp) {
             recommendation.createdAt = ((Timestamp) createdAtObj).toDate();
@@ -117,7 +213,9 @@ public class LearningRecommendation {
         return "LearningRecommendation{" + "recommendationId='" + recommendationId + '\''
                 + ", videoId='" + videoId + '\'' + ", title='" + title + '\''
                 + ", descriptionSnippet='" + descriptionSnippet + '\'' + ", thumbnailUrl='"
-                + thumbnailUrl + '\'' + ", recordingId='" + recordingId + '\'' + ", createdAt="
-                + createdAt + '}';
+                + thumbnailUrl + '\'' + ", fallbackThumbnailUrl='" + fallbackThumbnailUrl + '\''
+                + ", thumbnailQuality='" + thumbnailQuality + '\'' + ", recordingId='" + recordingId
+                + '\'' + ", relevanceScore=" + relevanceScore + ", isEducational=" + isEducational
+                + ", channelTitle='" + channelTitle + '\'' + ", createdAt=" + createdAt + '}';
     }
 }

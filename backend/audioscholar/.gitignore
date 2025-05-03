@@ -35,5 +35,6 @@ build/
 
 # .gitignore
 .env
+.cursorrules
 
 src/main/resources/uploads/

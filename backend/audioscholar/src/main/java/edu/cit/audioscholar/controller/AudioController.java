@@ -3,6 +3,8 @@ package edu.cit.audioscholar.controller;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -10,7 +12,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.exception.InvalidAudioFileException;
@@ -24,9 +32,12 @@ public class AudioController {
     private static final Logger log = LoggerFactory.getLogger(AudioController.class);
     private final AudioProcessingService audioProcessingService;
 
-    private static final List<String> ALLOWED_AUDIO_TYPES =
-            Arrays.asList("audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/aac",
-                    "audio/ogg", "audio/flac", "audio/aiff", "audio/x-aiff");
+    private static final Set<String> ALLOWED_AUDIO_TYPES = Set.of("audio/mpeg", "audio/mp3",
+            "audio/wav", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/ogg", "audio/flac",
+            "audio/x-flac", "audio/aiff", "audio/x-aiff");
+    private static final List<String> ALLOWED_POWERPOINT_TYPES = Arrays.asList(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.ms-powerpoint");
     private static final int DEFAULT_PAGE_SIZE = 20;
 
     public AudioController(AudioProcessingService audioProcessingService) {
@@ -35,10 +46,11 @@ public class AudioController {
 
     @PostMapping("/upload")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<?> uploadAudio(@RequestParam("file") MultipartFile file,
+    public ResponseEntity<?> uploadAudio(@RequestParam("audioFile") MultipartFile audioFile,
+            @RequestParam(value = "powerpointFile", required = false) MultipartFile powerpointFile,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "description", required = false) String description) {
-        log.info("Received request to /api/audio/upload");
+        log.info("Received request to /api/audio/upload with audio and potentially PowerPoint");
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
             log.warn("Upload attempt failed: User not authenticated.");
@@ -47,28 +59,49 @@ public class AudioController {
         String userId = authentication.getName();
         log.info("Processing upload for authenticated User ID: {}", userId);
 
-        if (file.isEmpty()) {
-            log.warn("Upload attempt failed for user {}: File is empty.", userId);
-            return ResponseEntity.badRequest().body("File cannot be empty.");
+        if (audioFile.isEmpty()) {
+            log.warn("Upload attempt failed for user {}: Audio file is empty.", userId);
+            return ResponseEntity.badRequest().body("Audio file cannot be empty.");
         }
-        String contentType = file.getContentType();
-        log.debug("Reported content type: {}", contentType);
-        if (contentType == null || !isAllowedContentType(contentType)) {
-            log.warn("Upload attempt failed for user {}: Invalid file type '{}'. Allowed types: {}",
-                    userId, contentType, ALLOWED_AUDIO_TYPES);
+        String audioContentType = audioFile.getContentType();
+        log.debug("Reported audio content type: {}", audioContentType);
+        if (audioContentType == null || !isAllowedAudioType(audioContentType)) {
+            log.warn(
+                    "Upload attempt failed for user {}: Invalid audio file type \'{}\'. Allowed types: {}",
+                    userId, audioContentType, ALLOWED_AUDIO_TYPES);
             return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-                    .body("Invalid file type. Allowed types: " + ALLOWED_AUDIO_TYPES);
+                    .body("Invalid audio file type. Allowed types: " + ALLOWED_AUDIO_TYPES);
         }
+
+        if (powerpointFile != null && !powerpointFile.isEmpty()) {
+            String pptxContentType = powerpointFile.getContentType();
+            log.debug("Reported PowerPoint content type: {}", pptxContentType);
+            if (pptxContentType == null || !isAllowedPowerpointType(pptxContentType)) {
+                log.warn(
+                        "Upload attempt failed for user {}: Invalid PowerPoint file type \'{}\'. Allowed types: {}",
+                        userId, pptxContentType, ALLOWED_POWERPOINT_TYPES);
+                return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(
+                        "Invalid PowerPoint file type. Allowed types: " + ALLOWED_POWERPOINT_TYPES);
+            }
+            log.info("Valid PowerPoint file provided: {}", powerpointFile.getOriginalFilename());
+        } else {
+            log.info("No PowerPoint file provided or it is empty.");
+            powerpointFile = null;
+        }
+
+        Optional<String> optTitle = Optional.ofNullable(title).filter(s -> !s.isBlank());
+        Optional<String> optDescription =
+                Optional.ofNullable(description).filter(s -> !s.isBlank());
 
         try {
-            log.info("Received valid upload request for file: {} from user: {}",
-                    file.getOriginalFilename(), userId);
+            log.info("Received valid upload request for audio file: {} from user: {}",
+                    audioFile.getOriginalFilename(), userId);
 
-            AudioMetadata initialMetadata =
-                    audioProcessingService.queueAudioForUpload(file, title, description, userId);
+            AudioMetadata initialMetadata = audioProcessingService.queueFilesForUpload(audioFile,
+                    powerpointFile, optTitle.orElse(null), optDescription.orElse(null), userId);
 
             log.info(
-                    "Successfully queued file for upload. Metadata ID: {}, Status: {}, User ID: {}",
+                    "Successfully queued file(s) for upload. Metadata ID: {}, Status: {}, User ID: {}",
                     initialMetadata.getId(), initialMetadata.getStatus(), userId);
 
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(initialMetadata);
@@ -79,7 +112,7 @@ public class AudioController {
         } catch (IOException e) {
             log.error("IOException during initial file handling/queueing for user {}", userId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error processing file.");
+                    .body("Error processing file(s).");
         } catch (FirestoreInteractionException e) {
             log.error("Firestore error during initial metadata save for user {}: {}", userId,
                     e.getMessage(), e);
@@ -92,10 +125,16 @@ public class AudioController {
         }
     }
 
-    private boolean isAllowedContentType(String contentType) {
+    private boolean isAllowedAudioType(String contentType) {
         if (contentType == null)
             return false;
         return ALLOWED_AUDIO_TYPES.contains(contentType.toLowerCase());
+    }
+
+    private boolean isAllowedPowerpointType(String contentType) {
+        if (contentType == null)
+            return false;
+        return ALLOWED_POWERPOINT_TYPES.contains(contentType.toLowerCase());
     }
 
     @GetMapping("/metadata")

@@ -2,14 +2,24 @@ package edu.cit.audioscholar.service;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import javax.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.Resource;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
@@ -18,7 +28,16 @@ import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.Timestamp;
-import com.google.cloud.firestore.*;
+import com.google.cloud.firestore.CollectionReference;
+import com.google.cloud.firestore.DocumentReference;
+import com.google.cloud.firestore.DocumentSnapshot;
+import com.google.cloud.firestore.Firestore;
+import com.google.cloud.firestore.Query;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.google.cloud.firestore.QuerySnapshot;
+import com.google.cloud.firestore.SetOptions;
+import com.google.cloud.firestore.WriteBatch;
+import com.google.cloud.firestore.WriteResult;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.auth.FirebaseAuth;
@@ -27,17 +46,19 @@ import com.google.firebase.auth.FirebaseToken;
 import com.google.firebase.auth.UserRecord;
 import com.google.firebase.auth.UserRecord.UpdateRequest;
 import com.google.firebase.cloud.FirestoreClient;
-import com.google.firebase.messaging.*;
+import com.google.firebase.messaging.AndroidConfig;
+import com.google.firebase.messaging.ApnsConfig;
+import com.google.firebase.messaging.Aps;
+import com.google.firebase.messaging.BatchResponse;
+import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FirebaseMessagingException;
+import com.google.firebase.messaging.MessagingErrorCode;
+import com.google.firebase.messaging.MulticastMessage;
+import com.google.firebase.messaging.SendResponse;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
 import edu.cit.audioscholar.model.LearningRecommendation;
 import edu.cit.audioscholar.model.ProcessingStatus;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.CacheManager;
-import org.springframework.cache.Cache;
-import org.springframework.lang.Nullable;
-import org.springframework.cache.annotation.Caching;
 
 @Service
 public class FirebaseService {
@@ -285,25 +306,27 @@ public class FirebaseService {
     }
 
     public Map<String, Object> getData(String collection, String document) {
-        if (!StringUtils.hasText(collection) || !StringUtils.hasText(document)) {
-            log.warn("Attempted Firestore getData with blank collection or document name.");
-            return null;
-        }
         try {
-            Firestore firestore = getFirestore();
-            DocumentSnapshot snapshot =
-                    firestore.collection(collection).document(document).get().get();
-            if (snapshot.exists()) {
+            DocumentReference docRef = getFirestore().collection(collection).document(document);
+            DocumentSnapshot snapshot = docRef.get().get();
+
+            if (snapshot != null && snapshot.exists()) {
+                Map<String, Object> data = snapshot.getData();
                 log.debug("Data retrieved from {}/{}", collection, document);
-                return snapshot.getData();
+                return data;
             } else {
-                log.warn("No document found at {}/{}", collection, document);
-                return null;
+                log.debug("No document found at {}/{}", collection, document);
+                throw new FirestoreInteractionException(
+                        "No document found at " + collection + "/" + document);
             }
-        } catch (ExecutionException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("Error getting data from {}/{}", collection, document, e);
-            throw new FirestoreInteractionException("Error getting data from Firestore", e);
+        } catch (Exception e) {
+            if (e instanceof FirestoreInteractionException) {
+                throw (FirestoreInteractionException) e;
+            }
+            log.error("Error getting data from Firestore at {}/{}: {}", collection, document,
+                    e.getMessage());
+            throw new FirestoreInteractionException(
+                    "Failed to get document " + collection + "/" + document, e);
         }
     }
 
@@ -777,8 +800,8 @@ public class FirebaseService {
         if (value instanceof Number) {
             return ((Number) value).intValue();
         } else if (value != null) {
-            log.warn("Field '{}' was not a Number for document ID: {}. Type: {}. Returning null.", key,
-                    docId, value.getClass().getName());
+            log.warn("Field '{}' was not a Number for document ID: {}. Type: {}. Returning null.",
+                    key, docId, value.getClass().getName());
         } else {
             log.trace("Field '{}' not found or null for document ID: {}", key, docId);
         }
@@ -896,68 +919,69 @@ public class FirebaseService {
         }
     }
 
-    /**
-     * Updates the status and optionally the failure reason of an AudioMetadata document.
-     * Clears relevant caches (individual ID via annotation, user list manually).
-     *
-     * @param metadataId The ID of the AudioMetadata document to update.
-     * @param userId     The ID of the user who owns the metadata (for cache eviction).
-     * @param status     The new ProcessingStatus.
-     * @param reason     The reason for the status change, can be null.
-     * @throws ExecutionException If Firestore update fails.
-     * @throws InterruptedException If the thread is interrupted.
-     */
-    @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId", condition = "#metadataId != null")
-    public void updateAudioMetadataStatusAndReason(String metadataId, @Nullable String userId, ProcessingStatus status, String reason)
+    @CacheEvict(value = CACHE_METADATA_BY_ID, key = "#metadataId",
+            condition = "#metadataId != null")
+    public void updateAudioMetadataStatusAndReason(String metadataId, @Nullable String userId,
+            ProcessingStatus status, String reason)
             throws ExecutionException, InterruptedException {
         if (metadataId == null || status == null) {
             log.error("Cannot update metadata status: metadataId or status is null.");
             throw new IllegalArgumentException("Metadata ID and Status cannot be null.");
         }
 
-        DocumentReference docRef = getFirestore().collection(audioMetadataCollectionName).document(metadataId);
+        DocumentReference docRef =
+                getFirestore().collection(audioMetadataCollectionName).document(metadataId);
         Map<String, Object> updates = new HashMap<>();
         updates.put("status", status.name());
         updates.put("lastUpdated", Timestamp.now());
 
-        if (status == ProcessingStatus.FAILED || status == ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT) {
+        if (status == ProcessingStatus.FAILED
+                || status == ProcessingStatus.PROCESSING_HALTED_UNSUITABLE_CONTENT) {
             updates.put("failureReason", reason != null ? reason : "No specific reason provided.");
         } else {
             updates.put("failureReason", null);
         }
 
-        log.info("Updating Firestore document {} in collection {} for user {} with status: {}, reason: '{}'", 
-                 metadataId, audioMetadataCollectionName, userId != null ? userId : "<unknown>", status, reason);
+        log.info(
+                "Updating Firestore document {} in collection {} for user {} with status: {}, reason: '{}'",
+                metadataId, audioMetadataCollectionName, userId != null ? userId : "<unknown>",
+                status, reason);
         ApiFuture<WriteResult> writeResult = docRef.update(updates);
-        
-        try {
-             // Wait for the update to complete
-             WriteResult result = writeResult.get(); 
-             log.info("Successfully updated Firestore document {} at {}. Attempting manual cache eviction.", metadataId, result.getUpdateTime());
 
-             // --- Manual Cache Eviction for User List --- 
-             if (userId != null) {
-                 try {
-                     Cache userListCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
-                     if (userListCache != null) {
-                         log.info("Manually evicting user list cache entry for user {} in cache {}", userId, CACHE_METADATA_BY_USER);
-                         userListCache.evict(userId);
-                     } else {
-                         log.warn("Cache '{}' not found for manual user list eviction.", CACHE_METADATA_BY_USER);
-                     }
-                 } catch (Exception e) {
-                     log.error("Error during manual user list cache eviction for user {}: {}", userId, e.getMessage(), e);
-                     // Log but continue, Firestore update was successful
-                 }
-             } else {
-                  log.warn("Cannot manually evict user list cache for metadata {} because userId was null.", metadataId);
-             }
-             // --- End Manual Cache Eviction ---
+        try {
+            WriteResult result = writeResult.get();
+            log.info(
+                    "Successfully updated Firestore document {} at {}. Attempting manual cache eviction.",
+                    metadataId, result.getUpdateTime());
+
+            if (userId != null) {
+                try {
+                    Cache userListCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                    if (userListCache != null) {
+                        log.info("Manually evicting user list cache entry for user {} in cache {}",
+                                userId, CACHE_METADATA_BY_USER);
+                        userListCache.evict(userId);
+                    } else {
+                        log.warn("Cache '{}' not found for manual user list eviction.",
+                                CACHE_METADATA_BY_USER);
+                    }
+                } catch (Exception e) {
+                    log.error("Error during manual user list cache eviction for user {}: {}",
+                            userId, e.getMessage(), e);
+                }
+            } else {
+                log.warn(
+                        "Cannot manually evict user list cache for metadata {} because userId was null.",
+                        metadataId);
+            }
 
         } catch (ExecutionException | InterruptedException e) {
-             log.error("Firestore update failed for document {}. Cache eviction will not be attempted. Error: {}", metadataId, e.getMessage(), e);
-             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-             throw e; // Re-throw the exception
+            log.error(
+                    "Firestore update failed for document {}. Cache eviction will not be attempted. Error: {}",
+                    metadataId, e.getMessage(), e);
+            if (e instanceof InterruptedException)
+                Thread.currentThread().interrupt();
+            throw e;
         }
     }
 }

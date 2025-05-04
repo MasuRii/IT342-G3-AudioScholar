@@ -96,18 +96,32 @@ public class TokenRevocationService {
             try {
                 Map<String, Object> denylistEntry =
                         firebaseService.getData(DENYLIST_COLLECTION, tokenId);
-                if (jwtDenylistCache != null) {
-                    jwtDenylistCache.put(tokenId, Boolean.TRUE);
+
+                if (denylistEntry == null) {
+                    // Document doesn't exist in Firestore
+                    if (jwtDenylistCache != null) {
+                        jwtDenylistCache.put(tokenId, Boolean.FALSE);
+                    }
+                    log.debug(
+                            "Token with jti {} not found in Firestore denylist. Access allowed (pending other checks).",
+                            tokenId);
+                    return false;
+                } else {
+                    // Document exists in Firestore
+                    if (jwtDenylistCache != null) {
+                        jwtDenylistCache.put(tokenId, Boolean.TRUE);
+                    }
+                    log.debug("Token with jti {} found in Firestore denylist. Access denied.",
+                            tokenId);
+                    return true;
                 }
-                log.debug("Token with jti {} found in Firestore denylist. Access denied.", tokenId);
-                return true;
             } catch (FirestoreInteractionException e) {
                 if (jwtDenylistCache != null) {
                     jwtDenylistCache.put(tokenId, Boolean.FALSE);
                 }
-                log.debug(
-                        "Token with jti {} not found in Firestore denylist. Access allowed (pending other checks).",
-                        tokenId);
+                log.error(
+                        "Error checking Firestore denylist for token jti {}: {}. Allowing access.",
+                        tokenId, e.getMessage());
                 return false;
             }
         } catch (Exception e) {

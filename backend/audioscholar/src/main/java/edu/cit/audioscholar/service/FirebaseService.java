@@ -316,13 +316,9 @@ public class FirebaseService {
                 return data;
             } else {
                 log.debug("No document found at {}/{}", collection, document);
-                throw new FirestoreInteractionException(
-                        "No document found at " + collection + "/" + document);
+                return null;
             }
         } catch (Exception e) {
-            if (e instanceof FirestoreInteractionException) {
-                throw (FirestoreInteractionException) e;
-            }
             log.error("Error getting data from Firestore at {}/{}: {}", collection, document,
                     e.getMessage());
             throw new FirestoreInteractionException(

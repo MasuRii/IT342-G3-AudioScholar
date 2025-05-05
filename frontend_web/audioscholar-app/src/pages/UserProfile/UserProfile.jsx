@@ -114,12 +114,18 @@ const UserProfile = () => {
 
               </div>
 
-              <div className="mt-8 text-right">
+              <div className="mt-8 text-right space-x-4">
                 <Link
                   to="/profile/edit"
                   className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#2D8A8A] hover:bg-[#236b6b] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2D8A8A] transition-colors duration-200 transform hover:-translate-y-0.5"
                 >
                   Edit Profile
+                </Link>
+                <Link
+                  to="/subscribe"
+                  className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 transform hover:-translate-y-0.5"
+                >
+                  Apply Subscription
                 </Link>
               </div>
             </div>

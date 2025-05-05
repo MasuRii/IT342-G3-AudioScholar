@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FiAlertTriangle, FiCheckCircle, FiClock, FiExternalLink, FiFile, FiLoader, FiTrash2, FiUploadCloud } from 'react-icons/fi';
 import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
-import { Footer, Header } from '../Home/HomePage';
+import { Header } from '../Home/HomePage';
 
 // Define terminal statuses
 const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'PROCESSING_HALTED_UNSUITABLE_CONTENT', 'PROCESSING_HALTED_NO_SPEECH'];
@@ -374,7 +374,6 @@ const RecordingList = () => {
                     )}
                 </div>
             </main>
-            <Footer />
         </>
     );
 };

@@ -1,4 +1,4 @@
-export const API_BASE_URL = 'https://it342-g3-audioscholar-onrender-com.onrender.com/';
+export const API_BASE_URL = 'https://mastodon-balanced-randomly.ngrok-free.app/';
 
 /**
  * Sends the Firebase ID token obtained from frontend Firebase authentication

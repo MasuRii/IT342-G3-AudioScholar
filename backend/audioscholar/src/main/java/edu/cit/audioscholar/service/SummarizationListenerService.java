@@ -30,6 +30,7 @@ import org.springframework.util.StringUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.Timestamp;
+import com.google.cloud.firestore.FieldValue;
 import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
@@ -705,39 +706,87 @@ public class SummarizationListenerService {
 
         private void updateMetadataStatus(String metadataId, String userId, ProcessingStatus status,
                         @Nullable String reason) {
+                log.info("[{}] Setting status to {}{}", metadataId, status,
+                                (reason != null ? ". Reason: " + reason : ""));
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("status", status.name());
+                updates.put("lastUpdated", Timestamp.now());
+                if (reason != null) {
+                        updates.put("failureReason", reason);
+                } else {
+                        updates.put("failureReason", FieldValue.delete());
+                }
+
                 try {
-                        Map<String, Object> updates = new HashMap<>();
-                        updates.put("status", status.name());
-                        updates.put("lastUpdated", Timestamp.now());
-                        if (reason != null) {
-                                updates.put("failureReason", reason);
-                                log.error("[{}] Setting status to {}. Reason: {}", metadataId,
-                                                status, reason);
-                        } else {
-                                log.info("[{}] Setting status to {}", metadataId, status);
+                        firebaseService.updateData(firebaseService.getAudioMetadataCollectionName(),
+                                        metadataId, updates);
+
+                        try {
+                                Map<String, Object> updatedDataMap = firebaseService.getData(
+                                                firebaseService.getAudioMetadataCollectionName(),
+                                                metadataId);
+                                if (updatedDataMap != null) {
+                                        AudioMetadata updatedMetadata =
+                                                        AudioMetadata.fromMap(updatedDataMap);
+
+                                        Cache byIdCache =
+                                                        cacheManager.getCache("audioMetadataById");
+                                        if (byIdCache != null) {
+                                                byIdCache.put(metadataId, updatedMetadata);
+                                                log.debug("[{}] Manually updated cache 'audioMetadataById' with latest status: {}",
+                                                                metadataId, status);
+                                        } else {
+                                                log.warn("Cache 'audioMetadataById' not found during manual update.");
+                                        }
+                                } else {
+                                        log.warn("[{}] Could not fetch updated metadata after status update for cache refresh.",
+                                                        metadataId);
+                                        Cache byIdCache =
+                                                        cacheManager.getCache("audioMetadataById");
+                                        if (byIdCache != null) {
+                                                byIdCache.evictIfPresent(metadataId);
+                                        }
+                                }
+
+                                Cache byUserCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                                if (byUserCache != null) {
+                                        byUserCache.clear();
+                                        log.debug("[{}] Cleared cache '{}' after status update.",
+                                                        metadataId, CACHE_METADATA_BY_USER);
+                                } else {
+                                        log.warn("Cache '{}' not found during clear operation.",
+                                                        CACHE_METADATA_BY_USER);
+                                }
+
+                        } catch (Exception cacheEx) {
+                                log.error("[{}] Error during manual cache update/eviction after status change: {}",
+                                                metadataId, cacheEx.getMessage(), cacheEx);
                         }
 
-                        firebaseService.updateDataWithMap(
-                                        firebaseService.getAudioMetadataCollectionName(),
-                                        metadataId, updates);
-                        invalidateCache(userId);
                 } catch (FirestoreInteractionException e) {
-                        log.error("[{}] Failed to update metadata status to {}: {}", metadataId,
-                                        status, e.getMessage(), e);
+                        log.error("[{}] Failed to update metadata status to {} in Firestore: {}",
+                                        metadataId, status, e.getMessage(), e);
                 }
         }
 
         private void invalidateCache(String userId) {
-                if (userId == null) {
+                if (userId == null || userId.isBlank()) {
+                        log.warn("Attempted to invalidate cache with null or blank userId.");
                         return;
                 }
-                Cache cache = cacheManager.getCache(CACHE_METADATA_BY_USER);
-                if (cache != null) {
-                        cache.evict(userId);
-                        log.debug("Invalidated cache '{}' for userId: {}", CACHE_METADATA_BY_USER,
-                                        userId);
-                } else {
-                        log.warn("Cache '{}' not found", CACHE_METADATA_BY_USER);
+                try {
+                        Cache userCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                        if (userCache != null) {
+                                userCache.clear();
+                                log.debug("Invalidated cache '{}' for userId: {}",
+                                                CACHE_METADATA_BY_USER, userId);
+                        } else {
+                                log.warn("Cache '{}' not found during invalidation.",
+                                                CACHE_METADATA_BY_USER);
+                        }
+                } catch (Exception e) {
+                        log.error("Error invalidating cache for user {}: {}", userId,
+                                        e.getMessage(), e);
                 }
         }
 }

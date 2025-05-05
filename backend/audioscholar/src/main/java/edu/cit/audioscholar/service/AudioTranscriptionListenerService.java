@@ -28,6 +28,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import com.google.cloud.Timestamp;
 import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.dto.AudioProcessingMessage;
@@ -74,11 +75,12 @@ public class AudioTranscriptionListenerService {
     public void handleAudioTranscriptionRequest(AudioProcessingMessage message) {
         String metadataId = message.getMetadataId();
         String userId = message.getUserId();
+        log.info(
+                "[{}] Received transcription request for metadata ID from queue. Initial User ID: {}",
+                metadataId, userId);
 
-        log.info("[AMQP Listener - Transcription] Received request for metadataId: {}", metadataId);
-
-        if (metadataId == null) {
-            log.error("Received transcription request with null metadataId. Ignoring.");
+        if (metadataId == null || metadataId.isEmpty()) {
+            log.error("Invalid transcription message: metadataId is null or empty. Aborting.");
             return;
         }
 
@@ -106,19 +108,22 @@ public class AudioTranscriptionListenerService {
                     metadata.getStatus(), userId);
 
             ProcessingStatus currentStatus = metadata.getStatus();
-            if (currentStatus != ProcessingStatus.UPLOAD_IN_PROGRESS
-                    && currentStatus != ProcessingStatus.PROCESSING_QUEUED) {
-                log.info(
-                        "[{}] Skipping transcription as metadata is already in status: {}. Transcription has likely been processed already.",
-                        metadataId, currentStatus);
-                return;
-            }
 
             if (metadata.isTranscriptionComplete()) {
                 log.info("[{}] Skipping transcription as it is already marked as complete.",
                         metadataId);
 
                 checkCompletionAndTriggerSummarization(metadataId, userId);
+                return;
+            }
+
+            if (currentStatus != ProcessingStatus.UPLOAD_IN_PROGRESS
+                    && currentStatus != ProcessingStatus.PROCESSING_QUEUED
+                    && currentStatus != ProcessingStatus.PDF_CONVERTING
+                    && currentStatus != ProcessingStatus.PDF_CONVERSION_COMPLETE) {
+                log.info(
+                        "[{}] Skipping transcription as metadata is already in status: {}. Transcription has likely been processed already.",
+                        metadataId, currentStatus);
                 return;
             }
 
@@ -407,17 +412,19 @@ public class AudioTranscriptionListenerService {
             boolean transcriptionDone = latestMetadata.isTranscriptionComplete();
             boolean pdfDone = latestMetadata.isPdfConversionComplete();
             boolean isAudioOnly = latestMetadata.isAudioOnly();
+            boolean hasPptx = StringUtils.hasText(latestMetadata.getNhostPptxFileId());
 
             log.debug(
-                    "[{}] Completion status check: TranscriptionDone={}, PdfConversionDone={}, AudioOnly={}",
-                    metadataId, transcriptionDone, pdfDone, isAudioOnly);
+                    "[{}] Completion status check: TranscriptionDone={}, PdfConversionDone={}, AudioOnly={}, HasPptx={}",
+                    metadataId, transcriptionDone, pdfDone, isAudioOnly, hasPptx);
 
-            boolean readyForSummarization = transcriptionDone && (pdfDone || isAudioOnly);
+            boolean readyForSummarization =
+                    transcriptionDone && (pdfDone || isAudioOnly || !hasPptx);
 
             if (readyForSummarization) {
                 log.info(
-                        "[{}] Conditions met for summarization: AudioOnly={}, TranscriptionDone={}, PdfDone={}. Sending message to summarization queue.",
-                        metadataId, isAudioOnly, transcriptionDone, pdfDone);
+                        "[{}] Conditions met for summarization: AudioOnly={}, TranscriptionDone={}, PdfDone={}, HasPptx={}. Sending message to summarization queue.",
+                        metadataId, isAudioOnly, transcriptionDone, pdfDone, hasPptx);
 
                 boolean statusUpdated = updateMetadataStatus(metadataId, userId,
                         ProcessingStatus.SUMMARIZATION_QUEUED, null);
@@ -444,8 +451,8 @@ public class AudioTranscriptionListenerService {
 
             } else {
                 log.info(
-                        "[{}] Conditions not yet met for final summarization (Transcription: {}, PDF: {}). Waiting for other process.",
-                        metadataId, transcriptionDone, pdfDone);
+                        "[{}] Conditions not yet met for final summarization (Transcription: {}, PDF: {}, Audio-only: {}, Has PPTX: {}). Waiting for other process.",
+                        metadataId, transcriptionDone, pdfDone, isAudioOnly, hasPptx);
             }
 
         } catch (FirestoreInteractionException e) {

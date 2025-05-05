@@ -167,7 +167,19 @@ public class PptxConversionListenerService {
                                                         metadataId, metadata.getStatus(),
                                                         metadata.isTranscriptionComplete());
 
-                                        if (metadata.isTranscriptionComplete() && metadata
+                                        boolean transcriptionDone =
+                                                        metadata.isTranscriptionComplete();
+                                        boolean pdfDone = metadata.isPdfConversionComplete();
+                                        boolean isAudioOnly = metadata.isAudioOnly();
+
+                                        logger.debug("Completion status check for {}: TranscriptionDone={}, PdfConversionDone={}, AudioOnly={}",
+                                                        metadataId, transcriptionDone, pdfDone,
+                                                        isAudioOnly);
+
+                                        boolean readyForSummarization = transcriptionDone
+                                                        && (pdfDone || isAudioOnly);
+
+                                        if (readyForSummarization && metadata
                                                         .getStatus() != ProcessingStatus.SUMMARIZATION_QUEUED
                                                         && metadata.getStatus() != ProcessingStatus.SUMMARIZING
                                                         && metadata.getStatus() != ProcessingStatus.SUMMARY_COMPLETE) {
@@ -187,12 +199,36 @@ public class PptxConversionListenerService {
                                                 message.put("metadataId", metadataId);
                                                 message.put("messageId",
                                                                 UUID.randomUUID().toString());
+
                                                 rabbitTemplate.convertAndSend(
                                                                 RabbitMQConfig.PROCESSING_EXCHANGE_NAME,
                                                                 RabbitMQConfig.SUMMARIZATION_ROUTING_KEY,
                                                                 message);
                                                 logger.info("Sent message to summarization queue for metadata ID: {}",
                                                                 metadataId);
+                                        } else {
+                                                logger.info("Conditions not yet met for summarization or already in progress (Transcription: {}, PDF: {}, AudioOnly: {}, Status: {}). Waiting for other processes.",
+                                                                transcriptionDone, pdfDone,
+                                                                isAudioOnly, metadata.getStatus());
+
+                                                if (pdfDone && !transcriptionDone && !isAudioOnly
+                                                                && metadata.getStatus() != ProcessingStatus.TRANSCRIBING) {
+                                                        logger.info("PDF conversion is complete but transcription is not yet started or may be stalled. Attempting to trigger/retry transcription process for ID: {}",
+                                                                        metadataId);
+                                                        AudioProcessingMessage transcriptionMessage =
+                                                                        new AudioProcessingMessage();
+                                                        transcriptionMessage
+                                                                        .setMetadataId(metadataId);
+                                                        transcriptionMessage.setUserId(
+                                                                        metadata.getUserId());
+
+                                                        rabbitTemplate.convertAndSend(
+                                                                        RabbitMQConfig.PROCESSING_EXCHANGE_NAME,
+                                                                        RabbitMQConfig.TRANSCRIPTION_ROUTING_KEY,
+                                                                        transcriptionMessage);
+                                                        logger.info("Sent retry message to transcription queue for metadata ID: {}",
+                                                                        metadataId);
+                                                }
                                         }
 
                                         Files.deleteIfExists(tempPptxPath);

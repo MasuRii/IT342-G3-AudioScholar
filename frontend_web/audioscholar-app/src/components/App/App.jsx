@@ -1,4 +1,5 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import AboutPage from '../../pages/About/AboutPage';
 import GithubAuthCallback from '../../pages/Auth/GithubCallback/GithubAuthCallback';
 import SignIn from '../../pages/Auth/SignIn/SignIn';
 import SignUp from '../../pages/Auth/SignUp/SignUp';
@@ -6,11 +7,13 @@ import Dashboard from '../../pages/Dashboard/Dashboard';
 import HomePage from '../../pages/Home/HomePage';
 import RecordingData from '../../pages/RecordingData/RecordingData';
 import RecordingList from '../../pages/RecordingList/RecordingList';
+import CheckoutPage from '../../pages/Subscription/CheckoutPage';
+import PaymentMethodPage from '../../pages/Subscription/PaymentMethodPage';
+import SubscriptionTierPage from '../../pages/Subscription/SubscriptionTierPage';
 import Uploading from '../../pages/Upload/Uploading';
 import UserProfile from '../../pages/UserProfile/UserProfile';
 import UserProfileEdit from '../../pages/UserProfileEdit/UserProfileEdit';
 import ProtectedRoute from '../common/ProtectedRoute';
-import AboutPage from '../../pages/About/AboutPage';
 
 
 function App() {
@@ -52,6 +55,22 @@ function App() {
           <Route path="/profile/edit" element={
             <ProtectedRoute>
               <UserProfileEdit />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/subscribe" element={
+            <ProtectedRoute>
+              <SubscriptionTierPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/payment" element={
+            <ProtectedRoute>
+              <PaymentMethodPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/checkout" element={
+            <ProtectedRoute>
+              <CheckoutPage />
             </ProtectedRoute>
           } />
 

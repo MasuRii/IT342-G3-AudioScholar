@@ -532,10 +532,43 @@ class RecordingDetailsViewModel @Inject constructor(
         val titleToUpload = (if (currentState.isEditingTitle) currentState.editableTitle else meta.title)
             ?.takeIf { it.isNotBlank() && it != fileToUpload.name }
 
+        var powerpointFile: File? = null
+        val attachedPowerPointUri = currentState.attachedPowerPoint
+        if (!attachedPowerPointUri.isNullOrBlank()) {
+            try {
+                val uri = Uri.parse(attachedPowerPointUri)
+                val extension = getFileExtensionFromUri(uri) ?: "pptx"
+                powerpointFile = File(application.cacheDir, "temp_ppt_upload_${System.currentTimeMillis()}.$extension")
+                
+                Log.d("DetailsViewModel", "Creating temp file for PowerPoint: ${powerpointFile.absolutePath}")
+                
+                application.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    powerpointFile.outputStream().use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+                
+                if (!powerpointFile.exists() || powerpointFile.length() == 0L) {
+                    Log.e("DetailsViewModel", "Failed to create temporary PowerPoint file or file is empty")
+                    powerpointFile = null
+                } else {
+                    Log.d("DetailsViewModel", "PowerPoint temp file created successfully: ${powerpointFile.length()} bytes")
+                }
+                
+            } catch (e: Exception) {
+                Log.e("DetailsViewModel", "Error preparing PowerPoint file for upload", e)
+                powerpointFile = null
+                val errorMsg = "Failed to prepare PowerPoint file. Proceeding with audio upload only."
+                viewModelScope.launch { _infoMessageEvent.send(errorMsg) }
+            }
+        }
+
         viewModelScope.launch {
-            Log.d("DetailsViewModel", "Starting upload process via repository for File: ${fileToUpload.absolutePath}, Title: $titleToUpload")
+            Log.d("DetailsViewModel", "Starting upload process via repository for File: ${fileToUpload.absolutePath}, PowerPoint: ${powerpointFile?.absolutePath}, Title: $titleToUpload")
+
             remoteAudioRepository.uploadAudioFile(
                 audioFile = fileToUpload,
+                powerpointFile = powerpointFile,
                 title = titleToUpload,
                 description = null
             )
@@ -549,6 +582,16 @@ class RecordingDetailsViewModel @Inject constructor(
                         error = errorMsg)
                     }
                     viewModelScope.launch { _errorEvent.send(errorMsg) }
+                    
+                    if (powerpointFile != null && powerpointFile.exists()) {
+                        try {
+                            if (powerpointFile.delete()) {
+                                Log.d("DetailsViewModel", "Temporary PowerPoint file deleted after upload error")
+                            }
+                        } catch (ex: Exception) {
+                            Log.w("DetailsViewModel", "Failed to delete temporary PowerPoint file", ex)
+                        }
+                    }
                 }
                 .collect { result ->
                     when (result) {
@@ -567,6 +610,16 @@ class RecordingDetailsViewModel @Inject constructor(
                                 summaryStatus = SummaryStatus.PROCESSING,
                                 recommendationsStatus = RecommendationsStatus.LOADING
                             ) }
+
+                            if (powerpointFile != null && powerpointFile.exists()) {
+                                try {
+                                    if (powerpointFile.delete()) {
+                                        Log.d("DetailsViewModel", "Temporary PowerPoint file deleted after successful upload")
+                                    }
+                                } catch (ex: Exception) {
+                                    Log.w("DetailsViewModel", "Failed to delete temporary PowerPoint file", ex)
+                                }
+                            }
 
                             if (remoteMetadataDto?.recordingId != null) {
                                 val newRemoteId = remoteMetadataDto.recordingId
@@ -612,10 +665,25 @@ class RecordingDetailsViewModel @Inject constructor(
                                 error = userFriendlyError )
                             }
                             viewModelScope.launch { _errorEvent.send(userFriendlyError) }
+                            
+                            if (powerpointFile != null && powerpointFile.exists()) {
+                                try {
+                                    if (powerpointFile.delete()) {
+                                        Log.d("DetailsViewModel", "Temporary PowerPoint file deleted after upload error")
+                                    }
+                                } catch (ex: Exception) {
+                                    Log.w("DetailsViewModel", "Failed to delete temporary PowerPoint file", ex)
+                                }
+                            }
                         }
                     }
                 }
         }
+    }
+
+    private fun getFileExtensionFromUri(uri: Uri): String? {
+        val fileName = getFileNameFromUri(uri)
+        return fileName?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
     }
 
     private fun mapErrorToUserFriendlyMessage(e: Throwable, default: String = "An error occurred."): String {

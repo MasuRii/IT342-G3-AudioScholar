@@ -34,11 +34,12 @@ class RemoteAudioRepositoryImpl @Inject constructor(
 
     override fun uploadAudioFile(
         audioFile: File,
+        powerpointFile: File?,
         title: String?,
         description: String?
     ): Flow<UploadResult> = callbackFlow<UploadResult> {
         trySend(UploadResult.Loading)
-        Log.d(TAG_REMOTE_REPO, "Starting upload for File: ${audioFile.absolutePath}. Title: '$title', Desc: '$description'")
+        Log.d(TAG_REMOTE_REPO, "Starting upload for File: ${audioFile.absolutePath}. PowerPoint: ${powerpointFile?.absolutePath}, Title: '$title', Desc: '$description'")
 
         val fileName = audioFile.name
         val contentResolver = application.contentResolver
@@ -62,7 +63,6 @@ class RemoteAudioRepositoryImpl @Inject constructor(
         mimeType = mimeType ?: "audio/mpeg"
         Log.d(TAG_REMOTE_REPO, "Final resolved MIME type: $mimeType")
 
-
         val mediaType = mimeType.toMediaTypeOrNull()
 
         if (!audioFile.exists() || !audioFile.canRead()) {
@@ -79,15 +79,58 @@ class RemoteAudioRepositoryImpl @Inject constructor(
         }
 
         val filePart = MultipartBody.Part.createFormData(
-            "file",
+            "audioFile",
             fileName,
             progressRequestBody
         )
+
+        var pptxPart: MultipartBody.Part? = null
+        if (powerpointFile != null && powerpointFile.exists() && powerpointFile.canRead()) {
+            val pptxFileName = powerpointFile.name
+            val pptxExtension = pptxFileName.substringAfterLast('.', "").lowercase()
+            var pptxMimeType: String? = null
+            
+            if (pptxExtension.isNotEmpty()) {
+                pptxMimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(pptxExtension)
+                Log.d(TAG_REMOTE_REPO, "PPTX MIME type from extension '$pptxExtension': $pptxMimeType")
+            }
+            
+            if (pptxMimeType == null) {
+                try {
+                    pptxMimeType = contentResolver.getType(powerpointFile.toUri())
+                    Log.d(TAG_REMOTE_REPO, "PPTX MIME type from ContentResolver: $pptxMimeType")
+                } catch (e: Exception) {
+                    Log.w(TAG_REMOTE_REPO, "Could not get MIME type from ContentResolver for PowerPoint ${powerpointFile.toUri()}", e)
+                }
+            }
+            
+            pptxMimeType = pptxMimeType ?: when (pptxExtension) {
+                "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                "ppt" -> "application/vnd.ms-powerpoint"
+                else -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            
+            Log.d(TAG_REMOTE_REPO, "Final resolved PowerPoint MIME type: $pptxMimeType")
+            
+            val pptxMediaType = pptxMimeType.toMediaTypeOrNull()
+            val pptxRequestBody = powerpointFile.asRequestBody(pptxMediaType)
+            
+            pptxPart = MultipartBody.Part.createFormData(
+                "powerpointFile",
+                pptxFileName,
+                pptxRequestBody
+            )
+            
+            Log.d(TAG_REMOTE_REPO, "PowerPoint part created with filename: '$pptxFileName', MIME Type: '$pptxMimeType'")
+        } else if (powerpointFile != null) {
+            Log.w(TAG_REMOTE_REPO, "PowerPoint file specified but not accessible: ${powerpointFile.absolutePath}")
+        }
 
         val titlePart: RequestBody? = title?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull())
         val descriptionPart: RequestBody? = description?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull())
 
         Log.d(TAG_REMOTE_REPO, "Multipart parts created. Filename: '$fileName', MIME Type: '$mimeType'")
+        Log.d(TAG_REMOTE_REPO, "PowerPoint part created: ${pptxPart != null}")
         Log.d(TAG_REMOTE_REPO, "Title part created: ${titlePart != null}")
         Log.d(TAG_REMOTE_REPO, "Description part created: ${descriptionPart != null}")
 
@@ -95,6 +138,7 @@ class RemoteAudioRepositoryImpl @Inject constructor(
             Log.d(TAG_REMOTE_REPO, "Executing API call: apiService.uploadAudio")
             val response: Response<AudioMetadataDto> = apiService.uploadAudio(
                 file = filePart,
+                powerpointFile = pptxPart,
                 title = titlePart,
                 description = descriptionPart
             )

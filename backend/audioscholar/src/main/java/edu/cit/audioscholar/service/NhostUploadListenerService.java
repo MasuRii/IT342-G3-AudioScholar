@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
@@ -139,14 +141,20 @@ public class NhostUploadListenerService {
                         try {
                                 log.info("[{}] Attempting to upload file {} to Nhost Storage with content type {}...",
                                                 metadataId, originalFilename, originalContentType);
+                                Instant uploadStart = Instant.now();
                                 nhostFileId = nhostStorageService.uploadFile(fileToUpload,
                                                 originalFilename, originalContentType);
-                                log.info("[{}] File uploaded successfully to Nhost. File ID: {}",
-                                                metadataId, nhostFileId);
+                                Instant uploadEnd = Instant.now();
+                                log.info("[{}] File uploaded successfully to Nhost. File ID: {}. Duration: {} ms",
+                                                metadataId, nhostFileId,
+                                                Duration.between(uploadStart, uploadEnd)
+                                                                .toMillis());
 
                                 if (isAudio && nhostFileId != null) {
+                                        log.info("[{}] Attempting to get public URL for Nhost File ID: {}",
+                                                        metadataId, nhostFileId);
                                         publicUrl = nhostStorageService.getPublicUrl(nhostFileId);
-                                        log.info("[Nhost Upload Listener] Nhost Public URL for audio: {}",
+                                        log.info("[{}] Nhost Public URL for audio: {}", metadataId,
                                                         publicUrl);
                                 }
                         } catch (IOException e) {

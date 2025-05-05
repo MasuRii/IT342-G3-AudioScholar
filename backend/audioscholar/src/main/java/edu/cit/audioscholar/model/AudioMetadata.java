@@ -19,6 +19,7 @@ public class AudioMetadata {
     private String description;
     private String nhostFileId;
     private String storageUrl;
+    private String audioUrl;
     private Timestamp uploadTimestamp;
     private ProcessingStatus status;
     private String recordingId;
@@ -137,6 +138,14 @@ public class AudioMetadata {
 
     public void setStorageUrl(String storageUrl) {
         this.storageUrl = storageUrl;
+    }
+
+    public String getAudioUrl() {
+        return audioUrl;
+    }
+
+    public void setAudioUrl(String audioUrl) {
+        this.audioUrl = audioUrl;
     }
 
     public Timestamp getUploadTimestamp() {
@@ -342,6 +351,8 @@ public class AudioMetadata {
             map.put("nhostFileId", nhostFileId);
         if (storageUrl != null)
             map.put("storageUrl", storageUrl);
+        if (audioUrl != null)
+            map.put("audioUrl", audioUrl);
         if (uploadTimestamp != null)
             map.put("uploadTimestamp", uploadTimestamp);
         if (status != null)
@@ -367,7 +378,6 @@ public class AudioMetadata {
             map.put("originalPptxFileName", originalPptxFileName);
         if (pptxFileSize > 0)
             map.put("pptxFileSize", pptxFileSize);
-        map.put("pptxFileSize", pptxFileSize);
         if (pptxContentType != null)
             map.put("pptxContentType", pptxContentType);
         if (nhostPptxFileId != null)
@@ -406,6 +416,7 @@ public class AudioMetadata {
         meta.setDescription((String) map.get("description"));
         meta.setNhostFileId((String) map.get("nhostFileId"));
         meta.setStorageUrl((String) map.get("storageUrl"));
+        meta.setAudioUrl((String) map.get("audioUrl"));
         meta.setUploadTimestamp((Timestamp) map.get("uploadTimestamp"));
         String statusStr = (String) map.get("status");
         if (statusStr != null) {

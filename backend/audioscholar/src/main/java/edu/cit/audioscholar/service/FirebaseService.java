@@ -716,6 +716,7 @@ public class FirebaseService {
             metadata.setDescription(getString(data, "description", document.getId()));
             metadata.setNhostFileId(getString(data, "nhostFileId", document.getId()));
             metadata.setStorageUrl(getString(data, "storageUrl", document.getId()));
+            metadata.setAudioUrl(getString(data, "audioUrl", document.getId()));
             metadata.setUploadTimestamp(getTimestamp(data, "uploadTimestamp", document.getId()));
             metadata.setRecordingId(getString(data, "recordingId", document.getId()));
             metadata.setSummaryId(getString(data, "summaryId", document.getId()));
@@ -740,6 +741,27 @@ public class FirebaseService {
                         document.getId());
                 metadata.setStatus(ProcessingStatus.UPLOADED);
             }
+
+            metadata.setTranscriptionComplete(
+                    getBoolean(data, "transcriptionComplete", document.getId(), false));
+            metadata.setPdfConversionComplete(
+                    getBoolean(data, "pdfConversionComplete", document.getId(), false));
+            metadata.setAudioOnly(getBoolean(data, "audioOnly", document.getId(), false));
+            metadata.setAudioUploadComplete(
+                    getBoolean(data, "audioUploadComplete", document.getId(), false));
+            metadata.setWaitingForPdf(getBoolean(data, "waitingForPdf", document.getId(), false));
+
+            metadata.setOriginalPptxFileName(
+                    getString(data, "originalPptxFileName", document.getId()));
+            metadata.setPptxFileSize(getLong(data, "pptxFileSize", document.getId()));
+            metadata.setPptxContentType(getString(data, "pptxContentType", document.getId()));
+            metadata.setNhostPptxFileId(getString(data, "nhostPptxFileId", document.getId()));
+            metadata.setGeneratedPdfNhostFileId(
+                    getString(data, "generatedPdfNhostFileId", document.getId()));
+            metadata.setGeneratedPdfUrl(getString(data, "generatedPdfUrl", document.getId()));
+            metadata.setGoogleFilesApiPdfUri(
+                    getString(data, "googleFilesApiPdfUri", document.getId()));
+            metadata.setGptSummary(getString(data, "gptSummary", document.getId()));
 
             return metadata;
         } catch (Exception e) {
@@ -802,6 +824,27 @@ public class FirebaseService {
             log.trace("Field '{}' not found or null for document ID: {}", key, docId);
         }
         return null;
+    }
+
+    private boolean getBoolean(Map<String, Object> data, String key, String docId,
+            boolean defaultValue) {
+        Object value = data.get(key);
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        } else if (value instanceof Number) {
+            long numValue = ((Number) value).longValue();
+            return numValue != 0;
+        } else if (value instanceof String) {
+            String strValue = (String) value;
+            return "true".equalsIgnoreCase(strValue) || "1".equals(strValue);
+        } else if (value != null) {
+            log.warn(
+                    "Field '{}' was not a Boolean, Number, or String for document ID: {}. Type: {}. Returning default value.",
+                    key, docId, value.getClass().getName());
+        } else {
+            log.trace("Field '{}' not found or null for document ID: {}", key, docId);
+        }
+        return defaultValue;
     }
 
     public MulticastMessage buildProcessingCompleteMessage(String userId, String recordingId,

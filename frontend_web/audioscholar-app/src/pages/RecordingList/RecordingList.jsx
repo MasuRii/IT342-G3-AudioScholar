@@ -5,6 +5,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
 import { Footer, Header } from '../Home/HomePage';
 
+// Define terminal statuses
+const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'PROCESSING_HALTED_UNSUITABLE_CONTENT', 'PROCESSING_HALTED_NO_SPEECH'];
+// Define uploading statuses
+const UPLOADING_STATUSES = ['UPLOADING_TO_STORAGE', 'UPLOAD_IN_PROGRESS'];
+// Define timeout for display purposes (in seconds)
+const UPLOAD_TIMEOUT_SECONDS = 10 * 60; // 10 minutes
+
 const RecordingList = () => {
     const [recordings, setRecordings] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -58,16 +65,31 @@ const RecordingList = () => {
             console.log("Cleared existing poll interval");
         }
 
-        // Check if polling is needed (Processing OR Uploading)
-        const needsPolling = initialData?.some(rec => 
-            rec.status === 'PROCESSING' || rec.status === 'UPLOADING_TO_STORAGE'
-        );
+        // Check if polling is needed: Poll if ANY recording is in a non-terminal, non-timed-out state.
+        const needsPolling = initialData?.some(rec => {
+            const statusUpper = rec.status?.toUpperCase();
+            const isTerminal = TERMINAL_STATUSES.includes(statusUpper);
+            if (isTerminal) return false; // Don't poll for terminal states
+
+            const isUploading = UPLOADING_STATUSES.includes(statusUpper);
+            if (isUploading) {
+                const elapsedSeconds = rec.uploadTimestamp?.seconds 
+                    ? (Date.now() / 1000) - rec.uploadTimestamp.seconds 
+                    : 0;
+                if (elapsedSeconds > UPLOAD_TIMEOUT_SECONDS) {
+                    console.log(`[Polling Check - ${rec.id}] Upload status ${statusUpper} timed out (${Math.round(elapsedSeconds)}s > ${UPLOAD_TIMEOUT_SECONDS}s). No polling needed for this item.`);
+                    return false; // Don't poll if upload status has timed out
+                }
+            }
+            return true; // Needs polling (non-terminal and not timed out)
+        });
+
         if (!needsPolling) {
-            console.log("No recordings are processing or uploading. Polling not started.");
-            return; 
+            console.log("No recordings require further status checks (all terminal or timed-out uploads). Polling not started.");
+            return;
         }
 
-        console.log("Starting polling for active recordings...");
+        console.log("Starting polling for recordings not in a terminal or timed-out upload state...");
         pollIntervalRef.current = setInterval(async () => {
             if (!isMountedRef.current) {
                  console.log("Component unmounted, stopping poll interval.");
@@ -79,14 +101,30 @@ const RecordingList = () => {
             const newData = await fetchRecordings();
             if (newData && isMountedRef.current) {
                 setRecordings(newData);
-                // Check if polling should stop (No Processing AND No Uploading)
-                const stillActive = newData.some(rec => 
-                    rec.status === 'PROCESSING' || rec.status === 'UPLOADING_TO_STORAGE'
-                );
-                if (!stillActive) {
-                    console.log("All recordings processed/uploaded. Stopping polling.");
+                // Check if polling should stop: Stop if ALL recordings are terminal OR timed-out uploads.
+                const stillNeedsPolling = newData.some(rec => {
+                    const statusUpper = rec.status?.toUpperCase();
+                    const isTerminal = TERMINAL_STATUSES.includes(statusUpper);
+                    if (isTerminal) return false;
+
+                    const isUploading = UPLOADING_STATUSES.includes(statusUpper);
+                    if (isUploading) {
+                        const elapsedSeconds = rec.uploadTimestamp?.seconds
+                            ? (Date.now() / 1000) - rec.uploadTimestamp.seconds
+                            : 0;
+                        if (elapsedSeconds > UPLOAD_TIMEOUT_SECONDS) {
+                            return false; // Timed out upload doesn't need polling
+                        }
+                    }
+                    return true; // Still needs polling
+                });
+
+                if (!stillNeedsPolling) {
+                    console.log("All recordings are in a terminal state or have timed-out uploads. Stopping polling.");
                     clearInterval(pollIntervalRef.current);
                     pollIntervalRef.current = null;
+                } else {
+                    console.log("Some recordings still require status checks. Continuing poll.");
                 }
             } else if (!newData && isMountedRef.current) {
                  // Handle fetch error during polling - maybe stop polling?
@@ -177,64 +215,96 @@ const RecordingList = () => {
         return `${minutes}m ${remainingSeconds}s`;
     };
 
-    const getStatusBadge = (status, failureReason) => {
-        const originalStatus = status; // Keep original value for logging
-        status = status?.toLowerCase() ?? 'unknown'; // Default to 'unknown' if null/undefined
+    const getStatusBadge = (recording) => {
+        const { status, failureReason, uploadTimestamp } = recording;
+        const originalStatus = status;
+        const statusUpper = status?.toUpperCase() ?? 'UNKNOWN';
         let bgColor = 'bg-gray-100';
         let textColor = 'text-gray-800';
         let Icon = FiClock;
-        let displayStatus = 'Unknown'; // Default display text
+        let displayStatus = 'Unknown';
+        let isSpinning = false;
+        let titleText = '';
 
-        switch (status) {
-            case 'completed':
-            case 'processed':
-                bgColor = 'bg-green-100';
-                textColor = 'text-green-800';
-                Icon = FiCheckCircle;
-                displayStatus = 'Completed';
-                break;
-            case 'uploading_to_storage': // Handle new status
-                bgColor = 'bg-blue-100';
-                textColor = 'text-blue-800';
-                Icon = FiUploadCloud; // Use upload icon
-                displayStatus = 'Uploading';
-                break;
-            case 'processing':
-                bgColor = 'bg-yellow-100';
-                textColor = 'text-yellow-800';
-                Icon = FiLoader;
-                displayStatus = 'Processing';
-                break;
-            case 'failed':
-            case 'processing_halted_unsuitable_content':
-                bgColor = 'bg-red-100';
-                textColor = 'text-red-800';
-                Icon = FiAlertTriangle;
-                displayStatus = 'Failed';
-                break;
-            // Add more cases here if other statuses are expected (e.g., 'pending', 'queued')
-            // case 'pending':
-            //     bgColor = 'bg-blue-100';
-            //     textColor = 'text-blue-800';
-            //     Icon = FiClock;
-            //     displayStatus = 'Pending';
-            //     break;
-            default:
-                // Keep default gray style for unknown, but log the actual status received
-                if (status !== 'unknown') { // Only log if it wasn't originally null/undefined
-                     console.warn('Unknown recording status received:', originalStatus);
-                 }
-                // Use FiClock or maybe FiHelpCircle for Unknown
-                break;
+        const isUploading = UPLOADING_STATUSES.includes(statusUpper);
+        const elapsedSeconds = uploadTimestamp?.seconds 
+            ? (Date.now() / 1000) - uploadTimestamp.seconds 
+            : 0;
+        const isTimedOutUpload = isUploading && elapsedSeconds > UPLOAD_TIMEOUT_SECONDS;
+
+        if (isTimedOutUpload) {
+            bgColor = 'bg-gray-100';
+            textColor = 'text-gray-700';
+            Icon = FiClock; // Static clock
+            displayStatus = 'Processing Upload';
+            isSpinning = false;
+            titleText = `Upload received ${Math.round(elapsedSeconds / 60)} mins ago, processing initiated.`;
+            console.log(`[Badge Timeout - ${recording.id}] Displaying timed-out upload status.`);
+        } else {
+             // Normal status handling
+            switch (statusUpper) {
+                case 'COMPLETED':
+                case 'PROCESSED': // Consider PROCESSED as COMPLETED for display
+                    bgColor = 'bg-green-100';
+                    textColor = 'text-green-800';
+                    Icon = FiCheckCircle;
+                    displayStatus = 'Completed';
+                    break;
+                case 'UPLOADING_TO_STORAGE':
+                case 'UPLOAD_IN_PROGRESS':
+                    bgColor = 'bg-blue-100';
+                    textColor = 'text-blue-800';
+                    Icon = FiUploadCloud;
+                    displayStatus = 'Uploading';
+                    isSpinning = true;
+                    break;
+                case 'PROCESSING':
+                case 'PROCESSING_QUEUED': // Added queued state
+                case 'TRANSCRIBING':
+                case 'SUMMARIZING':
+                case 'PDF_CONVERTING':
+                    bgColor = 'bg-yellow-100';
+                    textColor = 'text-yellow-800';
+                    Icon = FiLoader;
+                    displayStatus = 'Processing';
+                    isSpinning = true;
+                    break;
+                case 'FAILED':
+                case 'PROCESSING_HALTED_UNSUITABLE_CONTENT':
+                case 'PROCESSING_HALTED_NO_SPEECH':
+                    bgColor = 'bg-red-100';
+                    textColor = 'text-red-800';
+                    Icon = FiAlertTriangle;
+                    displayStatus = 'Failed';
+                    break;
+                 // Add cases for transcription/pdf completion if needed, or treat as Processing
+                 case 'TRANSCRIPTION_COMPLETE':
+                 case 'PDF_CONVERSION_COMPLETE':
+                     bgColor = 'bg-yellow-100';
+                     textColor = 'text-yellow-800';
+                     Icon = FiLoader; // Still processing overall
+                     displayStatus = 'Processing';
+                     isSpinning = true;
+                     break;
+                default:
+                    displayStatus = 'Unknown';
+                    if (statusUpper !== 'UNKNOWN') {
+                         console.warn('[Badge] Unknown recording status received:', originalStatus);
+                     }
+                    break;
+            }
+            titleText = (displayStatus === 'Failed' && failureReason)
+                        ? `${displayStatus}: ${failureReason}`
+                        : displayStatus;
         }
 
         return (
             <span
-                title={displayStatus === 'Failed' ? failureReason || 'Processing failed' : displayStatus}
+                title={titleText}
                 className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor} ${textColor}`}
             >
-                 <Icon className={`mr-1 h-3 w-3 ${displayStatus === 'Processing' || displayStatus === 'Uploading' ? 'animate-spin' : ''}`} />
-                {displayStatus} 
+                 <Icon className={`mr-1 h-3 w-3 ${isSpinning ? 'animate-spin' : ''}`} />
+                {displayStatus}
             </span>
         );
     };
@@ -284,7 +354,7 @@ const RecordingList = () => {
                                             </div>
                                             <div className="flex items-center space-x-4 flex-shrink-0">
                                                  {/* <span className="text-sm text-gray-500">{formatDuration(recording.durationSeconds)}</span> */} 
-                                                 {getStatusBadge(recording.status, recording.failureReason)}
+                                                 {getStatusBadge(recording)}
                                                 <Link to={`/recordings/${recording.id}`} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium inline-flex items-center" title="View Details">
                                                      View Details <FiExternalLink className="ml-1 h-3 w-3"/>
                                                  </Link>

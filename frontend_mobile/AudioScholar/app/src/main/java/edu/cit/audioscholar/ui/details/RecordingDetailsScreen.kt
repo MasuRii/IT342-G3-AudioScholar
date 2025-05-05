@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import edu.cit.audioscholar.ui.details.NavigationEvent
 import edu.cit.audioscholar.ui.main.Screen
+import coil.request.ImageRequest
 
 private fun getFileNameFromUri(contentResolver: ContentResolver, uri: Uri): String? {
     var fileName: String? = null
@@ -158,7 +159,7 @@ fun RecordingDetailsScreen(
                 is NavigationEvent.NavigateToLibrary -> {
                     Log.d("RecordingDetailsScreen", "Received NavigateToLibrary event. Navigating...")
                     navController.navigate(Screen.Library.route) {
-                        popUpTo(Screen.RecordingDetails.ROUTE_PATTERN) { inclusive = true }
+                        popUpTo(Screen.RecordingDetails.ROUTE_PATTERN) { this.inclusive = true }
                         launchSingleTop = true
                     }
                 }
@@ -327,7 +328,7 @@ fun RecordingDetailsScreen(
                                     value = uiState.playbackProgress,
                                     onValueChange = viewModel::onSeek,
                                     modifier = Modifier.weight(1f),
-                                    enabled = isPlaybackEnabled
+                                    enabled = isPlaybackEnabled && uiState.durationMillis > 0
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
@@ -711,6 +712,10 @@ fun YouTubeRecommendationCard(
     video: RecommendationDto,
     onClick: () -> Unit
 ) {
+    var imageUrlToLoad by remember(video.thumbnailUrl) { mutableStateOf(video.thumbnailUrl) }
+    var fallbackAttempted by remember(video.thumbnailUrl) { mutableStateOf(false) }
+    val context = LocalContext.current
+
     Card(
         modifier = Modifier
             .width(180.dp)
@@ -720,7 +725,22 @@ fun YouTubeRecommendationCard(
     ) {
         Column {
             AsyncImage(
-                model = video.thumbnailUrl,
+                model = ImageRequest.Builder(context)
+                    .data(imageUrlToLoad ?: R.drawable.ic_youtubeplaceholder_quantum)
+                    .placeholder(R.drawable.ic_youtubeplaceholder_quantum)
+                    .error(R.drawable.ic_youtubeplaceholder_quantum)
+                    .listener(onError = { _, result ->
+                        Log.w("YouTubeCard", "Error loading thumbnail $imageUrlToLoad: ${result.throwable}")
+                        if (imageUrlToLoad == video.thumbnailUrl && !video.fallbackThumbnailUrl.isNullOrBlank() && !fallbackAttempted) {
+                            Log.d("YouTubeCard", "Primary failed ($imageUrlToLoad), trying fallback: ${video.fallbackThumbnailUrl}")
+                            fallbackAttempted = true
+                            imageUrlToLoad = video.fallbackThumbnailUrl
+                        } else {
+                            Log.d("YouTubeCard", "Fallback ($imageUrlToLoad) also failed or was not available/already attempted.")
+                            if (imageUrlToLoad != null) imageUrlToLoad = null
+                        }
+                    })
+                    .build(),
                 contentDescription = video.title ?: "YouTube video thumbnail",
                 modifier = Modifier
                     .height(100.dp)

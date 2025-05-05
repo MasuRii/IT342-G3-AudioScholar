@@ -195,7 +195,7 @@ fun LibraryScreen(
                         title = event.title,
                         fileName = event.fileName,
                         timestampSeconds = event.timestampSeconds,
-                        storageUrl = event.storageUrl
+                        audioUrl = event.audioUrl
                     )
                     if (route != "recording_details/error") {
                         navController.navigate(route) { launchSingleTop = true }

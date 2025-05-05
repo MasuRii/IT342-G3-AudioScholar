@@ -398,7 +398,7 @@ class LibraryViewModel @Inject constructor(
                                     title = recording.title ?: recording.fileName,
                                     fileName = recording.fileName ?: "Unknown Filename",
                                     timestampSeconds = recording.uploadTimestamp?.seconds,
-                                    storageUrl = recording.storageUrl
+                                    audioUrl = recording.audioUrl
                                 )
                             )
                         } else if (recordingIdForDetails == null) {
@@ -429,6 +429,6 @@ sealed class LibraryViewEvent {
         val title: String?,
         val fileName: String,
         val timestampSeconds: Long?,
-        val storageUrl: String?
+        val audioUrl: String?
     ) : LibraryViewEvent()
 }

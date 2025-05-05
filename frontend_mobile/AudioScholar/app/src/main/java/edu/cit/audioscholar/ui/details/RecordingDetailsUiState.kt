@@ -46,7 +46,9 @@ data class RecordingDetailsUiState(
 
     val textToCopy: String? = null,
 
-    val uploadProgressPercent: Int? = null
+    val uploadProgressPercent: Int? = null,
+
+    val audioUrl: String? = null
 ) {
     val isProcessing: Boolean
         get() = uploadProgressPercent != null ||

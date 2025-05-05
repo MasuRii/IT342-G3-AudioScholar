@@ -48,7 +48,6 @@ class PlaybackManager @Inject constructor(
     private val scopeJob = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.Main + scopeJob)
     private var positionUpdateJob: Job? = null
-    private val POSITION_UPDATE_INTERVAL_MS = 500L
 
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -65,7 +64,8 @@ class PlaybackManager @Inject constructor(
         override fun onPlaybackStateChanged(playbackState: Int) {
             Log.d(TAG, "onPlaybackStateChanged: ${playbackStateToString(playbackState)}")
             val isReady = playbackState == Player.STATE_READY
-            val currentDuration = if (isReady) player?.duration?.takeIf { it > 0 } ?: 0L else 0L
+            val currentDuration = player?.duration?.takeIf { it > 0 && it != androidx.media3.common.C.TIME_UNSET } ?: 0L
+            Log.d(TAG, "Playback state changed to ${playbackStateToString(playbackState)}, isReady=$isReady, duration=$currentDuration")
             _playbackState.update {
                 it.copy(
                     isReady = isReady,
@@ -76,6 +76,15 @@ class PlaybackManager @Inject constructor(
                 Log.d(TAG, "Playback ended.")
                 _playbackState.update { it.copy(isPlaying = false, currentPositionMs = it.totalDurationMs) }
                 stopProgressUpdates()
+            }
+        }
+
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            val duration = player?.duration?.takeIf { it > 0 && it != androidx.media3.common.C.TIME_UNSET } ?: 0L
+            Log.d(TAG, "onTimelineChanged (reason: $reason), duration=$duration")
+            if (duration > 0 && duration != _playbackState.value.totalDurationMs) {
+                Log.d(TAG, "Timeline changed, updating duration from ${_playbackState.value.totalDurationMs} to $duration")
+                _playbackState.update { it.copy(totalDurationMs = duration) }
             }
         }
 
@@ -160,10 +169,10 @@ class PlaybackManager @Inject constructor(
     fun seekTo(positionMs: Long) {
         Log.d(TAG, "seekTo called: $positionMs ms. Player exists: ${player != null}")
         player?.let {
-            val duration = it.duration.takeIf { d -> d > 0 } ?: 0L
-            val clampedPosition = positionMs.coerceIn(0, duration)
-            it.seekTo(clampedPosition)
-            _playbackState.update { state -> state.copy(currentPositionMs = clampedPosition) }
+            val requestedPosition = positionMs.coerceAtLeast(0)
+            Log.d(TAG, "Requesting seek to $requestedPosition ms (original request: $positionMs)")
+            it.seekTo(requestedPosition)
+            _playbackState.update { state -> state.copy(currentPositionMs = requestedPosition) }
         }
     }
 
@@ -180,7 +189,7 @@ class PlaybackManager @Inject constructor(
 
     private fun startProgressUpdates() {
         if (positionUpdateJob?.isActive == true) return
-        stopPositionUpdates()
+        stopProgressUpdates()
 
         positionUpdateJob = scope.launch {
             Log.d(TAG, "Progress updates coroutine started.")
@@ -188,18 +197,33 @@ class PlaybackManager @Inject constructor(
                 player?.let { currentPlayer ->
                     if (currentPlayer.isPlaying) {
                         val currentPosition = currentPlayer.currentPosition
-                        if (currentPosition != _playbackState.value.currentPositionMs) {
+                        var durationChanged = false
+                        var newDuration = _playbackState.value.totalDurationMs
+
+                        if (_playbackState.value.totalDurationMs <= 0L) {
+                            val potentialDuration = currentPlayer.duration.takeIf { it > 0 && it != androidx.media3.common.C.TIME_UNSET } ?: 0L
+                            if (potentialDuration > 0L) {
+                                Log.d(TAG, "Found valid duration ($potentialDuration) during progress update.")
+                                newDuration = potentialDuration
+                                durationChanged = true
+                            }
+                        }
+
+                        if (currentPosition != _playbackState.value.currentPositionMs || durationChanged) {
                             _playbackState.update { state ->
-                                state.copy(currentPositionMs = currentPosition)
+                                state.copy(
+                                    currentPositionMs = currentPosition,
+                                    totalDurationMs = newDuration
+                                )
                             }
                         }
                     } else {
                         Log.d(TAG, "Player not playing, stopping progress updates from within loop.")
-                        stopPositionUpdates()
+                        stopProgressUpdates()
                     }
                 } ?: run {
                     Log.d(TAG, "Player is null, stopping progress updates from within loop.")
-                    stopPositionUpdates()
+                    stopProgressUpdates()
                 }
                 delay(PROGRESS_UPDATE_INTERVAL_MS)
             }
@@ -245,26 +269,6 @@ class PlaybackManager @Inject constructor(
         }
     }
 
-    private fun startPositionUpdates() {
-        stopPositionUpdates()
-        positionUpdateJob = scope.launch {
-            while (isActive && _playbackState.value.isPlaying) {
-                val currentPosition = player?.currentPosition ?: 0L
-                if (_playbackState.value.isReady && currentPosition >= 0) {
-                    _playbackState.update { it.copy(currentPositionMs = currentPosition) }
-                }
-                delay(POSITION_UPDATE_INTERVAL_MS)
-            }
-        }
-        Log.d(TAG, "Started position updates.")
-    }
-
-    private fun stopPositionUpdates() {
-        positionUpdateJob?.cancel()
-        positionUpdateJob = null
-        Log.d(TAG, "Stopped position updates.")
-    }
-
     fun cleanup() {
         releasePlayer()
         scopeJob.cancel()
@@ -272,7 +276,7 @@ class PlaybackManager @Inject constructor(
     }
 
     private fun releasePlayerInternal() {
-        stopPositionUpdates()
+        stopProgressUpdates()
         player?.removeListener(playerListener)
         player?.release()
         player = null

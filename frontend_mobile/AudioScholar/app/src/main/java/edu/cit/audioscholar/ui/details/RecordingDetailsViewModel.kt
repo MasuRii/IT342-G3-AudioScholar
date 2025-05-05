@@ -215,9 +215,9 @@ class RecordingDetailsViewModel @Inject constructor(
             val title: String = Uri.decode(savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_TITLE) ?: "Cloud Recording")
             val fileName: String = Uri.decode(savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_FILENAME) ?: "Unknown Filename")
             val timestampSeconds: Long = savedStateHandle.get<Long>(Screen.RecordingDetails.ARG_CLOUD_TIMESTAMP_SECONDS) ?: 0L
-            val storageUrl: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_STORAGE_URL)?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
+            val audioUrl: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_AUDIO_URL)?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
 
-            Log.d("DetailsViewModel", "Loading cloud details from args: PrimaryID='$primaryId', RecordingID='$recordingId', Title='$title', Filename='$fileName', TimestampSecs=$timestampSeconds, StorageUrl='$storageUrl'")
+            Log.d("DetailsViewModel", "Loading cloud details from args: PrimaryID='$primaryId', RecordingID='$recordingId', Title='$title', Filename='$fileName', TimestampSecs=$timestampSeconds, AudioUrl='$audioUrl'")
 
             if (primaryId.isBlank()) {
                 Log.e("DetailsViewModel", "Cloud recording ID from args is blank!")
@@ -271,7 +271,8 @@ class RecordingDetailsViewModel @Inject constructor(
                     filePath = "",
                     cloudId = primaryId,
                     remoteRecordingId = recordingId,
-                    storageUrl = storageUrl,
+                    storageUrl = audioUrl,
+                    audioUrl = audioUrl,
                     error = null,
                     summaryStatus = initialSummaryStatus,
                     recommendationsStatus = initialRecsStatus,
@@ -282,7 +283,7 @@ class RecordingDetailsViewModel @Inject constructor(
                 )
             }
 
-            storageUrl?.let { configurePlayback(cloudUrl = it) }
+            audioUrl?.let { configurePlayback(cloudUrl = it) }
 
             val idToUseForFetch = recordingId?.takeIf { it.isNotBlank() } ?: primaryId
             if ((needsSummaryFetch || needsRecsFetch) && idToUseForFetch.isNotBlank()) {
@@ -727,20 +728,12 @@ class RecordingDetailsViewModel @Inject constructor(
     }
 
     fun onSeek(progress: Float) {
-        val currentDuration = playbackManager.playbackState.value.totalDurationMs.takeIf { it > 0 } ?: _uiState.value.durationMillis
-        if (currentDuration <= 0) {
-            Log.w("DetailsViewModel", "Seek attempted but duration is unknown.")
-            return
-        }
-        val newPositionMillis = (progress * currentDuration).toLong()
-        playbackManager.seekTo(newPositionMillis)
-        _uiState.update {
-            it.copy(
-                currentPositionMillis = newPositionMillis,
-                currentPositionFormatted = formatDurationMillis(newPositionMillis),
-                playbackProgress = progress
-            )
-        }
+        val currentDuration = _uiState.value.durationMillis.takeIf { it > 0 } ?: 0L
+        val seekPositionMs = (progress * currentDuration).toLong()
+
+        Log.d("DetailsViewModel", "onSeek: progress=$progress, uiDuration=$currentDuration, calculatedSeekMs=$seekPositionMs. Attempting seek via PlaybackManager.")
+
+        playbackManager.seekTo(seekPositionMs)
     }
 
     fun onCopySummaryAndNotes() {
@@ -901,6 +894,7 @@ class RecordingDetailsViewModel @Inject constructor(
                     title = application.getString(R.string.details_title_deleted),
                     editableTitle = application.getString(R.string.details_title_deleted),
                     storageUrl = null,
+                    audioUrl = null,
                     summaryStatus = SummaryStatus.IDLE,
                     recommendationsStatus = RecommendationsStatus.IDLE,
                     summaryText = "",

@@ -14,6 +14,7 @@ sealed class UploadResult {
 interface RemoteAudioRepository {
     fun uploadAudioFile(
         audioFile: File,
+        powerpointFile: File? = null,
         title: String?,
         description: String?
     ): Flow<UploadResult>

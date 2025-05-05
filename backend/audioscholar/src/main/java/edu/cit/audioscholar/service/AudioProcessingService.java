@@ -482,6 +482,42 @@ public class AudioProcessingService {
                                                 metadataId);
                         }
 
+                        String nhostPptxFileId = metadata.getNhostPptxFileId();
+                        if (StringUtils.hasText(nhostPptxFileId)) {
+                                try {
+                                        log.info("Attempting to delete PowerPoint Nhost file ID: {} associated with metadata {}",
+                                                        nhostPptxFileId, metadataId);
+                                        nhostStorageService.deleteFile(nhostPptxFileId);
+                                        log.info("Successfully requested deletion of PowerPoint Nhost file ID: {}",
+                                                        nhostPptxFileId);
+                                } catch (Exception e) {
+                                        log.error("Failed to delete PowerPoint Nhost file ID {} for metadata {}. Error: {}",
+                                                        nhostPptxFileId, metadataId,
+                                                        e.getMessage());
+                                }
+                        } else {
+                                log.debug("No NhostPptxFileId found in metadata {} to delete.",
+                                                metadataId);
+                        }
+
+                        String generatedPdfNhostFileId = metadata.getGeneratedPdfNhostFileId();
+                        if (StringUtils.hasText(generatedPdfNhostFileId)) {
+                                try {
+                                        log.info("Attempting to delete generated PDF Nhost file ID: {} associated with metadata {}",
+                                                        generatedPdfNhostFileId, metadataId);
+                                        nhostStorageService.deleteFile(generatedPdfNhostFileId);
+                                        log.info("Successfully requested deletion of generated PDF Nhost file ID: {}",
+                                                        generatedPdfNhostFileId);
+                                } catch (Exception e) {
+                                        log.error("Failed to delete generated PDF Nhost file ID {} for metadata {}. Error: {}",
+                                                        generatedPdfNhostFileId, metadataId,
+                                                        e.getMessage());
+                                }
+                        } else {
+                                log.debug("No generatedPdfNhostFileId found in metadata {} to delete.",
+                                                metadataId);
+                        }
+
                         if (StringUtils.hasText(recordingId)) {
                                 try {
                                         log.info("Attempting to delete Learning Recommendations for Recording ID: {} associated with metadata {}",
@@ -528,6 +564,20 @@ public class AudioProcessingService {
                                 }
                         }
 
+                        if (metadata.getTempPptxFilePath() != null
+                                        && !metadata.getTempPptxFilePath().isBlank()) {
+                                try {
+                                        Files.deleteIfExists(
+                                                        Paths.get(metadata.getTempPptxFilePath()));
+                                        log.info("Deleted associated temporary PowerPoint file: {}",
+                                                        metadata.getTempPptxFilePath());
+                                } catch (IOException e) {
+                                        log.warn("Could not delete temporary PowerPoint file {} for metadata {}",
+                                                        metadata.getTempPptxFilePath(), metadataId,
+                                                        e);
+                                }
+                        }
+
                         return true;
 
                 } catch (FirestoreInteractionException e) {
@@ -540,6 +590,14 @@ public class AudioProcessingService {
                                 } catch (IOException ignored) {
                                 }
                         }
+                        if (metadata != null && metadata.getTempPptxFilePath() != null
+                                        && !metadata.getTempPptxFilePath().isBlank()) {
+                                try {
+                                        Files.deleteIfExists(
+                                                        Paths.get(metadata.getTempPptxFilePath()));
+                                } catch (IOException ignored) {
+                                }
+                        }
                         return false;
                 } catch (Exception e) {
                         log.error("Unexpected error during cascading delete for metadata ID {}: {}",
@@ -548,6 +606,14 @@ public class AudioProcessingService {
                                         && !metadata.getTempFilePath().isBlank()) {
                                 try {
                                         Files.deleteIfExists(Paths.get(metadata.getTempFilePath()));
+                                } catch (IOException ignored) {
+                                }
+                        }
+                        if (metadata != null && metadata.getTempPptxFilePath() != null
+                                        && !metadata.getTempPptxFilePath().isBlank()) {
+                                try {
+                                        Files.deleteIfExists(
+                                                        Paths.get(metadata.getTempPptxFilePath()));
                                 } catch (IOException ignored) {
                                 }
                         }

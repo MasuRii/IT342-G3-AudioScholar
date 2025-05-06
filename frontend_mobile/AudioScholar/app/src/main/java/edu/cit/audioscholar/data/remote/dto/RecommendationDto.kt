@@ -18,6 +18,9 @@ data class RecommendationDto(
     @SerializedName("thumbnailUrl")
     val thumbnailUrl: String? = null,
 
+    @SerializedName("fallbackThumbnailUrl")
+    val fallbackThumbnailUrl: String? = null,
+
     @SerializedName("recordingId")
     val recordingId: String? = null,
 

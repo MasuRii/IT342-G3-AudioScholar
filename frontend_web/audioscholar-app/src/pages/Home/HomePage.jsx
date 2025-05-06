@@ -244,7 +244,7 @@ const Pricing = () => {
         },
         {
             name: "Premium",
-            price: "$9.99",
+            price: "₱150",
             description: "Unlock advanced features & cloud power.",
             features: [
                 "Includes all Free features, plus:",

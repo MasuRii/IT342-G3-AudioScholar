@@ -10,6 +10,7 @@ public enum ProcessingStatus {
     PROCESSING_QUEUED, // Message sent to respective queues (Transcription, PPTX Conversion)
     TRANSCRIBING, // Audio transcription in progress
     PDF_CONVERTING, // PPTX to PDF conversion in progress
+    PDF_CONVERTING_API, // PPTX to PDF conversion in progress using ConvertAPI
     TRANSCRIPTION_COMPLETE, // Transcription finished successfully
     PDF_CONVERSION_COMPLETE, // PDF conversion finished successfully
     PROCESSING_HALTED_NO_SPEECH, // Transcription detected no speech

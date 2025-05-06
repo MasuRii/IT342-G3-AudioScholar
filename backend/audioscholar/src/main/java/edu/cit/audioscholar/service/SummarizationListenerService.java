@@ -30,6 +30,7 @@ import org.springframework.util.StringUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.Timestamp;
+import com.google.cloud.firestore.FieldValue;
 import edu.cit.audioscholar.config.RabbitMQConfig;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.AudioMetadata;
@@ -248,6 +249,58 @@ public class SummarizationListenerService {
                                 return;
                         }
 
+                        String convertApiPdfUrl = metadata.getConvertApiPdfUrl();
+                        if (convertApiPdfUrl != null && !convertApiPdfUrl.isBlank()) {
+                                log.info("[{}] Found ConvertAPI PDF URL, using it for summarization: {}",
+                                                metadataId, convertApiPdfUrl);
+
+                                updateMetadataStatus(metadataId, userId,
+                                                ProcessingStatus.SUMMARIZING, null);
+
+                                Path tempPdfPath = null;
+                                try {
+                                        String tempPdfFilename = metadataId + "_context.pdf";
+                                        tempPdfPath = tempDir.resolve(tempPdfFilename);
+                                        log.info("[{}] Downloading PDF from ConvertAPI URL to local file: {}",
+                                                        metadataId, tempPdfPath.getFileName());
+
+                                        downloadFileFromUrl(convertApiPdfUrl, tempPdfPath);
+                                        log.info("[{}] Successfully downloaded PDF from ConvertAPI to local file",
+                                                        metadataId);
+
+                                        log.info("[{}] Calling GeminiService to generate summary with PDF context...",
+                                                        metadataId);
+                                        String summarizationJson = geminiService
+                                                        .generateSummaryWithPdfContext(transcript,
+                                                                        tempPdfPath, metadataId);
+
+                                        processSummarizationResult(summarizationJson, metadataId,
+                                                        userId, metadata);
+                                } catch (IOException e) {
+                                        log.error("[{}] Error downloading PDF from ConvertAPI URL: {}",
+                                                        metadataId, e.getMessage(), e);
+                                        updateMetadataStatus(metadataId, userId,
+                                                        ProcessingStatus.FAILED,
+                                                        "Error downloading PDF from ConvertAPI: "
+                                                                        + e.getMessage());
+                                } finally {
+                                        if (tempPdfPath != null) {
+                                                try {
+                                                        Files.deleteIfExists(tempPdfPath);
+                                                        log.info("[{}] Deleted temporary PDF file: {}",
+                                                                        metadataId,
+                                                                        tempPdfPath.getFileName());
+                                                } catch (IOException e) {
+                                                        log.warn("[{}] Failed to delete temporary PDF file: {}. Error: {}",
+                                                                        metadataId,
+                                                                        tempPdfPath.getFileName(),
+                                                                        e.getMessage());
+                                                }
+                                        }
+                                }
+                                return;
+                        }
+
                         if (metadata.isAudioOnly()) {
                                 log.info("[{}] Audio-only upload detected. Processing summarization without PDF context.",
                                                 metadataId);
@@ -292,11 +345,67 @@ public class SummarizationListenerService {
 
                                 String pdfNhostId = extractNhostIdFromUrl(pdfUrl);
                                 if (pdfNhostId == null) {
-                                        log.error("[{}] Could not extract Nhost file ID from PDF URL: {}",
+                                        boolean isConvertApiUrl = pdfUrl != null && (pdfUrl
+                                                        .contains("convertapi.com")
+                                                        || pdfUrl.contains("v2.convertapi.com"));
+
+                                        if (!isConvertApiUrl) {
+                                                log.error("[{}] Could not extract Nhost file ID from PDF URL and it's not a ConvertAPI URL: {}",
+                                                                metadataId, pdfUrl);
+                                                updateMetadataStatus(metadataId, userId,
+                                                                ProcessingStatus.FAILED,
+                                                                "Invalid PDF URL format");
+                                                return;
+                                        }
+
+                                        log.info("[{}] Detected ConvertAPI PDF URL in generatedPdfUrl, downloading directly: {}",
                                                         metadataId, pdfUrl);
-                                        updateMetadataStatus(metadataId, userId,
-                                                        ProcessingStatus.FAILED,
-                                                        "Invalid PDF URL format");
+
+                                        Path tempPdfPath = null;
+                                        try {
+                                                String tempPdfFilename =
+                                                                metadataId + "_context.pdf";
+                                                tempPdfPath = tempDir.resolve(tempPdfFilename);
+                                                log.info("[{}] Downloading PDF from ConvertAPI URL to local file: {}",
+                                                                metadataId,
+                                                                tempPdfPath.getFileName());
+
+                                                downloadFileFromUrl(pdfUrl, tempPdfPath);
+                                                log.info("[{}] Successfully downloaded PDF from ConvertAPI to local file",
+                                                                metadataId);
+
+                                                log.info("[{}] Calling GeminiService to generate summary with PDF context...",
+                                                                metadataId);
+                                                String summarizationJson = geminiService
+                                                                .generateSummaryWithPdfContext(
+                                                                                transcript,
+                                                                                tempPdfPath,
+                                                                                metadataId);
+
+                                                processSummarizationResult(summarizationJson,
+                                                                metadataId, userId, metadata);
+                                        } catch (IOException e) {
+                                                log.error("[{}] Error downloading PDF from ConvertAPI URL: {}",
+                                                                metadataId, e.getMessage(), e);
+                                                updateMetadataStatus(metadataId, userId,
+                                                                ProcessingStatus.FAILED,
+                                                                "Error downloading PDF from ConvertAPI: "
+                                                                                + e.getMessage());
+                                        } finally {
+                                                if (tempPdfPath != null) {
+                                                        try {
+                                                                Files.deleteIfExists(tempPdfPath);
+                                                                log.info("[{}] Deleted temporary PDF file: {}",
+                                                                                metadataId,
+                                                                                tempPdfPath.getFileName());
+                                                        } catch (IOException e) {
+                                                                log.warn("[{}] Failed to delete temporary PDF file: {}. Error: {}",
+                                                                                metadataId,
+                                                                                tempPdfPath.getFileName(),
+                                                                                e.getMessage());
+                                                        }
+                                                }
+                                        }
                                         return;
                                 }
 
@@ -682,6 +791,12 @@ public class SummarizationListenerService {
                 if (url == null || url.isEmpty())
                         return null;
 
+                if (url.contains("convertapi.com") || url.contains("v2.convertapi.com")) {
+                        log.debug("URL is from ConvertAPI, not attempting to extract Nhost ID: {}",
+                                        url);
+                        return null;
+                }
+
                 try {
                         Pattern pattern = Pattern.compile("/files/([a-zA-Z0-9\\-]+)");
                         Matcher matcher = pattern.matcher(url);
@@ -705,39 +820,121 @@ public class SummarizationListenerService {
 
         private void updateMetadataStatus(String metadataId, String userId, ProcessingStatus status,
                         @Nullable String reason) {
+                log.info("[{}] Setting status to {}{}", metadataId, status,
+                                (reason != null ? ". Reason: " + reason : ""));
+                Map<String, Object> updates = new HashMap<>();
+                updates.put("status", status.name());
+                updates.put("lastUpdated", Timestamp.now());
+                if (reason != null) {
+                        updates.put("failureReason", reason);
+                } else {
+                        updates.put("failureReason", FieldValue.delete());
+                }
+
                 try {
-                        Map<String, Object> updates = new HashMap<>();
-                        updates.put("status", status.name());
-                        updates.put("lastUpdated", Timestamp.now());
-                        if (reason != null) {
-                                updates.put("failureReason", reason);
-                                log.error("[{}] Setting status to {}. Reason: {}", metadataId,
-                                                status, reason);
-                        } else {
-                                log.info("[{}] Setting status to {}", metadataId, status);
+                        firebaseService.updateData(firebaseService.getAudioMetadataCollectionName(),
+                                        metadataId, updates);
+
+                        try {
+                                Map<String, Object> updatedDataMap = firebaseService.getData(
+                                                firebaseService.getAudioMetadataCollectionName(),
+                                                metadataId);
+                                if (updatedDataMap != null) {
+                                        AudioMetadata updatedMetadata =
+                                                        AudioMetadata.fromMap(updatedDataMap);
+
+                                        Cache byIdCache =
+                                                        cacheManager.getCache("audioMetadataById");
+                                        if (byIdCache != null) {
+                                                byIdCache.put(metadataId, updatedMetadata);
+                                                log.debug("[{}] Manually updated cache 'audioMetadataById' with latest status: {}",
+                                                                metadataId, status);
+                                        } else {
+                                                log.warn("Cache 'audioMetadataById' not found during manual update.");
+                                        }
+                                } else {
+                                        log.warn("[{}] Could not fetch updated metadata after status update for cache refresh.",
+                                                        metadataId);
+                                        Cache byIdCache =
+                                                        cacheManager.getCache("audioMetadataById");
+                                        if (byIdCache != null) {
+                                                byIdCache.evictIfPresent(metadataId);
+                                        }
+                                }
+
+                                Cache byUserCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                                if (byUserCache != null) {
+                                        byUserCache.clear();
+                                        log.debug("[{}] Cleared cache '{}' after status update.",
+                                                        metadataId, CACHE_METADATA_BY_USER);
+                                } else {
+                                        log.warn("Cache '{}' not found during clear operation.",
+                                                        CACHE_METADATA_BY_USER);
+                                }
+
+                        } catch (Exception cacheEx) {
+                                log.error("[{}] Error during manual cache update/eviction after status change: {}",
+                                                metadataId, cacheEx.getMessage(), cacheEx);
                         }
 
-                        firebaseService.updateDataWithMap(
-                                        firebaseService.getAudioMetadataCollectionName(),
-                                        metadataId, updates);
-                        invalidateCache(userId);
                 } catch (FirestoreInteractionException e) {
-                        log.error("[{}] Failed to update metadata status to {}: {}", metadataId,
-                                        status, e.getMessage(), e);
+                        log.error("[{}] Failed to update metadata status to {} in Firestore: {}",
+                                        metadataId, status, e.getMessage(), e);
                 }
         }
 
         private void invalidateCache(String userId) {
-                if (userId == null) {
+                if (userId == null || userId.isBlank()) {
+                        log.warn("Attempted to invalidate cache with null or blank userId.");
                         return;
                 }
-                Cache cache = cacheManager.getCache(CACHE_METADATA_BY_USER);
-                if (cache != null) {
-                        cache.evict(userId);
-                        log.debug("Invalidated cache '{}' for userId: {}", CACHE_METADATA_BY_USER,
-                                        userId);
-                } else {
-                        log.warn("Cache '{}' not found", CACHE_METADATA_BY_USER);
+                try {
+                        Cache userCache = cacheManager.getCache(CACHE_METADATA_BY_USER);
+                        if (userCache != null) {
+                                userCache.clear();
+                                log.debug("Invalidated cache '{}' for userId: {}",
+                                                CACHE_METADATA_BY_USER, userId);
+                        } else {
+                                log.warn("Cache '{}' not found during invalidation.",
+                                                CACHE_METADATA_BY_USER);
+                        }
+                } catch (Exception e) {
+                        log.error("Error invalidating cache for user {}: {}", userId,
+                                        e.getMessage(), e);
+                }
+        }
+
+        private void downloadFileFromUrl(String fileUrl, Path targetPath) throws IOException {
+                log.info("Downloading file from URL: {} to local path: {}", fileUrl, targetPath);
+
+                java.net.URL url = new java.net.URL(fileUrl);
+                java.net.HttpURLConnection connection =
+                                (java.net.HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(30000);
+                connection.setReadTimeout(300000);
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode != java.net.HttpURLConnection.HTTP_OK) {
+                        throw new IOException("HTTP error code: " + responseCode);
+                }
+
+                try (java.io.InputStream in = connection.getInputStream();
+                                java.io.OutputStream out = Files.newOutputStream(targetPath)) {
+
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        long totalBytesRead = 0;
+                        long startTime = System.currentTimeMillis();
+
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                                out.write(buffer, 0, bytesRead);
+                                totalBytesRead += bytesRead;
+                        }
+
+                        long endTime = System.currentTimeMillis();
+                        log.info("Download completed. Total bytes: {}, Time taken: {} ms",
+                                        totalBytesRead, (endTime - startTime));
                 }
         }
 }

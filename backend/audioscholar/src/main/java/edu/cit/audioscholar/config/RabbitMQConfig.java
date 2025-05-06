@@ -89,13 +89,13 @@ public class RabbitMQConfig {
 
     @Bean
     Binding uploadAudioBinding(@Qualifier("uploadQueue") Queue queue,
-            @Qualifier("uploadExchange") TopicExchange exchange) {
+            @Qualifier("exchange") TopicExchange exchange) {
         return BindingBuilder.bind(queue).to(exchange).with(UPLOAD_AUDIO_ROUTING_KEY);
     }
 
     @Bean
     Binding uploadPptxBinding(@Qualifier("uploadQueue") Queue queue,
-            @Qualifier("uploadExchange") TopicExchange exchange) {
+            @Qualifier("exchange") TopicExchange exchange) {
         return BindingBuilder.bind(queue).to(exchange).with(UPLOAD_PPTX_ROUTING_KEY);
     }
 

@@ -34,7 +34,7 @@ public class AudioController {
 
     private static final Set<String> ALLOWED_AUDIO_TYPES = Set.of("audio/mpeg", "audio/mp3",
             "audio/wav", "audio/x-wav", "audio/aac", "audio/x-aac", "audio/ogg", "audio/flac",
-            "audio/x-flac", "audio/aiff", "audio/x-aiff");
+            "audio/x-flac", "audio/aiff", "audio/x-aiff", "audio/vnd.dlna.adts");
     private static final List<String> ALLOWED_POWERPOINT_TYPES = Arrays.asList(
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             "application/vnd.ms-powerpoint");

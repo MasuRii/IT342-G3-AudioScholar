@@ -55,6 +55,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import edu.cit.audioscholar.ui.subscription.SubscriptionPricingScreen
+import edu.cit.audioscholar.ui.subscription.PaymentMethodSelectionScreen
+import edu.cit.audioscholar.ui.subscription.CardPaymentDetailsScreen
+import edu.cit.audioscholar.ui.subscription.EWalletPaymentDetailsScreen
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
@@ -70,6 +74,10 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     }
     object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
+    object SubscriptionPricing : Screen("subscription_pricing", R.string.nav_subscription_pricing, Icons.Filled.CreditCard)
+    object PaymentMethodSelection : Screen("payment_method_selection", R.string.nav_payment_method_selection)
+    object CardPaymentDetails : Screen("card_payment_details", R.string.nav_card_payment_details)
+    object EWalletPaymentDetails : Screen("ewallet_payment_details", R.string.nav_ewallet_payment_details)
 
     object RecordingDetails : Screen("recording_details", R.string.nav_recording_details) {
         const val ARG_LOCAL_FILE_PATH = "localFilePath"
@@ -463,6 +471,8 @@ fun MainAppScreen(
                 HorizontalDivider()
 
                 val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Settings, Screen.About)
+                val secondaryNavItems = listOf(Screen.SubscriptionPricing)
+
                 Spacer(Modifier.height(12.dp))
                 mainNavItems.forEach { screen ->
                     screen.icon?.let { icon ->
@@ -484,6 +494,29 @@ fun MainAppScreen(
                         )
                     }
                 }
+
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                secondaryNavItems.forEach { screen ->
+                    screen.icon?.let { icon ->
+                        NavigationDrawerItem(
+                            icon = { Icon(icon, contentDescription = null) },
+                            label = { Text(stringResource(screen.labelResId)) },
+                            selected = currentRoute == screen.route,
+                            onClick = {
+                                scope.launch { drawerState.close() }
+                                if (currentRoute != screen.route) {
+                                    navController.navigate(screen.route) {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
 
                 Spacer(Modifier.weight(1f))
                 HorizontalDivider()
@@ -611,7 +644,23 @@ fun MainAppScreen(
                     navController.popBackStack()
                 }
             }
+            composable(Screen.SubscriptionPricing.route) {
+                SubscriptionPricingScreen(navController = navController, drawerState = drawerState, scope = scope)
+            }
+            composable(Screen.PaymentMethodSelection.route) {
+                PaymentMethodSelectionScreen(navController = navController)
+            }
+            composable(Screen.CardPaymentDetails.route) {
+                CardPaymentDetailsScreen(navController = navController)
+            }
+            composable(Screen.EWalletPaymentDetails.route) {
+                EWalletPaymentDetailsScreen(navController = navController)
+            }
         }
     }
     }
+}
+
+@Composable
+fun BottomNavigationBar(navController: NavController, currentRoute: String?) {
 }

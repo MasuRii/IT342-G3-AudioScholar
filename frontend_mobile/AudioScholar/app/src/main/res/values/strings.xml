@@ -92,6 +92,10 @@
     <string name="nav_logout">Logout</string>
     <string name="nav_registration">Register</string>
     <string name="nav_change_password">Change Password</string>
+    <string name="nav_subscription_pricing">Subscription</string>
+    <string name="nav_payment_method_selection">Select Payment Method</string>
+    <string name="nav_card_payment_details">Card Payment</string>
+    <string name="nav_ewallet_payment_details">E-Wallet Payment</string>
     <string name="nav_recording_details">Recording Details</string>
     <string name="nav_onboarding">Onboarding</string>
     <string name="cd_navigate_back">Navigate back</string>
@@ -354,5 +358,44 @@
     <string name="details_pdf_not_available">Slides not available</string>
     <string name="details_view_pdf_button">View PDF</string>
     <string name="error_youtube_link_missing">YouTube video link is missing.</string>
+
+    <string name="subscription_basic_title">Basic</string>
+    <string name="subscription_basic_price">Free</string>
+    <string name="subscription_basic_feature1_placeholder">Basic Feature 1 (Placeholder)</string>
+    <string name="subscription_basic_feature2_placeholder">Basic Feature 2 (Placeholder)</string>
+
+    <string name="subscription_premium_title">Premium</string>
+    <string name="subscription_premium_price_php">%1$d PHP</string>
+    <string name="subscription_premium_feature1_placeholder">Premium Feature 1 (Placeholder)</string>
+    <string name="subscription_premium_feature2_placeholder">Premium Feature 2 (Placeholder)</string>
+    <string name="subscription_premium_feature3_placeholder">Premium Feature 3 (Placeholder)</string>
+
+    <string name="subscription_features_title">Features:</string>
+    <string name="subscription_current_plan_button">Current Plan</string>
+    <string name="subscription_upgrade_to_premium_button">Upgrade to Premium</string>
+    <string name="subscription_choose_plan_button">Choose Plan</string>
+    <string name="payment_method_prompt">How would you like to pay?</string>
+    <string name="payment_method_cards">Cards</string>
+    <string name="payment_method_ewallets">E-Wallets</string>
+
+    <string name="payment_card_number_label">Card Number</string>
+    <string name="payment_expiry_date_label">Expiry Date (MM/YY)</string>
+    <string name="payment_cvv_label">CVV</string>
+    <string name="payment_cardholder_name_label">Cardholder Name</string>
+    <string name="payment_submit_button_php">Pay %1$d PHP</string>
+    <string name="payment_error_field_required">This field is required</string>
+    <string name="payment_error_card_number_numeric">Card number must be numeric</string>
+    <string name="payment_error_card_number_length">Card number must be 13–19 digits</string>
+    <string name="payment_error_expiry_format">Format must be MM/YY</string>
+    <string name="payment_error_expiry_format_mmyy">Expiry date must be 4 digits (MMYY)</string>
+    <string name="payment_error_expiry_invalid_date">Invalid month or year for expiry</string>
+    <string name="payment_error_expiry_past_date">Expiry date cannot be in the past</string>
+    <string name="payment_error_cvv_numeric">CVV must be numeric</string>
+    <string name="payment_error_cvv_length">CVV must be 3 or 4 digits</string>
+
+    <string name="payment_ewallet_contact_label">Contact Number (Gcash/Paymaya)</string>
+    <string name="payment_error_phone_numeric">Phone number must be numeric</string>
+    <string name="payment_error_phone_length_ph">Must be 10 digits after +63 (e.g., 9XXXXXXXXX)</string>
+    <string name="payment_error_phone_prefix_ph">Philippine mobile number must start with 9</string>
 
 </resources>

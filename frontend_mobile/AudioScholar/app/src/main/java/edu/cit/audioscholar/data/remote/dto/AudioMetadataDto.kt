@@ -15,6 +15,8 @@ data class AudioMetadataDto(
     val description: String? = null,
     val nhostFileId: String? = null,
     val storageUrl: String? = null,
+    val audioUrl: String? = null,
+    val generatedPdfUrl: String? = null,
     val uploadTimestamp: TimestampDto? = null,
     val status: String? = null,
     val recordingId: String? = null,

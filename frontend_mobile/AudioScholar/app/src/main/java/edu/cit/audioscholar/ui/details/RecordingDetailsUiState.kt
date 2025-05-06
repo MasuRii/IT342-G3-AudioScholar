@@ -23,6 +23,8 @@ data class RecordingDetailsUiState(
     val remoteRecordingId: String? = null,
     val cloudId: String? = null,
     val storageUrl: String? = null,
+    val audioUrl: String? = null,
+    val generatedPdfUrl: String? = null,
     val isCloudSource: Boolean = false,
 
     val isEditingTitle: Boolean = false,
@@ -54,7 +56,7 @@ data class RecordingDetailsUiState(
                 recommendationsStatus == RecommendationsStatus.LOADING
 
     val isPlaybackReady: Boolean
-        get() = !isProcessing && !isDeleting && (filePath.isNotEmpty() || !storageUrl.isNullOrBlank())
+        get() = !isProcessing && !isDeleting && (filePath.isNotEmpty() || !storageUrl.isNullOrBlank() || !audioUrl.isNullOrBlank())
 
     val showLocalActions: Boolean
         get() = !isCloudSource || filePath.isNotEmpty()

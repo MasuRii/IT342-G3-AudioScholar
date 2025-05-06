@@ -307,7 +307,7 @@ fun RecordingDetailsScreen(
                         Text(stringResource(R.string.details_playback_title), style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         val isPlaybackEnabled = uiState.isPlaybackReady
-                        if (uiState.filePath.isNotEmpty() || uiState.storageUrl != null) {
+                        if (uiState.filePath.isNotEmpty() || uiState.storageUrl != null || uiState.audioUrl != null) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
@@ -505,7 +505,9 @@ fun RecordingDetailsScreen(
                         HorizontalDivider()
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            stringResource(R.string.details_powerpoint_title),
+                            text = if (uiState.isCloudSource) 
+                                   stringResource(R.string.details_powerpoint_pdf_title) 
+                                   else stringResource(R.string.details_powerpoint_title),
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
@@ -513,40 +515,80 @@ fun RecordingDetailsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                val currentAttachment = uiState.attachedPowerPoint
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        text = currentAttachment ?: stringResource(R.string.details_powerpoint_none_attached),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = if (currentAttachment == null) LocalContentColor.current.copy(alpha = 0.7f) else LocalContentColor.current
-                                    )
-                                }
-                                Spacer(Modifier.width(16.dp))
-                                val buttonsEnabled = !uiState.isProcessing && !uiState.isDeleting && !uiState.isCloudSource
-                                Button(
-                                    onClick = {
-                                        if (currentAttachment == null) {
-                                            viewModel.requestAttachPowerPoint()
-                                        } else {
-                                            viewModel.detachPowerPoint()
-                                        }
-                                    },
-                                    enabled = buttonsEnabled
+                            if (uiState.isCloudSource) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    val icon = if (currentAttachment == null) Icons.Filled.AttachFile else Icons.Filled.LinkOff
-                                    val textRes = if (currentAttachment == null) R.string.details_powerpoint_attach_button else R.string.details_powerpoint_detach_button
-                                    Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-                                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                                    Text(stringResource(textRes))
+                                    if (uiState.generatedPdfUrl.isNullOrBlank()) {
+                                        Text(
+                                            text = stringResource(R.string.details_pdf_not_available),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = LocalContentColor.current.copy(alpha = 0.7f),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    } else {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                text = stringResource(R.string.details_pdf_available),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(Modifier.width(16.dp))
+                                        Button(
+                                            onClick = { 
+                                                uiState.generatedPdfUrl?.let { pdfUrl ->
+                                                    viewModel.onOpenUrl(pdfUrl)
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                                            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                            Text(stringResource(R.string.details_view_pdf_button))
+                                        }
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val currentAttachment = uiState.attachedPowerPoint
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            text = currentAttachment ?: stringResource(R.string.details_powerpoint_none_attached),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = if (currentAttachment == null) LocalContentColor.current.copy(alpha = 0.7f) else LocalContentColor.current
+                                        )
+                                    }
+                                    Spacer(Modifier.width(16.dp))
+                                    val buttonsEnabled = !uiState.isProcessing && !uiState.isDeleting && !uiState.isCloudSource
+                                    Button(
+                                        onClick = {
+                                            if (currentAttachment == null) {
+                                                viewModel.requestAttachPowerPoint()
+                                            } else {
+                                                viewModel.detachPowerPoint()
+                                            }
+                                        },
+                                        enabled = buttonsEnabled
+                                    ) {
+                                        val icon = if (currentAttachment == null) Icons.Filled.AttachFile else Icons.Filled.LinkOff
+                                        val textRes = if (currentAttachment == null) R.string.details_powerpoint_attach_button else R.string.details_powerpoint_detach_button
+                                        Icon(icon, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                                        Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                                        Text(stringResource(textRes))
+                                    }
                                 }
                             }
                         }

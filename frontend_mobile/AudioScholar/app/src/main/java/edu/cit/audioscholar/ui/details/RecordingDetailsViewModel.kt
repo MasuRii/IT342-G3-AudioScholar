@@ -111,7 +111,7 @@ class RecordingDetailsViewModel @Inject constructor(
             else -> {
                 Log.e("DetailsViewModel", "Initialization error: No local path or cloud ID found in arguments.")
                 _uiState.update { it.copy(isLoading = false, error = application.getString(R.string.error_unexpected_details_view)) }
-                viewModelScope.launch { _errorEvent.send(application.getString(R.string.error_unexpected_details_view)) }
+                viewModelScope.launch { _errorEvent.trySend(application.getString(R.string.error_unexpected_details_view)) }
             }
         }
     }
@@ -216,8 +216,10 @@ class RecordingDetailsViewModel @Inject constructor(
             val fileName: String = Uri.decode(savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_FILENAME) ?: "Unknown Filename")
             val timestampSeconds: Long = savedStateHandle.get<Long>(Screen.RecordingDetails.ARG_CLOUD_TIMESTAMP_SECONDS) ?: 0L
             val storageUrl: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_STORAGE_URL)?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
+            val audioUrl: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_AUDIO_URL)?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
+            val generatedPdfUrl: String? = savedStateHandle.get<String>(Screen.RecordingDetails.ARG_CLOUD_PDF_URL)?.let { Uri.decode(it) }?.takeIf { it.isNotBlank() }
 
-            Log.d("DetailsViewModel", "Loading cloud details from args: PrimaryID='$primaryId', RecordingID='$recordingId', Title='$title', Filename='$fileName', TimestampSecs=$timestampSeconds, StorageUrl='$storageUrl'")
+            Log.d("DetailsViewModel", "Loading cloud details from args: PrimaryID='$primaryId', RecordingID='$recordingId', Title='$title', Filename='$fileName', TimestampSecs=$timestampSeconds, StorageUrl='$storageUrl', AudioUrl='$audioUrl', PdfUrl='$generatedPdfUrl'")
 
             if (primaryId.isBlank()) {
                 Log.e("DetailsViewModel", "Cloud recording ID from args is blank!")
@@ -272,6 +274,8 @@ class RecordingDetailsViewModel @Inject constructor(
                     cloudId = primaryId,
                     remoteRecordingId = recordingId,
                     storageUrl = storageUrl,
+                    audioUrl = audioUrl,
+                    generatedPdfUrl = generatedPdfUrl,
                     error = null,
                     summaryStatus = initialSummaryStatus,
                     recommendationsStatus = initialRecsStatus,
@@ -282,7 +286,8 @@ class RecordingDetailsViewModel @Inject constructor(
                 )
             }
 
-            storageUrl?.let { configurePlayback(cloudUrl = it) }
+            val playbackUrl = audioUrl?.takeIf { it.isNotBlank() } ?: storageUrl
+            playbackUrl?.let { configurePlayback(cloudUrl = it) }
 
             val idToUseForFetch = recordingId?.takeIf { it.isNotBlank() } ?: primaryId
             if ((needsSummaryFetch || needsRecsFetch) && idToUseForFetch.isNotBlank()) {
@@ -504,7 +509,7 @@ class RecordingDetailsViewModel @Inject constructor(
                 else -> "Cannot process recording."
             }
             _uiState.update { it.copy(error = errorMsg) }
-            viewModelScope.launch { _errorEvent.send(errorMsg) }
+            viewModelScope.launch { _errorEvent.trySend(errorMsg) }
             return
         }
 
@@ -525,7 +530,7 @@ class RecordingDetailsViewModel @Inject constructor(
                 error = errorMsg,
                 uploadProgressPercent = null
             ) }
-            viewModelScope.launch { _errorEvent.send(errorMsg) }
+            viewModelScope.launch { _errorEvent.trySend(errorMsg) }
             return
         }
 
@@ -559,7 +564,7 @@ class RecordingDetailsViewModel @Inject constructor(
                 Log.e("DetailsViewModel", "Error preparing PowerPoint file for upload", e)
                 powerpointFile = null
                 val errorMsg = "Failed to prepare PowerPoint file. Proceeding with audio upload only."
-                viewModelScope.launch { _infoMessageEvent.send(errorMsg) }
+                viewModelScope.launch { _infoMessageEvent.trySend(errorMsg) }
             }
         }
 
@@ -581,7 +586,7 @@ class RecordingDetailsViewModel @Inject constructor(
                         recommendationsStatus = RecommendationsStatus.FAILED,
                         error = errorMsg)
                     }
-                    viewModelScope.launch { _errorEvent.send(errorMsg) }
+                    viewModelScope.launch { _errorEvent.trySend(errorMsg) }
                     
                     if (powerpointFile != null && powerpointFile.exists()) {
                         try {
@@ -641,7 +646,7 @@ class RecordingDetailsViewModel @Inject constructor(
                                         recommendationsStatus = RecommendationsStatus.FAILED,
                                         error = errorMsg
                                     ) }
-                                    viewModelScope.launch { _errorEvent.send(errorMsg) }
+                                    viewModelScope.launch { _errorEvent.trySend(errorMsg) }
                                 }
                             } else {
                                 Log.e("DetailsViewModel", "Upload successful but recordingId was missing in the response.")
@@ -651,7 +656,7 @@ class RecordingDetailsViewModel @Inject constructor(
                                     recommendationsStatus = RecommendationsStatus.FAILED,
                                     error = errorMsg
                                 ) }
-                                viewModelScope.launch { _errorEvent.send(errorMsg) }
+                                viewModelScope.launch { _errorEvent.trySend(errorMsg) }
                             }
                         }
                         is UploadResult.Error -> {
@@ -664,7 +669,7 @@ class RecordingDetailsViewModel @Inject constructor(
                                 recommendationsStatus = RecommendationsStatus.FAILED,
                                 error = userFriendlyError )
                             }
-                            viewModelScope.launch { _errorEvent.send(userFriendlyError) }
+                            viewModelScope.launch { _errorEvent.trySend(userFriendlyError) }
                             
                             if (powerpointFile != null && powerpointFile.exists()) {
                                 try {
@@ -714,7 +719,7 @@ class RecordingDetailsViewModel @Inject constructor(
             Log.w("DetailsViewModel", "Play/Pause toggle attempted but playback not ready. State: $currentState")
             val errorMsg = "Cannot play: Recording source not loaded or processing."
             _uiState.update { it.copy(error = errorMsg) }
-            viewModelScope.launch { _errorEvent.send(errorMsg)}
+            viewModelScope.launch { _errorEvent.trySend(errorMsg)}
             return
         }
 
@@ -752,13 +757,13 @@ class RecordingDetailsViewModel @Inject constructor(
 
             val combinedText = summaryPart + notesPart
             Log.d("DetailsViewModel", "Copy Summary & Notes clicked. Text prepared.")
-            viewModelScope.launch { _infoMessageEvent.send("Summary & Notes copied!") }
+            viewModelScope.launch { _infoMessageEvent.trySend("Summary & Notes copied!") }
             _uiState.update { it.copy(textToCopy = combinedText) }
         } else {
             Log.w("DetailsViewModel", "Copy attempt failed: Summary not ready or empty.")
             val errorMsg = "Summary and notes are not available to copy."
             _uiState.update { it.copy(error = errorMsg) }
-            viewModelScope.launch { _errorEvent.send(errorMsg) }
+            viewModelScope.launch { _errorEvent.trySend(errorMsg) }
         }
     }
 
@@ -779,11 +784,11 @@ class RecordingDetailsViewModel @Inject constructor(
             Log.d("DetailsViewModel", "Setting attached PowerPoint: $uri")
             val infoMsg = "PowerPoint attached: $filename"
             _uiState.update { it.copy(attachedPowerPoint = uri.toString(), infoMessage = infoMsg) }
-            viewModelScope.launch { _infoMessageEvent.send(infoMsg) }
+            viewModelScope.launch { _infoMessageEvent.trySend(infoMsg) }
         } else {
             val infoMsg = "PowerPoint selection cancelled."
             _uiState.update { it.copy(infoMessage = infoMsg) }
-            viewModelScope.launch { _infoMessageEvent.send(infoMsg) }
+            viewModelScope.launch { _infoMessageEvent.trySend(infoMsg) }
         }
     }
 
@@ -809,22 +814,34 @@ class RecordingDetailsViewModel @Inject constructor(
         Log.d("DetailsViewModel", "Detach PowerPoint clicked.")
         val infoMsg = "PowerPoint detached."
         _uiState.update { it.copy(attachedPowerPoint = null, infoMessage = infoMsg) }
-        viewModelScope.launch { _infoMessageEvent.send(infoMsg) }
+        viewModelScope.launch { _infoMessageEvent.trySend(infoMsg) }
     }
 
     fun onWatchYouTubeVideo(video: RecommendationDto) {
         val videoId = video.videoId
-        if (!videoId.isNullOrBlank()) {
-            Log.d("DetailsViewModel", "Watch YouTube clicked: ${video.title} (ID: $videoId)")
-            val url = "https://www.youtube.com/watch?v=$videoId"
-            viewModelScope.launch {
-                _openUrlEvent.emit(url)
-            }
-        } else {
-            Log.w("DetailsViewModel", "Watch YouTube clicked, but videoId is null or blank for: ${video.title}")
-            val errorMsg = "Cannot open video: Missing video ID."
-            _uiState.update { it.copy(error = errorMsg) }
-            viewModelScope.launch { _errorEvent.send(errorMsg) }
+        if (videoId.isNullOrBlank()) {
+            val error = application.getString(R.string.error_youtube_link_missing)
+            _uiState.update { it.copy(error = error) }
+            viewModelScope.launch { _errorEvent.trySend(error) }
+            return
+        }
+        val youtubeUrl = "https://www.youtube.com/watch?v=$videoId"
+        viewModelScope.launch {
+            Log.d("RecordingDetailsViewModel", "Opening YouTube video URL: $youtubeUrl")
+            _openUrlEvent.emit(youtubeUrl)
+        }
+    }
+
+    fun onOpenUrl(url: String) {
+        if (url.isBlank()) {
+            val error = "URL is empty or invalid."
+            _uiState.update { it.copy(error = error) }
+            viewModelScope.launch { _errorEvent.trySend(error) }
+            return
+        }
+        viewModelScope.launch {
+            Log.d("RecordingDetailsViewModel", "Opening URL: $url")
+            _openUrlEvent.emit(url)
         }
     }
 
@@ -901,6 +918,8 @@ class RecordingDetailsViewModel @Inject constructor(
                     title = application.getString(R.string.details_title_deleted),
                     editableTitle = application.getString(R.string.details_title_deleted),
                     storageUrl = null,
+                    audioUrl = null,
+                    generatedPdfUrl = null,
                     summaryStatus = SummaryStatus.IDLE,
                     recommendationsStatus = RecommendationsStatus.IDLE,
                     summaryText = "",
@@ -946,7 +965,7 @@ class RecordingDetailsViewModel @Inject constructor(
             Log.w("DetailsViewModel", "Save requested with empty title.")
             val errorMsg = "Title cannot be empty."
             _uiState.update { it.copy(isEditingTitle = false, editableTitle = state.title, error = errorMsg) }
-            viewModelScope.launch { _errorEvent.send(errorMsg)}
+            viewModelScope.launch { _errorEvent.trySend(errorMsg)}
             return
         }
 
@@ -998,12 +1017,12 @@ class RecordingDetailsViewModel @Inject constructor(
             if (!success) {
                 Log.e("DetailsViewModel", "Failed to update title. Reverting UI.")
                 _uiState.update { it.copy(isLoading = false, title = state.title, editableTitle = state.title, error = errorMsg) }
-                viewModelScope.launch { _errorEvent.send(errorMsg ?: application.getString(R.string.error_metadata_update_failed)) }
+                viewModelScope.launch { _errorEvent.trySend(errorMsg ?: application.getString(R.string.error_metadata_update_failed)) }
             } else {
                 Log.d("DetailsViewModel", "Title updated successfully.")
                 val infoMsg = "Title updated."
                 _uiState.update { it.copy(isLoading = false, infoMessage = infoMsg) }
-                viewModelScope.launch { _infoMessageEvent.send(infoMsg) }
+                viewModelScope.launch { _infoMessageEvent.trySend(infoMsg) }
             }
         }
     }

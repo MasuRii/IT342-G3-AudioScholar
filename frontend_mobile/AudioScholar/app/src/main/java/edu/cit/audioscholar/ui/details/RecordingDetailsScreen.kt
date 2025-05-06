@@ -753,6 +753,9 @@ fun YouTubeRecommendationCard(
     video: RecommendationDto,
     onClick: () -> Unit
 ) {
+    var imageUrl by remember { mutableStateOf(video.thumbnailUrl) }
+    var attemptFallback by remember { mutableStateOf(true) }
+
     Card(
         modifier = Modifier
             .width(180.dp)
@@ -762,7 +765,7 @@ fun YouTubeRecommendationCard(
     ) {
         Column {
             AsyncImage(
-                model = video.thumbnailUrl,
+                model = imageUrl,
                 contentDescription = video.title ?: "YouTube video thumbnail",
                 modifier = Modifier
                     .height(100.dp)
@@ -770,7 +773,18 @@ fun YouTubeRecommendationCard(
                     .clip(MaterialTheme.shapes.medium),
                 contentScale = ContentScale.Crop,
                 placeholder = painterResource(id = R.drawable.ic_youtubeplaceholder_quantum),
-                error = painterResource(id = R.drawable.ic_youtubeplaceholder_quantum)
+                error = painterResource(id = R.drawable.ic_youtubeplaceholder_quantum),
+                onError = {
+                    if (attemptFallback && !video.fallbackThumbnailUrl.isNullOrBlank()) {
+                        imageUrl = video.fallbackThumbnailUrl
+                        attemptFallback = false
+                    }
+                },
+                onSuccess = {
+                    if (imageUrl == video.thumbnailUrl) {
+                        attemptFallback = true
+                    }
+                }
             )
             Column(modifier = Modifier
                 .padding(12.dp)

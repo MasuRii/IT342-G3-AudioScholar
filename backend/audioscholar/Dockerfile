@@ -1,4 +1,4 @@
-FROM maven:3.9.6-eclipse-temurin-21 AS builder  # <--- RENAMED STAGE
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
 WORKDIR /app
 COPY pom.xml .
 RUN mvn dependency:go-offline -B
@@ -14,6 +14,6 @@ RUN apt-get update && apt-get install -y \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/audioscholar-*.jar app.jar # <--- UPDATED STAGE NAME
+COPY --from=builder /app/target/audioscholar-*.jar app.jar
 
 ENTRYPOINT ["java", "-Djava.awt.headless=true", "-Xmx256m", "-jar", "app.jar"]

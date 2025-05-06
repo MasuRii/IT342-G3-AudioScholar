@@ -35,9 +35,11 @@ public class AudioMetadata {
     private long pptxFileSize;
     private String pptxContentType;
     private String nhostPptxFileId;
+    private String pptxNhostUrl;
     private String generatedPdfNhostFileId;
     private String generatedPdfUrl;
     private String googleFilesApiPdfUri;
+    private String convertApiPdfUrl;
 
     private boolean transcriptionComplete = false;
     private boolean pdfConversionComplete = false;
@@ -260,6 +262,14 @@ public class AudioMetadata {
         this.nhostPptxFileId = nhostPptxFileId;
     }
 
+    public String getPptxNhostUrl() {
+        return pptxNhostUrl;
+    }
+
+    public void setPptxNhostUrl(String pptxNhostUrl) {
+        this.pptxNhostUrl = pptxNhostUrl;
+    }
+
     public String getGeneratedPdfNhostFileId() {
         return generatedPdfNhostFileId;
     }
@@ -282,6 +292,14 @@ public class AudioMetadata {
 
     public void setGoogleFilesApiPdfUri(String googleFilesApiPdfUri) {
         this.googleFilesApiPdfUri = googleFilesApiPdfUri;
+    }
+
+    public String getConvertApiPdfUrl() {
+        return convertApiPdfUrl;
+    }
+
+    public void setConvertApiPdfUrl(String convertApiPdfUrl) {
+        this.convertApiPdfUrl = convertApiPdfUrl;
     }
 
     public boolean isTranscriptionComplete() {
@@ -382,12 +400,16 @@ public class AudioMetadata {
             map.put("pptxContentType", pptxContentType);
         if (nhostPptxFileId != null)
             map.put("nhostPptxFileId", nhostPptxFileId);
+        if (pptxNhostUrl != null)
+            map.put("pptxNhostUrl", pptxNhostUrl);
         if (generatedPdfNhostFileId != null)
             map.put("generatedPdfNhostFileId", generatedPdfNhostFileId);
         if (generatedPdfUrl != null)
             map.put("generatedPdfUrl", generatedPdfUrl);
         if (googleFilesApiPdfUri != null)
             map.put("googleFilesApiPdfUri", googleFilesApiPdfUri);
+        if (convertApiPdfUrl != null)
+            map.put("convertApiPdfUrl", convertApiPdfUrl);
         map.put("transcriptionComplete", transcriptionComplete);
         map.put("pdfConversionComplete", pdfConversionComplete);
         map.put("audioOnly", audioOnly);
@@ -444,9 +466,11 @@ public class AudioMetadata {
             meta.setPptxFileSize(((Number) pptxSize).longValue());
         meta.setPptxContentType((String) map.get("pptxContentType"));
         meta.setNhostPptxFileId((String) map.get("nhostPptxFileId"));
+        meta.setPptxNhostUrl((String) map.get("pptxNhostUrl"));
         meta.setGeneratedPdfNhostFileId((String) map.get("generatedPdfNhostFileId"));
         meta.setGeneratedPdfUrl((String) map.get("generatedPdfUrl"));
         meta.setGoogleFilesApiPdfUri((String) map.get("googleFilesApiPdfUri"));
+        meta.setConvertApiPdfUrl((String) map.get("convertApiPdfUrl"));
 
         Object transcriptionCompleteFlag = map.get("transcriptionComplete");
         if (transcriptionCompleteFlag instanceof Boolean)
@@ -504,9 +528,11 @@ public class AudioMetadata {
                 && Objects.equals(originalPptxFileName, that.originalPptxFileName)
                 && Objects.equals(pptxContentType, that.pptxContentType)
                 && Objects.equals(nhostPptxFileId, that.nhostPptxFileId)
+                && Objects.equals(pptxNhostUrl, that.pptxNhostUrl)
                 && Objects.equals(generatedPdfNhostFileId, that.generatedPdfNhostFileId)
                 && Objects.equals(generatedPdfUrl, that.generatedPdfUrl)
                 && Objects.equals(googleFilesApiPdfUri, that.googleFilesApiPdfUri)
+                && Objects.equals(convertApiPdfUrl, that.convertApiPdfUrl)
                 && transcriptionComplete == that.transcriptionComplete
                 && pdfConversionComplete == that.pdfConversionComplete
                 && audioOnly == that.audioOnly && audioUploadComplete == that.audioUploadComplete
@@ -520,9 +546,9 @@ public class AudioMetadata {
                 nhostFileId, storageUrl, uploadTimestamp, status, failureReason, recordingId,
                 summaryId, transcriptText, tempFilePath, tempPptxFilePath, durationSeconds,
                 lastUpdated, originalPptxFileName, pptxFileSize, pptxContentType, nhostPptxFileId,
-                generatedPdfNhostFileId, generatedPdfUrl, googleFilesApiPdfUri,
-                transcriptionComplete, pdfConversionComplete, audioOnly, audioUploadComplete,
-                gptSummary, waitingForPdf);
+                pptxNhostUrl, generatedPdfNhostFileId, generatedPdfUrl, googleFilesApiPdfUri,
+                convertApiPdfUrl, transcriptionComplete, pdfConversionComplete, audioOnly,
+                audioUploadComplete, gptSummary, waitingForPdf);
     }
 
     @Override
@@ -538,9 +564,10 @@ public class AudioMetadata {
                 + '\'' + ", durationSeconds=" + durationSeconds + ", lastUpdated=" + lastUpdated
                 + ", originalPptxFileName='" + originalPptxFileName + '\'' + ", pptxFileSize="
                 + pptxFileSize + ", pptxContentType='" + pptxContentType + '\''
-                + ", nhostPptxFileId='" + nhostPptxFileId + '\'' + ", generatedPdfNhostFileId='"
-                + generatedPdfNhostFileId + '\'' + ", generatedPdfUrl='" + generatedPdfUrl + '\''
-                + ", googleFilesApiPdfUri='" + googleFilesApiPdfUri + '\''
+                + ", nhostPptxFileId='" + nhostPptxFileId + '\'' + ", pptxNhostUrl='" + pptxNhostUrl
+                + '\'' + ", generatedPdfNhostFileId='" + generatedPdfNhostFileId + '\''
+                + ", generatedPdfUrl='" + generatedPdfUrl + '\'' + ", googleFilesApiPdfUri='"
+                + googleFilesApiPdfUri + '\'' + ", convertApiPdfUrl='" + convertApiPdfUrl + '\''
                 + ", transcriptionComplete=" + transcriptionComplete + ", pdfConversionComplete="
                 + pdfConversionComplete + ", audioOnly=" + audioOnly + ", audioUploadComplete="
                 + audioUploadComplete + ", gptSummary='" + gptSummary + '\'' + ", waitingForPdf="

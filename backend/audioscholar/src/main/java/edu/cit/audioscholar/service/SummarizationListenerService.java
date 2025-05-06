@@ -249,6 +249,58 @@ public class SummarizationListenerService {
                                 return;
                         }
 
+                        String convertApiPdfUrl = metadata.getConvertApiPdfUrl();
+                        if (convertApiPdfUrl != null && !convertApiPdfUrl.isBlank()) {
+                                log.info("[{}] Found ConvertAPI PDF URL, using it for summarization: {}",
+                                                metadataId, convertApiPdfUrl);
+
+                                updateMetadataStatus(metadataId, userId,
+                                                ProcessingStatus.SUMMARIZING, null);
+
+                                Path tempPdfPath = null;
+                                try {
+                                        String tempPdfFilename = metadataId + "_context.pdf";
+                                        tempPdfPath = tempDir.resolve(tempPdfFilename);
+                                        log.info("[{}] Downloading PDF from ConvertAPI URL to local file: {}",
+                                                        metadataId, tempPdfPath.getFileName());
+
+                                        downloadFileFromUrl(convertApiPdfUrl, tempPdfPath);
+                                        log.info("[{}] Successfully downloaded PDF from ConvertAPI to local file",
+                                                        metadataId);
+
+                                        log.info("[{}] Calling GeminiService to generate summary with PDF context...",
+                                                        metadataId);
+                                        String summarizationJson = geminiService
+                                                        .generateSummaryWithPdfContext(transcript,
+                                                                        tempPdfPath, metadataId);
+
+                                        processSummarizationResult(summarizationJson, metadataId,
+                                                        userId, metadata);
+                                } catch (IOException e) {
+                                        log.error("[{}] Error downloading PDF from ConvertAPI URL: {}",
+                                                        metadataId, e.getMessage(), e);
+                                        updateMetadataStatus(metadataId, userId,
+                                                        ProcessingStatus.FAILED,
+                                                        "Error downloading PDF from ConvertAPI: "
+                                                                        + e.getMessage());
+                                } finally {
+                                        if (tempPdfPath != null) {
+                                                try {
+                                                        Files.deleteIfExists(tempPdfPath);
+                                                        log.info("[{}] Deleted temporary PDF file: {}",
+                                                                        metadataId,
+                                                                        tempPdfPath.getFileName());
+                                                } catch (IOException e) {
+                                                        log.warn("[{}] Failed to delete temporary PDF file: {}. Error: {}",
+                                                                        metadataId,
+                                                                        tempPdfPath.getFileName(),
+                                                                        e.getMessage());
+                                                }
+                                        }
+                                }
+                                return;
+                        }
+
                         if (metadata.isAudioOnly()) {
                                 log.info("[{}] Audio-only upload detected. Processing summarization without PDF context.",
                                                 metadataId);
@@ -293,11 +345,67 @@ public class SummarizationListenerService {
 
                                 String pdfNhostId = extractNhostIdFromUrl(pdfUrl);
                                 if (pdfNhostId == null) {
-                                        log.error("[{}] Could not extract Nhost file ID from PDF URL: {}",
+                                        boolean isConvertApiUrl = pdfUrl != null && (pdfUrl
+                                                        .contains("convertapi.com")
+                                                        || pdfUrl.contains("v2.convertapi.com"));
+
+                                        if (!isConvertApiUrl) {
+                                                log.error("[{}] Could not extract Nhost file ID from PDF URL and it's not a ConvertAPI URL: {}",
+                                                                metadataId, pdfUrl);
+                                                updateMetadataStatus(metadataId, userId,
+                                                                ProcessingStatus.FAILED,
+                                                                "Invalid PDF URL format");
+                                                return;
+                                        }
+
+                                        log.info("[{}] Detected ConvertAPI PDF URL in generatedPdfUrl, downloading directly: {}",
                                                         metadataId, pdfUrl);
-                                        updateMetadataStatus(metadataId, userId,
-                                                        ProcessingStatus.FAILED,
-                                                        "Invalid PDF URL format");
+
+                                        Path tempPdfPath = null;
+                                        try {
+                                                String tempPdfFilename =
+                                                                metadataId + "_context.pdf";
+                                                tempPdfPath = tempDir.resolve(tempPdfFilename);
+                                                log.info("[{}] Downloading PDF from ConvertAPI URL to local file: {}",
+                                                                metadataId,
+                                                                tempPdfPath.getFileName());
+
+                                                downloadFileFromUrl(pdfUrl, tempPdfPath);
+                                                log.info("[{}] Successfully downloaded PDF from ConvertAPI to local file",
+                                                                metadataId);
+
+                                                log.info("[{}] Calling GeminiService to generate summary with PDF context...",
+                                                                metadataId);
+                                                String summarizationJson = geminiService
+                                                                .generateSummaryWithPdfContext(
+                                                                                transcript,
+                                                                                tempPdfPath,
+                                                                                metadataId);
+
+                                                processSummarizationResult(summarizationJson,
+                                                                metadataId, userId, metadata);
+                                        } catch (IOException e) {
+                                                log.error("[{}] Error downloading PDF from ConvertAPI URL: {}",
+                                                                metadataId, e.getMessage(), e);
+                                                updateMetadataStatus(metadataId, userId,
+                                                                ProcessingStatus.FAILED,
+                                                                "Error downloading PDF from ConvertAPI: "
+                                                                                + e.getMessage());
+                                        } finally {
+                                                if (tempPdfPath != null) {
+                                                        try {
+                                                                Files.deleteIfExists(tempPdfPath);
+                                                                log.info("[{}] Deleted temporary PDF file: {}",
+                                                                                metadataId,
+                                                                                tempPdfPath.getFileName());
+                                                        } catch (IOException e) {
+                                                                log.warn("[{}] Failed to delete temporary PDF file: {}. Error: {}",
+                                                                                metadataId,
+                                                                                tempPdfPath.getFileName(),
+                                                                                e.getMessage());
+                                                        }
+                                                }
+                                        }
                                         return;
                                 }
 
@@ -683,6 +791,12 @@ public class SummarizationListenerService {
                 if (url == null || url.isEmpty())
                         return null;
 
+                if (url.contains("convertapi.com") || url.contains("v2.convertapi.com")) {
+                        log.debug("URL is from ConvertAPI, not attempting to extract Nhost ID: {}",
+                                        url);
+                        return null;
+                }
+
                 try {
                         Pattern pattern = Pattern.compile("/files/([a-zA-Z0-9\\-]+)");
                         Matcher matcher = pattern.matcher(url);
@@ -787,6 +901,40 @@ public class SummarizationListenerService {
                 } catch (Exception e) {
                         log.error("Error invalidating cache for user {}: {}", userId,
                                         e.getMessage(), e);
+                }
+        }
+
+        private void downloadFileFromUrl(String fileUrl, Path targetPath) throws IOException {
+                log.info("Downloading file from URL: {} to local path: {}", fileUrl, targetPath);
+
+                java.net.URL url = new java.net.URL(fileUrl);
+                java.net.HttpURLConnection connection =
+                                (java.net.HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(30000);
+                connection.setReadTimeout(300000);
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode != java.net.HttpURLConnection.HTTP_OK) {
+                        throw new IOException("HTTP error code: " + responseCode);
+                }
+
+                try (java.io.InputStream in = connection.getInputStream();
+                                java.io.OutputStream out = Files.newOutputStream(targetPath)) {
+
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        long totalBytesRead = 0;
+                        long startTime = System.currentTimeMillis();
+
+                        while ((bytesRead = in.read(buffer)) != -1) {
+                                out.write(buffer, 0, bytesRead);
+                                totalBytesRead += bytesRead;
+                        }
+
+                        long endTime = System.currentTimeMillis();
+                        log.info("Download completed. Total bytes: {}, Time taken: {} ms",
+                                        totalBytesRead, (endTime - startTime));
                 }
         }
 }

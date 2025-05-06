@@ -1,17 +1,19 @@
+FROM maven:3.9.6-eclipse-temurin-21 AS builder  # <--- RENAMED STAGE
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn package -DskipTests -B
+
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y \
     fontconfig \
     libfreetype6 \
-    # Example: Add this line for common Microsoft fonts (requires accepting EULA during build if used)
-    # ttf-mscorefonts-installer \
     --no-install-recommends && \
-    # Clean up apt cache to reduce image size
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/target/audioscholar-*.jar app.jar
+COPY --from=builder /app/target/audioscholar-*.jar app.jar # <--- UPDATED STAGE NAME
 
-EXPOSE 8080
-
-ENTRYPOINT ["java", "-Djava.awt.headless=true", "-Xmx768m", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Djava.awt.headless=true", "-Xmx256m", "-jar", "app.jar"]

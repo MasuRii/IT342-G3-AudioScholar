@@ -86,7 +86,7 @@ private fun playCloudRecording(
     scope: CoroutineScope,
     showSnackbar: suspend (String) -> Unit,
 ) {
-    val url = metadata.storageUrl
+    val url = metadata.audioUrl?.takeIf { it.isNotBlank() } ?: metadata.storageUrl
     if (url.isNullOrBlank()) {
         scope.launch { showSnackbar("Error: Recording URL is missing.") }
         return
@@ -195,7 +195,9 @@ fun LibraryScreen(
                         title = event.title,
                         fileName = event.fileName,
                         timestampSeconds = event.timestampSeconds,
-                        storageUrl = event.storageUrl
+                        storageUrl = event.storageUrl,
+                        audioUrl = event.audioUrl,
+                        pdfUrl = event.pdfUrl
                     )
                     if (route != "recording_details/error") {
                         navController.navigate(route) { launchSingleTop = true }

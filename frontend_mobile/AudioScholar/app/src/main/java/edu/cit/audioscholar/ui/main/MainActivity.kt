@@ -79,6 +79,8 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
         const val ARG_CLOUD_FILENAME = "cloudFileName"
         const val ARG_CLOUD_TIMESTAMP_SECONDS = "cloudTimestampSeconds"
         const val ARG_CLOUD_STORAGE_URL = "cloudStorageUrl"
+        const val ARG_CLOUD_AUDIO_URL = "cloudAudioUrl"
+        const val ARG_CLOUD_PDF_URL = "cloudPdfUrl"
 
         const val ROUTE_PATTERN = "recording_details" +
                 "?$ARG_LOCAL_FILE_PATH={$ARG_LOCAL_FILE_PATH}" +
@@ -87,7 +89,9 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
                 "&$ARG_CLOUD_TITLE={$ARG_CLOUD_TITLE}" +
                 "&$ARG_CLOUD_FILENAME={$ARG_CLOUD_FILENAME}" +
                 "&$ARG_CLOUD_TIMESTAMP_SECONDS={$ARG_CLOUD_TIMESTAMP_SECONDS}" +
-                "&$ARG_CLOUD_STORAGE_URL={$ARG_CLOUD_STORAGE_URL}"
+                "&$ARG_CLOUD_STORAGE_URL={$ARG_CLOUD_STORAGE_URL}" +
+                "&$ARG_CLOUD_AUDIO_URL={$ARG_CLOUD_AUDIO_URL}" +
+                "&$ARG_CLOUD_PDF_URL={$ARG_CLOUD_PDF_URL}"
 
         fun createLocalRoute(filePath: String): String {
             return "recording_details?$ARG_LOCAL_FILE_PATH=${Uri.encode(filePath)}"
@@ -99,7 +103,9 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
             title: String?,
             fileName: String?,
             timestampSeconds: Long?,
-            storageUrl: String?
+            storageUrl: String?,
+            audioUrl: String? = null,
+            pdfUrl: String? = null
         ): String {
             if (id.isBlank()) {
                 Log.e("Screen.RecordingDetails", "Cannot create cloud route, primary 'id' is null or blank.")
@@ -110,13 +116,17 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
             val encodedFileName = Uri.encode(fileName ?: "Unknown Filename")
             val timestamp = timestampSeconds ?: 0L
             val encodedStorageUrl = Uri.encode(storageUrl ?: "")
+            val encodedAudioUrl = Uri.encode(audioUrl ?: "")
+            val encodedPdfUrl = Uri.encode(pdfUrl ?: "")
 
             return "recording_details?$ARG_CLOUD_ID=$id" +
                     "&$ARG_CLOUD_RECORDING_ID=$recordingId" +
                     "&$ARG_CLOUD_TITLE=$encodedTitle" +
                     "&$ARG_CLOUD_FILENAME=$encodedFileName" +
                     "&$ARG_CLOUD_TIMESTAMP_SECONDS=$timestamp" +
-                    "&$ARG_CLOUD_STORAGE_URL=$encodedStorageUrl"
+                    "&$ARG_CLOUD_STORAGE_URL=$encodedStorageUrl" +
+                    "&$ARG_CLOUD_AUDIO_URL=$encodedAudioUrl" +
+                    "&$ARG_CLOUD_PDF_URL=$encodedPdfUrl"
         }
     }
 }
@@ -585,6 +595,10 @@ fun MainAppScreen(
                     navArgument(Screen.RecordingDetails.ARG_CLOUD_TIMESTAMP_SECONDS) {
                         type = NavType.LongType; defaultValue = 0L },
                     navArgument(Screen.RecordingDetails.ARG_CLOUD_STORAGE_URL) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_AUDIO_URL) {
+                        type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument(Screen.RecordingDetails.ARG_CLOUD_PDF_URL) {
                         type = NavType.StringType; nullable = true; defaultValue = null }
                 )
             ) { backStackEntry ->

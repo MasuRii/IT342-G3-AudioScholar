@@ -349,4 +349,10 @@
     <string name="settings_url_privacy_policy">https://rentry.co/it342-audioscholar-privacy</string>
     <string name="settings_url_terms_service">https://rentry.co/it342-audioscholar-termsofservice</string>
 
+    <string name="details_powerpoint_pdf_title">Presentation Slides (PDF)</string>
+    <string name="details_pdf_available">PDF Slides Available</string>
+    <string name="details_pdf_not_available">Slides not available</string>
+    <string name="details_view_pdf_button">View PDF</string>
+    <string name="error_youtube_link_missing">YouTube video link is missing.</string>
+
 </resources>

@@ -485,9 +485,13 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != screen.route) {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.id) { saveState = true }
+                                        if (currentRoute == Screen.SubscriptionPricing.route) {
+                                            popUpTo(Screen.SubscriptionPricing.route) { inclusive = true }
+                                        } else {
+                                            popUpTo(navController.graph.id) { saveState = true }
+                                            restoreState = true
+                                        }
                                         launchSingleTop = true
-                                        restoreState = true
                                     }
                                 }
                             },

@@ -104,6 +104,59 @@ const StatusBadge = ({ recording }) => {
     );
 };
 
+// Define the new component for handling thumbnail logic
+const RecommendationCardImage = ({ thumbnailUrl, fallbackThumbnailUrl, title }) => {
+  // Prioritize fallbackThumbnailUrl if it exists, otherwise use thumbnailUrl.
+  const [currentSrc, setCurrentSrc] = useState(fallbackThumbnailUrl || thumbnailUrl);
+  // Set initial error state: true if neither URL is provided.
+  const [hasError, setHasError] = useState(!(fallbackThumbnailUrl || thumbnailUrl));
+
+  useEffect(() => {
+    // This effect runs when thumbnailUrl or fallbackThumbnailUrl props change.
+    // It resets the currentSrc and error state based on the new props,
+    // prioritizing fallbackThumbnailUrl.
+    const initialSrc = fallbackThumbnailUrl || thumbnailUrl;
+    setCurrentSrc(initialSrc);
+    setHasError(!initialSrc); // True if no valid src can be determined
+  }, [thumbnailUrl, fallbackThumbnailUrl]);
+
+  const handleError = () => {
+    // This function is called if the current 'currentSrc' fails to load.
+
+    // Check if the URL that just failed was 'fallbackThumbnailUrl' AND
+    // if 'thumbnailUrl' exists (as a potential next source to try).
+    if (currentSrc === fallbackThumbnailUrl && thumbnailUrl) {
+      // If fallbackThumbnailUrl failed, try thumbnailUrl.
+      setCurrentSrc(thumbnailUrl);
+      // 'hasError' remains false, allowing thumbnailUrl to attempt loading.
+    } else {
+      // This block is reached if:
+      // 1. fallbackThumbnailUrl failed, and thumbnailUrl does not exist.
+      // 2. fallbackThumbnailUrl failed, then thumbnailUrl was tried (because currentSrc would be thumbnailUrl) and it also failed.
+      // 3. thumbnailUrl was the initial attempt (because fallbackThumbnailUrl was not provided) and it failed.
+      setHasError(true);
+    }
+  };
+
+  if (hasError || !currentSrc) {
+    // If there's a definitive error or no valid src to attempt, show a placeholder.
+    return (
+      <div className="w-full h-32 bg-gray-100 flex items-center justify-center text-gray-400 text-xs p-2">
+        <span>(No Thumbnail)</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={currentSrc}
+      alt={title || 'Recommendation thumbnail'}
+      className="w-full h-32 object-cover"
+      onError={handleError} // Call handleError on loading failure
+    />
+  );
+};
+
 const RecordingData = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -411,6 +464,8 @@ const RecordingData = () => {
      return <div className="min-h-screen flex items-center justify-center">Recording metadata could not be loaded.</div>;
   }
 
+  const audioSrcToPlay = recordingData.storageUrl || recordingData.audioUrl;
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F0F4F8]">
       <title>{`AudioScholar - ${recordingData?.title || 'Recording Details'}`}</title>
@@ -444,14 +499,14 @@ const RecordingData = () => {
             </div>
           </div>
 
-          {recordingData.storageUrl ? (
+          {audioSrcToPlay ? (
             <div className="mb-8 bg-white rounded-lg shadow p-6 border border-gray-200">
               <h2 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
                 <FiHeadphones className="mr-2 h-5 w-5 text-teal-600" /> Play Recording
               </h2>
               <audio
                 controls
-                src={recordingData.storageUrl}
+                src={audioSrcToPlay}
                 className="w-full h-14 rounded-md bg-gray-100 shadow-inner"
                 preload="metadata"
               >
@@ -594,27 +649,27 @@ const RecordingData = () => {
              )}
             {!recommendationsLoading && !recommendationsError && recommendationsData.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {recommendationsData.map((rec, index) => (
-                  <a
-                    key={rec.videoId || index}
-                    href={rec.videoId ? `https://www.youtube.com/watch?v=${rec.videoId}` : '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                     className={`block border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 ease-in-out bg-white group transform hover:-translate-y-1 ${!rec.videoId ? 'opacity-70 cursor-default' : ''}`}
-                     title={rec.title || 'Recommendation'}
-                  >
-                    {rec.thumbnailUrl ? (
-                      <img src={rec.thumbnailUrl} alt={rec.title || 'Recommendation thumbnail'} className="w-full h-32 object-cover" />
-                    ) : (
-                      <div className="w-full h-32 bg-gray-100 flex items-center justify-center text-gray-400 text-xs p-2">
-                        <span>(No Thumbnail)</span>
+                {recommendationsData.map((rec, index) => {
+                  return (
+                    <a
+                      key={rec.videoId || index}
+                      href={rec.videoId ? `https://www.youtube.com/watch?v=${rec.videoId}` : '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`block border border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition-all duration-300 ease-in-out bg-white group transform hover:-translate-y-1 ${!rec.videoId ? 'opacity-70 cursor-default' : ''}`}
+                      title={rec.title || 'Recommendation'}
+                    >
+                      <RecommendationCardImage
+                        thumbnailUrl={rec.thumbnailUrl}
+                        fallbackThumbnailUrl={rec.fallbackThumbnailUrl}
+                        title={rec.title}
+                      />
+                      <div className="p-3">
+                        <h4 className={`font-semibold text-sm text-gray-800 ${rec.videoId ? 'group-hover:text-teal-600' : ''} transition-colors duration-150 line-clamp-2`}>{rec.title || 'Untitled Recommendation'}</h4>
                       </div>
-                    )}
-                    <div className="p-3">
-                      <h4 className={`font-semibold text-sm text-gray-800 ${rec.videoId ? 'group-hover:text-teal-600' : ''} transition-colors duration-150 line-clamp-2`}>{rec.title || 'Untitled Recommendation'}</h4>
-                    </div>
-                  </a>
-                ))}
+                    </a>
+                  );
+                })}
               </div>
             )}
             {!recommendationsLoading && !recommendationsError && recommendationsData.length === 0 && (

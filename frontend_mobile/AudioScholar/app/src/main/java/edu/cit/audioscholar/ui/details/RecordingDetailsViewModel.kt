@@ -32,6 +32,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 
 sealed class NavigationEvent {
     object NavigateToLibrary : NavigationEvent()
@@ -163,7 +165,7 @@ class RecordingDetailsViewModel @Inject constructor(
                             it.copy(
                                 isLoading = false,
                                 title = currentTitle,
-                                editableTitle = currentTitle,
+                                editableTitle = TextFieldValue(currentTitle, selection = TextRange(currentTitle.length)),
                                 dateCreated = formatTimestampMillis(metadata.timestampMillis),
                                 durationMillis = metadata.durationMillis,
                                 durationFormatted = formatDurationMillis(metadata.durationMillis),
@@ -266,7 +268,7 @@ class RecordingDetailsViewModel @Inject constructor(
                 it.copy(
                     isLoading = false,
                     title = title,
-                    editableTitle = title,
+                    editableTitle = TextFieldValue(title, selection = TextRange(title.length)),
                     dateCreated = if (timestampSeconds > 0) formatTimestampMillis(TimeUnit.SECONDS.toMillis(timestampSeconds)) else "Unknown Date",
                     durationMillis = 0L,
                     durationFormatted = "--:--",
@@ -501,6 +503,11 @@ class RecordingDetailsViewModel @Inject constructor(
             return
         }
 
+        if (playbackManager.playbackState.value.isPlaying) {
+            Log.d("DetailsViewModel", "Processing started, pausing active playback.")
+            playbackManager.pause()
+        }
+
         if (meta == null || meta.remoteRecordingId != null || meta.filePath.isEmpty()) {
             Log.w("DetailsViewModel", "Process Recording clicked but state is invalid. Meta: $meta, RemoteId: ${meta?.remoteRecordingId}, Path: ${meta?.filePath}")
             val errorMsg = when {
@@ -534,7 +541,7 @@ class RecordingDetailsViewModel @Inject constructor(
             return
         }
 
-        val titleToUpload = (if (currentState.isEditingTitle) currentState.editableTitle else meta.title)
+        val titleToUpload = (if (currentState.isEditingTitle) currentState.editableTitle.text else meta.title)
             ?.takeIf { it.isNotBlank() && it != fileToUpload.name }
 
         var powerpointFile: File? = null
@@ -916,7 +923,7 @@ class RecordingDetailsViewModel @Inject constructor(
                     cloudId = if (it.isCloudSource && deleteSuccess) null else it.cloudId,
                     remoteRecordingId = if (it.isCloudSource && deleteSuccess) null else it.remoteRecordingId,
                     title = application.getString(R.string.details_title_deleted),
-                    editableTitle = application.getString(R.string.details_title_deleted),
+                    editableTitle = TextFieldValue(application.getString(R.string.details_title_deleted)),
                     storageUrl = null,
                     audioUrl = null,
                     generatedPdfUrl = null,
@@ -949,22 +956,28 @@ class RecordingDetailsViewModel @Inject constructor(
     }
 
     fun onTitleEditRequested() {
-        _uiState.update { it.copy(isEditingTitle = true, editableTitle = it.title) }
+        _uiState.update {
+            val currentTitle = it.title
+            it.copy(isEditingTitle = true, editableTitle = TextFieldValue(currentTitle, selection = TextRange(currentTitle.length)))
+        }
         Log.d("DetailsViewModel", "Title edit requested.")
     }
 
-    fun onTitleChanged(newTitle: String) {
+    fun onTitleChanged(newTitle: TextFieldValue) {
         _uiState.update { it.copy(editableTitle = newTitle) }
     }
 
     fun onTitleSaveRequested() {
         val state = _uiState.value
-        val newTitle = state.editableTitle.trim()
+        val newTitle = state.editableTitle.text.trim()
 
         if (newTitle.isEmpty()) {
             Log.w("DetailsViewModel", "Save requested with empty title.")
             val errorMsg = "Title cannot be empty."
-            _uiState.update { it.copy(isEditingTitle = false, editableTitle = state.title, error = errorMsg) }
+            _uiState.update {
+                val currentActualTitle = state.title
+                it.copy(isEditingTitle = false, editableTitle = TextFieldValue(currentActualTitle, selection = TextRange(currentActualTitle.length)), error = errorMsg)
+            }
             viewModelScope.launch { _errorEvent.trySend(errorMsg)}
             return
         }
@@ -1016,7 +1029,15 @@ class RecordingDetailsViewModel @Inject constructor(
 
             if (!success) {
                 Log.e("DetailsViewModel", "Failed to update title. Reverting UI.")
-                _uiState.update { it.copy(isLoading = false, title = state.title, editableTitle = state.title, error = errorMsg) }
+                _uiState.update {
+                    val currentActualTitle = state.title
+                    it.copy(
+                        isLoading = false, 
+                        title = currentActualTitle,
+                        editableTitle = TextFieldValue(currentActualTitle, selection = TextRange(currentActualTitle.length)),
+                        error = errorMsg
+                    )
+                }
                 viewModelScope.launch { _errorEvent.trySend(errorMsg ?: application.getString(R.string.error_metadata_update_failed)) }
             } else {
                 Log.d("DetailsViewModel", "Title updated successfully.")

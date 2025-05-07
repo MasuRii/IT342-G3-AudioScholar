@@ -1,6 +1,7 @@
 package edu.cit.audioscholar.ui.details
 
 import androidx.compose.runtime.Stable
+import androidx.compose.ui.text.input.TextFieldValue
 import edu.cit.audioscholar.data.remote.dto.GlossaryItemDto
 import edu.cit.audioscholar.data.remote.dto.RecommendationDto
 
@@ -28,7 +29,7 @@ data class RecordingDetailsUiState(
     val isCloudSource: Boolean = false,
 
     val isEditingTitle: Boolean = false,
-    val editableTitle: String = "",
+    val editableTitle: TextFieldValue = TextFieldValue(""),
 
     val isPlaying: Boolean = false,
     val currentPositionMillis: Long = 0L,

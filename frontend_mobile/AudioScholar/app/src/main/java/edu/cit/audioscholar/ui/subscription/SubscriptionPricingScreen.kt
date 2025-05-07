@@ -31,7 +31,7 @@ fun SubscriptionPricingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(id = R.string.nav_subscription_pricing)) },
+                title = { Text(stringResource(id = R.string.nav_audioscholar_pro)) },
                 navigationIcon = {
                     if (drawerState != null && scope != null) {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {

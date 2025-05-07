@@ -145,7 +145,8 @@ val screensWithDrawer = listOf(
     Screen.Settings.route,
     Screen.Profile.route,
     Screen.About.route,
-    Screen.ChangePassword.route
+    Screen.ChangePassword.route,
+    Screen.SubscriptionPricing.route
 )
 
 

@@ -8,9 +8,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import edu.cit.audioscholar.dto.FcmTokenRequest;
+import edu.cit.audioscholar.dto.UpdateUserRoleRequest;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.User;
 import edu.cit.audioscholar.service.UserService;
@@ -203,6 +212,31 @@ public class UserController {
                          e.getMessage(), e);
                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                          .body("An unexpected error occurred.");
+          }
+     }
+
+     @PutMapping("/{userId}/role")
+     @PreAuthorize("#userId == authentication.name")
+     public ResponseEntity<?> updateUserRole(@PathVariable String userId,
+               @Valid @RequestBody UpdateUserRoleRequest request) {
+          logger.info("Request to update role for user ID: {} to {}", userId, request.role());
+
+          try {
+               User updatedUser = userService.updateUserRole(userId, request.role());
+               return ResponseEntity.ok(updatedUser);
+          } catch (FirestoreInteractionException e) {
+               logger.error("Error updating role for user {}: {}", userId, e.getMessage(), e);
+               return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                         e.getMessage() != null ? e.getMessage() : "Error updating user role.");
+          } catch (IllegalArgumentException e) {
+               logger.error("Illegal argument updating role for user {}: {}", userId,
+                         e.getMessage(), e);
+               return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
+          } catch (Exception e) {
+               logger.error("Unexpected error updating role for user {}: {}", userId,
+                         e.getMessage(), e);
+               return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                         .body("An unexpected error occurred while updating the user role.");
           }
      }
 }

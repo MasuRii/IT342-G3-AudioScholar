@@ -546,4 +546,34 @@ public class UserService {
                     e.getMessage(), e);
         }
     }
+
+    @CacheEvict(value = USER_CACHE, key = "#userId")
+    public User updateUserRole(String userId, String role) throws FirestoreInteractionException {
+        if (!StringUtils.hasText(userId)) {
+            log.error("User ID cannot be null or blank when updating role.");
+            throw new IllegalArgumentException("User ID is required to update role.");
+        }
+
+        if (!StringUtils.hasText(role)
+                || (!role.equals("ROLE_USER") && !role.equals("ROLE_PREMIUM"))) {
+            log.error("Invalid role: {}. Role must be either ROLE_USER or ROLE_PREMIUM", role);
+            throw new IllegalArgumentException("Role must be either ROLE_USER or ROLE_PREMIUM");
+        }
+
+        log.info("Attempting to update role to {} for user ID: {} (Cache evicted)", role, userId);
+        User existingUser = getUserById(userId);
+        if (existingUser == null) {
+            log.warn("Cannot update role. User not found in Firestore for ID: {}", userId);
+            throw new FirestoreInteractionException(
+                    "User not found with ID: " + userId + " for role update.");
+        }
+
+        existingUser.getRoles().removeIf(r -> r.equals("ROLE_USER") || r.equals("ROLE_PREMIUM"));
+
+        existingUser.getRoles().add(role);
+
+
+        log.info("Saving updated role for user ID: {}", userId);
+        return updateUser(existingUser);
+    }
 }

@@ -91,6 +91,11 @@ const UserProfile = () => {
               />
               <h1 className="text-3xl font-bold mb-1">{`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'User Name'}</h1>
               <p className="text-indigo-200 mb-4 text-lg">{user?.email || 'email@example.com'}</p>
+              {user?.roles?.includes('ROLE_PREMIUM') ? (
+                <span className="bg-yellow-400 text-yellow-800 text-sm font-semibold px-3 py-1 rounded-full shadow-md">Premium Member</span>
+              ) : (
+                <span className="bg-gray-200 text-gray-700 text-sm font-semibold px-3 py-1 rounded-full shadow-md">Basic Account</span>
+              )}
             </div>
 
             <div className="bg-white p-8 md:p-10">
@@ -112,6 +117,13 @@ const UserProfile = () => {
                   <p className="text-gray-800 font-medium text-lg bg-gray-50 p-3 rounded-md border border-gray-200">{user?.email || 'N/A'}</p>
                 </div>
 
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 mb-1">Subscription Status</h3>
+                  <p className="text-gray-800 font-medium text-lg bg-gray-50 p-3 rounded-md border border-gray-200">
+                    {user?.roles?.includes('ROLE_PREMIUM') ? 'Premium' : 'Basic'}
+                  </p>
+                </div>
+
               </div>
 
               <div className="mt-8 text-right space-x-4">
@@ -123,9 +135,11 @@ const UserProfile = () => {
                 </Link>
                 <Link
                   to="/subscribe"
-                  className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200 transform hover:-translate-y-0.5"
+                  className={`inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-200 transform hover:-translate-y-0.5 ${user?.roles?.includes('ROLE_PREMIUM') ? 'bg-gray-500 hover:bg-gray-600 focus:ring-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'}`}
+                  onClick={(e) => user?.roles?.includes('ROLE_PREMIUM') && e.preventDefault()}
+                  aria-disabled={user?.roles?.includes('ROLE_PREMIUM')}
                 >
-                  Apply Subscription
+                  {user?.roles?.includes('ROLE_PREMIUM') ? 'Subscribed (Premium)' : 'Apply Subscription'}
                 </Link>
               </div>
             </div>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '../Home/HomePage';
+import axios from 'axios';
+import { API_BASE_URL } from '../../services/authService';
 
 const CheckoutPage = () => {
     const [tier, setTier] = useState(null);
@@ -36,21 +38,65 @@ const CheckoutPage = () => {
 
         // --- Mock Backend Call ---
         // Simulate API call delay
-        setTimeout(() => {
+        setTimeout(async () => {
             console.log('Subscription Confirmed (Mocked)!');
+
+            const token = localStorage.getItem('AuthToken');
+            const userId = localStorage.getItem('userId');
+
+            if (!token || !userId) {
+                console.error('AuthToken or UserId not found. Cannot update role.');
+                alert('Subscription mock successful, but critical user information is missing to update your role. Please re-login or contact support.');
+                setIsLoading(false);
+                localStorage.removeItem('selectedTier');
+                localStorage.removeItem('paymentDetails');
+                navigate('/profile');
+                return;
+            }
+
+            try {
+                const roleUpdateUrl = `${API_BASE_URL}api/users/${userId}/role`;
+                const roleUpdatePayload = { role: 'ROLE_PREMIUM' };
+                
+                console.log(`Attempting to update role for user ${userId} to ROLE_PREMIUM at ${roleUpdateUrl}`);
+
+                const response = await axios.put(roleUpdateUrl, roleUpdatePayload, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 200 || response.status === 204) {
+                    console.log('Successfully updated user role to ROLE_PREMIUM');
+                    localStorage.setItem('userSubscriptionTier', tier);
+                    alert('Subscription successful! You are now a Premium member.');
+                } else {
+                    console.error('Role update API call was not successful, status:', response.status);
+                    localStorage.setItem('userSubscriptionTier', tier);
+                    alert('Subscription payment processed, but there was an issue updating your account privileges. Please contact support.');
+                }
+
+            } catch (err) {
+                console.error('Error updating user role:', err);
+                localStorage.setItem('userSubscriptionTier', tier);
+                let errorMessage = 'Subscription payment processed, but failed to update your account privileges.';
+                if (err.response) {
+                    errorMessage += ` (Server responded with ${err.response.status}).`;
+                    if (err.response.status === 403) {
+                        errorMessage += ' It seems there was a permission issue.';
+                    }
+                }
+                errorMessage += ' Please contact support.';
+                alert(errorMessage);
+            }
             
-            // Mock successful payment: Update user status (e.g., in localStorage)
-            localStorage.setItem('userSubscriptionTier', tier); // Set user tier to Premium
-            
-            // Clean up temporary storage
             localStorage.removeItem('selectedTier');
             localStorage.removeItem('paymentDetails');
-
             setIsLoading(false);
 
             // Redirect to dashboard or profile page
             // Potentially show a success message first
-            alert('Subscription successful! You are now a Premium member.');
             navigate('/profile'); // Redirect to profile page
 
         }, 1500); // Simulate 1.5 seconds delay

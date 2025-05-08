@@ -124,7 +124,7 @@ const RecordingList = () => {
                 clearInterval(pollIntervalRef.current);
                 pollIntervalRef.current = null;
             }
-        }, 7000);
+        }, 15000);
 
     }, [fetchRecordings]);
 
@@ -186,6 +186,97 @@ const RecordingList = () => {
             } else {
                 setError('Failed to delete recording. Please try again.');
             }
+        }
+    };
+
+    const handleDeleteAllRecordings = async () => {
+        if (!window.confirm('Are you sure you want to delete ALL your recordings and their summaries? This action cannot be undone.')) {
+            return;
+        }
+
+        const token = localStorage.getItem('AuthToken');
+        if (!token) {
+            setError("Authentication required to delete all recordings.");
+            navigate('/signin');
+            return;
+        }
+
+        // Take a snapshot of current recordings to avoid issues with state changing during iteration
+        const recordingsToDelete = [...recordings];
+        if (recordingsToDelete.length === 0) {
+            setError("No recordings to delete."); // Should ideally not happen if button is shown correctly
+            return;
+        }
+
+        setLoading(true); // Show a loading state for the batch operation
+        setError(null);
+
+        const deletePromises = recordingsToDelete.map(recording => {
+            const url = `${API_BASE_URL}api/audio/metadata/${recording.id}`;
+            return axios.delete(url, { headers: { 'Authorization': `Bearer ${token}` } })
+                .then(response => ({ id: recording.id, status: 'fulfilled', response }))
+                .catch(error => ({ id: recording.id, status: 'rejected', reason: error }));
+        });
+
+        try {
+            const results = await Promise.allSettled(deletePromises);
+
+            let successfulDeletions = 0;
+            let failedDeletions = 0;
+
+            results.forEach(result => {
+                if (result.status === 'fulfilled' && (result.value.response.status === 200 || result.value.response.status === 204)) {
+                    successfulDeletions++;
+                    console.log(`Successfully deleted recording ${result.value.id}`);
+                } else {
+                    failedDeletions++;
+                    const recordingId = result.status === 'fulfilled' ? result.value.id : (result.reason && result.reason.id);
+                    console.error(`Failed to delete recording ${recordingId || 'unknown'}:`, result.status === 'rejected' ? result.reason : result.value.response);
+                }
+            });
+
+            if (failedDeletions > 0) {
+                setError(`${successfulDeletions} recordings deleted. ${failedDeletions} deletions failed. Please check console for details and try again if necessary.`);
+            } else if (successfulDeletions > 0) {
+                setError(null); // Clear any previous errors
+                // Optionally show a success message, though fetchRecordings will update the list
+                console.log(`All ${successfulDeletions} targeted recordings deleted successfully.`);
+            }
+            // No specific message if no recordings were there to begin with, or if all failed but error is already set
+
+        } catch (err) {
+            // This catch block is for errors in Promise.allSettled itself, which is unlikely for its typical usage.
+            console.error('Error processing batch deletion results:', err);
+            setError('An unexpected error occurred while processing deletions. Please refresh.');
+        } finally {
+            // Always refresh the list from the server to reflect the actual state
+            fetchRecordings().then(updatedData => {
+                if (updatedData && isMountedRef.current) {
+                    setRecordings(updatedData);
+                    // Decide if polling needs to continue based on new data
+                    const stillNeedsPolling = updatedData.some(rec => {
+                        const statusUpper = rec.status?.toUpperCase();
+                        const isTerminal = TERMINAL_STATUSES.includes(statusUpper);
+                        if (isTerminal) return false;
+                        const isUploading = UPLOADING_STATUSES.includes(statusUpper);
+                        if (isUploading) {
+                            const elapsedSeconds = rec.uploadTimestamp?.seconds
+                                ? (Date.now() / 1000) - rec.uploadTimestamp.seconds
+                                : 0;
+                            return elapsedSeconds <= UPLOAD_TIMEOUT_SECONDS;
+                        }
+                        return true;
+                    });
+                    if (stillNeedsPolling && !pollIntervalRef.current) {
+                        startPolling(updatedData);
+                    } else if (!stillNeedsPolling && pollIntervalRef.current) {
+                        clearInterval(pollIntervalRef.current);
+                        pollIntervalRef.current = null;
+                        console.log("Polling stopped after deletions as no items require it.");
+                    }
+                }
+                if(isMountedRef.current) setLoading(false);
+            });
         }
     };
 
@@ -292,7 +383,19 @@ const RecordingList = () => {
             <main className="flex-grow py-12 bg-gray-50">
                 <title>AudioScholar - My Recordings</title>
                 <div className="container mx-auto px-4">
-                    <h1 className="text-3xl font-bold text-gray-800 mb-8">My Recordings</h1>
+                    <div className="flex justify-between items-center mb-8">
+                        <h1 className="text-3xl font-bold text-gray-800">My Recordings</h1>
+                        {!loading && recordings.length > 0 && (
+                            <button
+                                onClick={handleDeleteAllRecordings}
+                                className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition flex items-center"
+                                title="Delete All Recordings"
+                            >
+                                <FiTrash2 className="mr-2 h-4 w-4" />
+                                Delete All
+                            </button>
+                        )}
+                    </div>
 
                     {loading && (
                         <div className="text-center py-10">

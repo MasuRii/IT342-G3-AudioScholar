@@ -1,5 +1,10 @@
 package edu.cit.audioscholar.ui.subscription
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.media.RingtoneManager
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -25,10 +30,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.app.NotificationCompat
 import edu.cit.audioscholar.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+
+private const val NOTIFICATION_CHANNEL_ID = "verification_channel"
+private const val NOTIFICATION_ID = 1001
 
 @Composable
 fun VerificationCodeModal(
@@ -44,6 +53,7 @@ fun VerificationCodeModal(
     var errorMessage by remember { mutableStateOf("") }
     
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     
     val incompleteCodeError = stringResource(R.string.verification_error_incomplete)
     val invalidCodeError = stringResource(R.string.verification_error_invalid)
@@ -57,6 +67,8 @@ fun VerificationCodeModal(
             
             delay(2000)
             isCodeSent = true
+            
+            sendVerificationCodeNotification(context, verificationCode)
         }
     }
     
@@ -96,15 +108,6 @@ fun VerificationCodeModal(
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    
-                    AnimatedVisibility(visible = isCodeSent && !isVerifying) {
-                        Text(
-                            text = stringResource(R.string.verification_demo_code, verificationCode),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            textAlign = TextAlign.Center
-                        )
-                    }
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
@@ -180,6 +183,34 @@ fun VerificationCodeModal(
             }
         }
     }
+}
+
+private fun sendVerificationCodeNotification(context: Context, code: String) {
+    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "Verification Codes",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "Channel for verification code notifications"
+            enableVibration(true)
+        }
+        notificationManager.createNotificationChannel(channel)
+    }
+    
+    val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+    
+    val notificationBuilder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle(context.getString(R.string.verification_notification_title))
+        .setContentText(context.getString(R.string.verification_notification_text, code))
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setSound(soundUri)
+        .setAutoCancel(true)
+    
+    notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
 }
 
 @Composable

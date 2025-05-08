@@ -402,7 +402,8 @@
     <string name="verification_title">Verification Required</string>
     <string name="verification_sending">Sending verification code to your device...</string>
     <string name="verification_enter_code">Enter the verification code sent to your device notification</string>
-    <string name="verification_demo_code">For demo purposes: Your code is %1$s</string>
+    <string name="verification_notification_title">Verification Code</string>
+    <string name="verification_notification_text">Your verification code is: %1$s</string>
     <string name="verification_processing">Processing payment...</string>
     <string name="verification_button_cancel">Cancel</string>
     <string name="verification_button_verify">Verify</string>

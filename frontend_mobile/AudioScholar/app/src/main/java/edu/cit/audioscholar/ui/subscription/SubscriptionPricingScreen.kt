@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +29,10 @@ fun SubscriptionPricingScreen(
     drawerState: DrawerState? = null,
     scope: CoroutineScope? = null
 ) {
+    LaunchedEffect(Unit) {
+        navController.currentBackStackEntry?.savedStateHandle?.set("navigatedFromSubscription", true)
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(

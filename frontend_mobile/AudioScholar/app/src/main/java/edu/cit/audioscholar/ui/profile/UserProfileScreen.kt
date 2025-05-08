@@ -218,7 +218,9 @@ fun UserProfileScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
-                onClick = { navController.navigate(Screen.SubscriptionPricing.route) },
+                onClick = { navController.navigate(Screen.SubscriptionPricing.route) {
+                    launchSingleTop = true 
+                }},
                 modifier = Modifier.fillMaxWidth(0.8f),
                 enabled = true
             ) {

@@ -471,11 +471,18 @@ fun MainAppScreen(
                 }
                 HorizontalDivider()
 
-                val mainNavItems = listOf(Screen.Record, Screen.Library, Screen.Settings, Screen.About)
-                val secondaryNavItems = listOf(Screen.SubscriptionPricing)
+                val navItems = listOf(
+                    Screen.Profile,
+                    Screen.SubscriptionPricing,
+                    Screen.Record,
+                    Screen.Library,
+                    Screen.Settings,
+                    Screen.About
+                )
 
                 Spacer(Modifier.height(12.dp))
-                mainNavItems.forEach { screen ->
+                
+                navItems.forEach { screen ->
                     screen.icon?.let { icon ->
                         NavigationDrawerItem(
                             icon = { Icon(icon, contentDescription = null) },
@@ -489,7 +496,6 @@ fun MainAppScreen(
                                             popUpTo(Screen.SubscriptionPricing.route) { inclusive = true }
                                         } else {
                                             popUpTo(navController.graph.id) { saveState = true }
-                                            restoreState = true
                                         }
                                         launchSingleTop = true
                                     }
@@ -500,29 +506,8 @@ fun MainAppScreen(
                     }
                 }
 
-                HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
-                secondaryNavItems.forEach { screen ->
-                    screen.icon?.let { icon ->
-                        NavigationDrawerItem(
-                            icon = { Icon(icon, contentDescription = null) },
-                            label = { Text(stringResource(screen.labelResId)) },
-                            selected = currentRoute == screen.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                if (currentRoute != screen.route) {
-                                    navController.navigate(screen.route) {
-                                        launchSingleTop = true
-                                    }
-                                }
-                            },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-
-
+                
                 Spacer(Modifier.weight(1f))
                 HorizontalDivider()
                 NavigationDrawerItem(

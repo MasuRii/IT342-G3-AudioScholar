@@ -456,13 +456,13 @@ fun EWalletPaymentDetailsScreen(
                     )
                     Spacer(modifier = Modifier.width(16.dp))
                     Image(
-                        painter = painterResource(id = R.drawable.ic_gcash),
+                        painter = painterResource(id = R.drawable.ic_paymaya),
                         contentDescription = "Paymaya",
                         modifier = Modifier.size(32.dp)
                     )
                     Spacer(modifier = Modifier.width(16.dp))
                     Image(
-                        painter = painterResource(id = R.drawable.ic_gcash),
+                        painter = painterResource(id = R.drawable.ic_coinsph),
                         contentDescription = "Coins.ph",
                         modifier = Modifier.size(32.dp)
                     )

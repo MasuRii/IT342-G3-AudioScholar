@@ -69,6 +69,8 @@ class PhilippinePhoneNumberVisualTransformation : VisualTransformation {
 @Composable
 fun EWalletPaymentDetailsScreen(
     navController: NavController,
+    formattedPrice: String,
+    priceAmount: Double
 ) {
     var contactNumber by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
@@ -340,7 +342,7 @@ fun EWalletPaymentDetailsScreen(
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            text = "₱150.00",
+                            text = formattedPrice,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -372,7 +374,7 @@ fun EWalletPaymentDetailsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "₱150.00",
+                            text = formattedPrice,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -476,6 +478,10 @@ fun EWalletPaymentDetailsScreen(
 @Composable
 fun EWalletPaymentDetailsScreenPreview() {
     AudioScholarTheme {
-        EWalletPaymentDetailsScreen(navController = rememberNavController())
+        EWalletPaymentDetailsScreen(
+            navController = rememberNavController(),
+            formattedPrice = "₱1,440.00/year",
+            priceAmount = 1440.0
+        )
     }
 } 

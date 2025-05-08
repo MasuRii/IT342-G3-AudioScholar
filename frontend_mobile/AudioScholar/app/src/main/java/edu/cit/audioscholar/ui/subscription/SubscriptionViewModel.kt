@@ -46,7 +46,11 @@ data class SubscriptionUiState(
 )
 
 sealed class SubscriptionEvent {
-    data class NavigateToPayment(val planId: String) : SubscriptionEvent()
+    data class NavigateToPayment(
+        val planId: String,
+        val formattedPrice: String,
+        val priceAmount: Double
+    ) : SubscriptionEvent()
     data class ShowError(val message: String) : SubscriptionEvent()
     data class ShowMessage(val message: String) : SubscriptionEvent()
 }
@@ -99,8 +103,19 @@ class SubscriptionViewModel @Inject constructor(
             }
 
             _uiState.update { it.copy(processingPurchase = true) }
-            
-            _eventChannel.send(SubscriptionEvent.NavigateToPayment(planId))
+
+            val selectedPlan = _uiState.value.plans.find { it.id == planId }
+            if (selectedPlan != null) {
+                _eventChannel.send(
+                    SubscriptionEvent.NavigateToPayment(
+                        planId = selectedPlan.id,
+                        formattedPrice = selectedPlan.formattedPrice,
+                        priceAmount = selectedPlan.priceAmount
+                    )
+                )
+            } else {
+                _eventChannel.send(SubscriptionEvent.ShowError("Selected plan not found."))
+            }
             
             _uiState.update { it.copy(processingPurchase = false) }
         }

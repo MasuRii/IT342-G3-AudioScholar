@@ -109,6 +109,8 @@ class ExpiryDateVisualTransformation : VisualTransformation {
 @Composable
 fun CardPaymentDetailsScreen(
     navController: NavController,
+    formattedPrice: String,
+    priceAmount: Double
 ) {
     var cardNumber by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
@@ -419,7 +421,7 @@ fun CardPaymentDetailsScreen(
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            text = "₱150.00",
+                            text = formattedPrice,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -451,7 +453,7 @@ fun CardPaymentDetailsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "₱150.00",
+                            text = formattedPrice,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -516,6 +518,10 @@ fun CardPaymentDetailsScreen(
 @Composable
 fun CardPaymentDetailsScreenPreview() {
     AudioScholarTheme {
-        CardPaymentDetailsScreen(navController = rememberNavController())
+        CardPaymentDetailsScreen(
+            navController = rememberNavController(),
+            formattedPrice = "₱1,440.00/year",
+            priceAmount = 1440.0
+        )
     }
 } 

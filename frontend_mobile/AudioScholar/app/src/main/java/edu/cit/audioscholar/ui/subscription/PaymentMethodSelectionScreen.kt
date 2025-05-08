@@ -29,7 +29,10 @@ import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PaymentMethodSelectionScreen(
-    navController: NavController
+    navController: NavController,
+    planId: String,
+    formattedPrice: String,
+    priceAmount: Double
 ) {
     Scaffold(
         topBar = {
@@ -71,7 +74,12 @@ fun PaymentMethodSelectionScreen(
 
             CreditCardPaymentOption(
                 onClick = {
-                    navController.navigate(Screen.CardPaymentDetails.route)
+                    val route = Screen.CardPaymentDetails.createRoute(
+                        planId = planId,
+                        formattedPrice = formattedPrice,
+                        priceAmount = priceAmount.toString()
+                    )
+                    navController.navigate(route)
                 }
             )
 
@@ -79,7 +87,12 @@ fun PaymentMethodSelectionScreen(
 
             EWalletPaymentOption(
                 onClick = {
-                    navController.navigate(Screen.EWalletPaymentDetails.route)
+                    val route = Screen.EWalletPaymentDetails.createRoute(
+                        planId = planId,
+                        formattedPrice = formattedPrice,
+                        priceAmount = priceAmount.toString()
+                    )
+                    navController.navigate(route)
                 }
             )
             
@@ -299,7 +312,12 @@ fun Modifier.rotate(degrees: Float): Modifier = this.then(graphicsLayer(rotation
 @Composable
 fun PaymentMethodSelectionScreenPreview() {
     AudioScholarTheme {
-        PaymentMethodSelectionScreen(navController = rememberNavController())
+        PaymentMethodSelectionScreen(
+            navController = rememberNavController(),
+            planId = "premium",
+            formattedPrice = "₱1,440.00/year",
+            priceAmount = 1440.0
+        )
     }
 }
 

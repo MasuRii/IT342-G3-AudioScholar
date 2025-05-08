@@ -49,7 +49,12 @@ fun SubscriptionPricingScreen(
         viewModel.eventFlow.collectLatest { event ->
             when (event) {
                 is SubscriptionEvent.NavigateToPayment -> {
-                    navController.navigate(Screen.PaymentMethodSelection.route)
+                    val route = Screen.PaymentMethodSelection.createRoute(
+                        planId = event.planId,
+                        formattedPrice = event.formattedPrice,
+                        priceAmount = event.priceAmount.toString()
+                    )
+                    navController.navigate(route)
                 }
                 is SubscriptionEvent.ShowError -> {
                     snackbarHostState.showSnackbar(event.message)

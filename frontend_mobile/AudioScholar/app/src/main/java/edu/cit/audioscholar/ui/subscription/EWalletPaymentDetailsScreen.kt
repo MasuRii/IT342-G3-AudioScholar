@@ -85,6 +85,8 @@ fun EWalletPaymentDetailsScreen(
     var contactNumber by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var contactNumberError by remember { mutableStateOf<Int?>(null) }
+    
+    var showVerificationModal by remember { mutableStateOf(false) }
 
     fun validateContactNumber(number: String): Int? {
         if (number.isBlank()) return R.string.payment_error_field_required
@@ -102,12 +104,9 @@ fun EWalletPaymentDetailsScreen(
         if (contactNumberError == null) {
             isLoading = true
             scope.launch {
-                kotlinx.coroutines.delay(2000)
+                kotlinx.coroutines.delay(1500)
                 isLoading = false
-                navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
-                    popUpTo(navController.graph.id) { inclusive = false }
-                    launchSingleTop = true
-                }
+                showVerificationModal = true
             }
         } else {
             scope.launch {
@@ -115,6 +114,20 @@ fun EWalletPaymentDetailsScreen(
             }
         }
     }
+    
+    fun onVerificationComplete() {
+        showVerificationModal = false
+        navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
+            popUpTo(navController.graph.id) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+    
+    VerificationCodeModal(
+        isVisible = showVerificationModal,
+        onDismissRequest = { showVerificationModal = false },
+        onVerificationComplete = { onVerificationComplete() }
+    )
 
     Scaffold(
         topBar = {

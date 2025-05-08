@@ -127,6 +127,8 @@ fun CardPaymentDetailsScreen(
     var cvv by remember { mutableStateOf("") }
     var cardholderName by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    
+    var showVerificationModal by remember { mutableStateOf(false) }
 
     var cardNumberError by remember { mutableStateOf<Int?>(null) }
     var expiryDateError by remember { mutableStateOf<Int?>(null) }
@@ -186,12 +188,9 @@ fun CardPaymentDetailsScreen(
         if (cardNumberError == null && expiryDateError == null && cvvError == null && cardholderNameError == null) {
             isLoading = true
             scope.launch {
-                kotlinx.coroutines.delay(2000)
+                kotlinx.coroutines.delay(1500)
                 isLoading = false
-                 navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
-                    popUpTo(navController.graph.id) { inclusive = false }
-                    launchSingleTop = true
-                }
+                showVerificationModal = true
             }
         } else {
             scope.launch {
@@ -199,6 +198,20 @@ fun CardPaymentDetailsScreen(
             }
         }
     }
+    
+    fun onVerificationComplete() {
+        showVerificationModal = false
+        navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
+            popUpTo(navController.graph.id) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+
+    VerificationCodeModal(
+        isVisible = showVerificationModal,
+        onDismissRequest = { showVerificationModal = false },
+        onVerificationComplete = { onVerificationComplete() }
+    )
 
     Scaffold(
         topBar = {

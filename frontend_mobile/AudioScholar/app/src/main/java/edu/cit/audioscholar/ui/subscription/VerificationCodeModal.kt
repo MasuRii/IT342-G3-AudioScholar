@@ -39,11 +39,24 @@ import kotlin.random.Random
 private const val NOTIFICATION_CHANNEL_ID = "verification_channel"
 private const val NOTIFICATION_ID = 1001
 
+enum class PaymentMethod {
+    CARD,
+    E_WALLET
+}
+
+data class PaymentDetails(
+    val method: PaymentMethod,
+    val cardholderName: String = "",
+    val cardLastFour: String = "", 
+    val contactNumber: String = ""
+)
+
 @Composable
 fun VerificationCodeModal(
     isVisible: Boolean,
     onDismissRequest: () -> Unit,
-    onVerificationComplete: () -> Unit
+    onVerificationComplete: () -> Unit,
+    paymentDetails: PaymentDetails = PaymentDetails(PaymentMethod.CARD)
 ) {
     val verificationCode = remember { generateVerificationCode() }
     var userInputCode by remember { mutableStateOf("") }
@@ -68,7 +81,7 @@ fun VerificationCodeModal(
             delay(2000)
             isCodeSent = true
             
-            sendVerificationCodeNotification(context, verificationCode)
+            sendVerificationCodeNotification(context, verificationCode, paymentDetails)
         }
     }
     
@@ -185,7 +198,7 @@ fun VerificationCodeModal(
     }
 }
 
-private fun sendVerificationCodeNotification(context: Context, code: String) {
+private fun sendVerificationCodeNotification(context: Context, code: String, paymentDetails: PaymentDetails) {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -202,15 +215,50 @@ private fun sendVerificationCodeNotification(context: Context, code: String) {
     
     val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
     
+    val (title, content) = getNotificationContent(code, paymentDetails)
+    
     val notificationBuilder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle(context.getString(R.string.verification_notification_title))
-        .setContentText(context.getString(R.string.verification_notification_text, code))
+        .setContentTitle(title)
+        .setContentText(content)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(content))
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setSound(soundUri)
         .setAutoCancel(true)
     
     notificationManager.notify(NOTIFICATION_ID, notificationBuilder.build())
+}
+
+private fun getNotificationContent(code: String, paymentDetails: PaymentDetails): Pair<String, String> {
+    return when (paymentDetails.method) {
+        PaymentMethod.CARD -> {
+            if (paymentDetails.cardholderName.isNotEmpty() && paymentDetails.cardLastFour.isNotEmpty()) {
+                Pair(
+                    "Bank Authentication Required",
+                    "Verification code: $code\n\nFor: ${paymentDetails.cardholderName}\nCard ending: ${paymentDetails.cardLastFour}"
+                )
+            } else {
+                Pair(
+                    "Card Verification",
+                    "Your verification code is: $code"
+                )
+            }
+        }
+        PaymentMethod.E_WALLET -> {
+            if (paymentDetails.contactNumber.isNotEmpty()) {
+                val eWalletProvider = "GCash"
+                Pair(
+                    "$eWalletProvider Payment Verification",
+                    "Verification code: $code\n\nFor: $eWalletProvider account\nPhone: +${paymentDetails.contactNumber}"
+                )
+            } else {
+                Pair(
+                    "E-Wallet Verification",
+                    "Your verification code is: $code"
+                )
+            }
+        }
+    }
 }
 
 @Composable

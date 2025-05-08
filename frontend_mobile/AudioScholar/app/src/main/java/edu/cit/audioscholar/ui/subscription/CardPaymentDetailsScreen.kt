@@ -210,7 +210,12 @@ fun CardPaymentDetailsScreen(
     VerificationCodeModal(
         isVisible = showVerificationModal,
         onDismissRequest = { showVerificationModal = false },
-        onVerificationComplete = { onVerificationComplete() }
+        onVerificationComplete = { onVerificationComplete() },
+        paymentDetails = PaymentDetails(
+            method = PaymentMethod.CARD,
+            cardholderName = cardholderName,
+            cardLastFour = if (cardNumber.length >= 4) cardNumber.takeLast(4) else ""
+        )
     )
 
     Scaffold(

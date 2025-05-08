@@ -126,7 +126,11 @@ fun EWalletPaymentDetailsScreen(
     VerificationCodeModal(
         isVisible = showVerificationModal,
         onDismissRequest = { showVerificationModal = false },
-        onVerificationComplete = { onVerificationComplete() }
+        onVerificationComplete = { onVerificationComplete() },
+        paymentDetails = PaymentDetails(
+            method = PaymentMethod.E_WALLET,
+            contactNumber = if (contactNumber.startsWith("9")) "63$contactNumber" else contactNumber
+        )
     )
 
     Scaffold(

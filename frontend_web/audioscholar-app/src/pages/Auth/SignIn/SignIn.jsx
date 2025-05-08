@@ -2,6 +2,7 @@ import { getAuth, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopu
 import React, { useState } from 'react';
 import { FaGithub } from 'react-icons/fa';
 import { FcGoogle } from 'react-icons/fc';
+import { FiMic, FiCheckCircle, FiYoutube, FiUpload, FiCloud, FiBriefcase } from 'react-icons/fi';
 import { Link, useNavigate } from 'react-router-dom';
 import { firebaseApp } from '../../../config/firebaseConfig';
 import { verifyFirebaseTokenWithBackend, verifyGoogleTokenWithBackend } from '../../../services/authService';
@@ -14,6 +15,9 @@ const SignIn = () => {
         const [error, setError] = useState(null);
         const navigate = useNavigate();
         const auth = getAuth(firebaseApp);
+
+        // State for feature carousel
+        const [currentFeatureIndex, setCurrentFeatureIndex] = useState(0);
 
 
         const handleBackendVerification = async (idToken) => {
@@ -155,6 +159,50 @@ const SignIn = () => {
                 window.location.href = authUrl;
         };
 
+        const signInFeatures = [
+                {
+                        icon: FiMic,
+                        title: "Lecture Recording (Offline Capable)",
+                        description: "Easily record lectures on your mobile, even offline. Upload pre-recorded audio via mobile or web. Focus on listening, not writing."
+                },
+                {
+                        icon: FiCheckCircle,
+                        title: "AI-Powered Summaries & Notes",
+                        description: "Our AI processes your audio after the lecture to automatically generate structured summaries, key points, and topic lists."
+                },
+                {
+                        icon: FiYoutube,
+                        title: "Personalized Recommendations",
+                        description: "Get relevant YouTube video recommendations based on your lecture content to deepen your understanding."
+                },
+                {
+                        icon: FiUpload,
+                        title: "PowerPoint Context (Optional)",
+                        description: "Optionally upload lecture slides to provide context, enhancing the accuracy and relevance of AI summaries."
+                },
+                {
+                        icon: FiCloud,
+                        title: "Optional Cloud Sync",
+                        description: "Securely sync recordings and notes to the cloud for backup and access across devices (manual or automatic)."
+                },
+                {
+                        icon: FiBriefcase,
+                        title: "Web Access & Management",
+                        description: "Access your recordings, summaries, and recommendations, or upload audio files easily through our web interface."
+                }
+        ];
+
+        const handleNextFeature = () => {
+                setCurrentFeatureIndex((prevIndex) => (prevIndex + 1) % signInFeatures.length);
+        };
+
+        const handlePrevFeature = () => {
+                setCurrentFeatureIndex((prevIndex) => (prevIndex - 1 + signInFeatures.length) % signInFeatures.length);
+        };
+
+        // const displayedFeature = signInFeatures.length > 0 ? signInFeatures[currentFeatureIndex] : null; // No longer needed
+
+
         return (
                 <>
                         <Header />
@@ -162,21 +210,72 @@ const SignIn = () => {
                                 <title>AudioScholar - Sign In</title>
                                 <div className="container mx-auto px-4 animate-fade-in-up">
                                         <div className="max-w-4xl mx-auto grid md:grid-cols-2 rounded-lg shadow-xl overflow-hidden">
-                                                <div className="hidden md:block bg-[#2D8A8A] p-10 text-white flex flex-col justify-center">
-                                                        <h2 className="text-3xl font-bold mb-4">Welcome Back <br /> to AudioScholar</h2>
-                                                        <p className="text-gray-200 mb-8">
-                                                                Continue your journey of smarter learning with AI-powered lecture notes.
-                                                        </p>
-                                                        <div className="space-y-6">
-                                                                <div className="bg-black bg-opacity-20 p-4 rounded-lg">
-                                                                        <h3 className="font-semibold mb-1">Seamless Sync</h3>
-                                                                        <p className="text-sm text-gray-300">Access your lecture recordings and summaries across all your devices.</p>
-                                                                </div>
-                                                                <div className="bg-black bg-opacity-20 p-4 rounded-lg">
-                                                                        <h3 className="font-semibold mb-1">Premium Features</h3>
-                                                                        <p className="text-sm text-gray-300">Unlock background recording and unlimited summaries with your premium account.</p>
-                                                                </div>
+                                                <div className="hidden md:block bg-[#2D8A8A] p-8 text-white flex flex-col h-full">
+                                                        <div className="flex-shrink-0 mb-8">
+                                                                <h2 className="text-3xl font-bold mb-3">Unlock Your Learning Potential</h2>
+                                                                <p className="text-gray-200 text-sm">
+                                                                        Sign in to access your personalized learning hub with AudioScholar.
+                                                                </p>
                                                         </div>
+
+                                                        {/* Carousel Section */}
+                                                        {signInFeatures.length > 0 && (
+                                                                <div className="flex flex-col items-center justify-center flex-grow">
+                                                                        {/* Container for the two feature cards */}
+                                                                        <div className="w-full max-w-sm space-y-4">
+                                                                                {/* Feature Card 1 */}
+                                                                                {( () => {
+                                                                                        const FeatureIcon1 = signInFeatures[currentFeatureIndex].icon;
+                                                                                        return (
+                                                                                                <div key={`feature-card-1-${currentFeatureIndex}`} className="bg-black bg-opacity-25 p-5 rounded-xl shadow-lg w-full min-h-[150px] flex items-start transition-opacity duration-300 ease-in-out">
+                                                                                                        <div className="w-11 h-11 bg-teal-500 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                                                                                                                <FeatureIcon1 className="w-5 h-5 text-white" />
+                                                                                                        </div>
+                                                                                                        <div className="flex-grow">
+                                                                                                                <h3 className="font-semibold text-md text-white mb-1.5">{signInFeatures[currentFeatureIndex].title}</h3>
+                                                                                                                <p className="text-gray-300 text-xs leading-relaxed">{signInFeatures[currentFeatureIndex].description}</p>
+                                                                                                        </div>
+                                                                                                </div>
+                                                                                        );
+                                                                                })()}
+
+                                                                                {/* Feature Card 2 (conditional) */}
+                                                                                {signInFeatures.length > 1 && ( () => {
+                                                                                        const secondIndex = (currentFeatureIndex + 1) % signInFeatures.length;
+                                                                                        const FeatureIcon2 = signInFeatures[secondIndex].icon;
+                                                                                        return (
+                                                                                                <div key={`feature-card-2-${currentFeatureIndex}`} className="bg-black bg-opacity-25 p-5 rounded-xl shadow-lg w-full min-h-[150px] flex items-start transition-opacity duration-300 ease-in-out">
+                                                                                                        <div className="w-11 h-11 bg-teal-500 rounded-lg flex items-center justify-center mr-4 flex-shrink-0">
+                                                                                                                <FeatureIcon2 className="w-5 h-5 text-white" />
+                                                                                                        </div>
+                                                                                                        <div className="flex-grow">
+                                                                                                                <h3 className="font-semibold text-md text-white mb-1.5">{signInFeatures[secondIndex].title}</h3>
+                                                                                                                <p className="text-gray-300 text-xs leading-relaxed">{signInFeatures[secondIndex].description}</p>
+                                                                                                        </div>
+                                                                                                </div>
+                                                                                        );
+                                                                                })()}
+                                                                        </div>
+
+                                                                        {/* Navigation - below the cards */}
+                                                                        {signInFeatures.length > 1 && ( // Only show nav if more than one feature to cycle through
+                                                                                <div className="mt-8 w-full max-w-sm"> {/* Increased mt from mt-6 to mt-8 */}
+                                                                                        <div className="flex items-center justify-center space-x-2.5 mb-4">
+                                                                                                {signInFeatures.map((_, index) => (
+                                                                                                        <button
+                                                                                                                key={index}
+                                                                                                                onClick={() => setCurrentFeatureIndex(index)}
+                                                                                                                className={`w-2 h-2 rounded-full transition-all duration-300 ${currentFeatureIndex === index ? 'bg-white ring-2 ring-offset-2 ring-offset-[#2D8A8A] ring-white scale-110' : 'bg-gray-400 bg-opacity-40 hover:bg-opacity-60'}`}
+                                                                                                                aria-label={`Go to feature ${index + 1}`}
+                                                                                                        />
+                                                                                                ))}
+                                                                                        </div>
+                                                                                </div>
+                                                                        )}
+                                                                </div>
+                                                        )}
+                                                        {/* Fallback or Spacer if no features, or to help with justify-between if used */}
+                                                        {signInFeatures.length === 0 && <div className="flex-grow"></div>} {/* Adjusted condition from !displayedFeature */}
                                                 </div>
 
                                                 <div className="bg-white p-8 md:p-10">

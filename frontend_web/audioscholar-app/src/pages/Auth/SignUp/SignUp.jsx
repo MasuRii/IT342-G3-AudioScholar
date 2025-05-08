@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { signUp } from '../../../services/authService';
 import { Footer, Header } from '../../Home/HomePage';
@@ -11,6 +12,7 @@ const SignUp = () => {
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState(null);
   const [backendError, setBackendError] = useState(null);
+  const navigate = useNavigate();
 
   const handleSignUp = async (e) => {
     e.preventDefault();
@@ -58,6 +60,7 @@ const SignUp = () => {
       setLastName('');
       setEmail('');
       setPassword('');
+      navigate('/signin');
 
     } catch (err) {
       console.error('Sign up error:', err);

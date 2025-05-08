@@ -81,7 +81,7 @@ fun EWalletPaymentDetailsScreen(
                 kotlinx.coroutines.delay(2000)
                 isLoading = false
                  navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
-                    popUpTo(edu.cit.audioscholar.ui.main.Screen.SubscriptionPricing.route) { inclusive = true }
+                    popUpTo(navController.graph.id) { inclusive = false }
                     launchSingleTop = true
                 }
             }

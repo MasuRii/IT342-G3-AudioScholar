@@ -434,7 +434,6 @@ fun MainAppScreen(
                                     navController.navigate(Screen.Profile.route) {
                                         popUpTo(navController.graph.id) { saveState = true }
                                         launchSingleTop = true
-                                        restoreState = true
                                     }
                                 }
                             }
@@ -492,11 +491,7 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != screen.route) {
                                     navController.navigate(screen.route) {
-                                        if (currentRoute == Screen.SubscriptionPricing.route) {
-                                            popUpTo(Screen.SubscriptionPricing.route) { inclusive = true }
-                                        } else {
-                                            popUpTo(navController.graph.id) { saveState = true }
-                                        }
+                                        popUpTo(navController.graph.id) { saveState = true }
                                         launchSingleTop = true
                                     }
                                 }

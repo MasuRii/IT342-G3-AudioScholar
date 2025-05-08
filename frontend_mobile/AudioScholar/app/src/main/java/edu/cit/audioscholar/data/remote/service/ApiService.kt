@@ -92,4 +92,10 @@ interface ApiService {
         @Body fcmTokenRequest: FcmTokenRequestDto
     ): Response<Unit>
 
+    @PUT("/api/users/{userId}/role")
+    suspend fun updateUserRole(
+        @Path("userId") userId: String,
+        @Body roleRequest: UpdateRoleRequest
+    ): Response<Unit>
+
 }

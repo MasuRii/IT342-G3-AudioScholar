@@ -13,6 +13,7 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UpdateRoleRequest
 import edu.cit.audioscholar.data.remote.dto.UpdateUserProfileRequest
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.data.remote.service.ApiService
@@ -507,5 +508,35 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun clearLocalUserCache() {
         Log.d(TAG_AUTH_REPO, "Clearing user profile from DataStore.")
         userDataStore.clearUserProfile()
+    }
+
+    override suspend fun updateUserRole(userId: String, role: String): SimpleResult {
+        return try {
+            Log.d(TAG_AUTH_REPO, "Updating user role to: $role for user: $userId")
+            val response = apiService.updateUserRole(userId, UpdateRoleRequest(role))
+
+            if (response.isSuccessful) {
+                Log.i(TAG_AUTH_REPO, "User role updated successfully to: $role")
+                Resource.Success(Unit)
+            } else {
+                val errorBody = response.errorBody()?.string()
+                val errorMessage = try {
+                    gson.fromJson(errorBody, AuthResponse::class.java)?.message ?: errorBody ?: "Unknown server error"
+                } catch (e: Exception) {
+                    errorBody ?: "Unknown server error (Code: ${response.code()})"
+                }
+                Log.e(TAG_AUTH_REPO, "Role update failed: ${response.code()} - $errorMessage")
+                Resource.Error(errorMessage)
+            }
+        } catch (e: IOException) {
+            Log.e(TAG_AUTH_REPO, "Network/IO exception during role update: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_network_connection))
+        } catch (e: HttpException) {
+            Log.e(TAG_AUTH_REPO, "HTTP exception during role update: ${e.code()} - ${e.message()}", e)
+            Resource.Error("HTTP Error: ${e.code()} ${e.message()}")
+        } catch (e: Exception) {
+            Log.e(TAG_AUTH_REPO, "Unexpected exception during role update: ${e.message}", e)
+            Resource.Error(application.getString(R.string.error_unexpected, e.message ?: "Unknown error"))
+        }
     }
 }

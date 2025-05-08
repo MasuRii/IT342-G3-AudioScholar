@@ -7,6 +7,7 @@ import edu.cit.audioscholar.data.remote.dto.FirebaseTokenRequest
 import edu.cit.audioscholar.data.remote.dto.GitHubCodeRequest
 import edu.cit.audioscholar.data.remote.dto.LoginRequest
 import edu.cit.audioscholar.data.remote.dto.RegistrationRequest
+import edu.cit.audioscholar.data.remote.dto.UpdateRoleRequest
 import edu.cit.audioscholar.data.remote.dto.UpdateUserProfileRequest
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.util.Resource
@@ -27,6 +28,8 @@ interface AuthRepository {
 
     suspend fun updateUserProfile(request: UpdateUserProfileRequest): UserProfileResult
     suspend fun uploadAvatar(imageUri: Uri): UserProfileResult
+    
+    suspend fun updateUserRole(userId: String, role: String): SimpleResult
 
     suspend fun changePassword(request: ChangePasswordRequest): SimpleResult
 

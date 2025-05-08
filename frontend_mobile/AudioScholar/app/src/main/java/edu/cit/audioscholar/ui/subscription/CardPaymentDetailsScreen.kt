@@ -30,14 +30,19 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.text.NumberFormat
 import java.util.Locale
+import javax.inject.Inject
+import androidx.compose.material3.HorizontalDivider
 
 class CreditCardNumberVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
@@ -112,8 +117,11 @@ class ExpiryDateVisualTransformation : VisualTransformation {
 fun CardPaymentDetailsScreen(
     navController: NavController,
     formattedPrice: String,
-    priceAmount: Double
+    priceAmount: Double,
+    viewModel: PaymentViewModel = hiltViewModel(),
+    authRepository: AuthRepository
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val taxRate = 0.12
     val taxAmount = priceAmount * taxRate
     val totalAmount = priceAmount + taxAmount
@@ -179,6 +187,13 @@ fun CardPaymentDetailsScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearErrorMessage()
+        }
+    }
+
     fun handleSubmit() {
         cardNumberError = validateCardNumber(cardNumber)
         expiryDateError = validateExpiryDate(expiryDate)
@@ -215,7 +230,9 @@ fun CardPaymentDetailsScreen(
             method = PaymentMethod.CARD,
             cardholderName = cardholderName,
             cardLastFour = if (cardNumber.length >= 4) cardNumber.takeLast(4) else ""
-        )
+        ),
+        userId = uiState.userId,
+        authRepository = authRepository
     )
 
     Scaffold(
@@ -438,7 +455,7 @@ fun CardPaymentDetailsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -455,6 +472,8 @@ fun CardPaymentDetailsScreen(
                         )
                     }
                     
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -469,7 +488,7 @@ fun CardPaymentDetailsScreen(
                         )
                     }
                     
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -549,7 +568,8 @@ fun CardPaymentDetailsScreenPreview() {
         CardPaymentDetailsScreen(
             navController = rememberNavController(),
             formattedPrice = "₱1,440.00/year",
-            priceAmount = 1440.0
+            priceAmount = 1440.0,
+            authRepository = PreviewAuthRepository()
         )
     }
 } 

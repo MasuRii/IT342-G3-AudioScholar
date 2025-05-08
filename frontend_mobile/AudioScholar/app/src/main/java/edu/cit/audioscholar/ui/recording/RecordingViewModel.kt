@@ -274,8 +274,30 @@ class RecordingViewModel @Inject constructor(
     }
 
     fun confirmCancelRecording() {
-        _uiState.update { it.copy(showCancelConfirmationDialog = false) }
-        sendServiceCommand(RecordingService.ACTION_CANCEL_RECORDING)
+        val currentUiState = _uiState.value
+
+        if (!currentUiState.showCancelConfirmationDialog) {
+            Log.w("RecordingViewModel", "confirmCancelRecording called but showCancelConfirmationDialog is false. Possible duplicate action or state mismatch. Ignoring.")
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                showCancelConfirmationDialog = false,
+                isRecording = if (currentUiState.isRecording) false else it.isRecording,
+                isPaused = if (currentUiState.isRecording) false else it.isPaused,
+                currentAmplitude = if (currentUiState.isRecording) 0f else it.currentAmplitude,
+                elapsedTimeMillis = if (currentUiState.isRecording) 0L else it.elapsedTimeMillis,
+                elapsedTimeFormatted = if (currentUiState.isRecording) formatElapsedTime(0L) else it.elapsedTimeFormatted
+            )
+        }
+
+        if (currentUiState.isRecording) {
+            Log.d("RecordingViewModel", "Proceeding to send ACTION_CANCEL_RECORDING. UI state has been optimistically updated.")
+            sendServiceCommand(RecordingService.ACTION_CANCEL_RECORDING)
+        } else {
+            Log.w("RecordingViewModel", "confirmCancelRecording: 'isRecording' was already false (before optimistic update) when cancel was confirmed. Not sending command to service. Dialog dismissed.")
+        }
     }
 
     fun dismissCancelConfirmation() {
@@ -316,23 +338,20 @@ class RecordingViewModel @Inject constructor(
         val savedFileName = savedFile.name
         val timestamp = System.currentTimeMillis()
         
-        // Generate default title if none provided
         val finalTitle = title ?: run {
             val dateFormat = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
             "Recording ${dateFormat.format(Date(timestamp))}"
         }
 
-        // Ensure description is handled (assuming null if not passed)
-        val description: String? = null // Or get from UI if you add a description field
+        val description: String? = null
 
         val metadata = RecordingMetadata(
             filePath = savedFilePath,
             fileName = savedFileName,
             title = finalTitle,
-            description = description, // Add description field
+            description = description,
             timestampMillis = timestamp,
             durationMillis = finishedRecordingDuration,
-            // Initialize new cache fields to null for a fresh recording
             remoteRecordingId = null,
             cachedSummaryText = null,
             cachedGlossaryItems = null,

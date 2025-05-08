@@ -74,7 +74,7 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     }
     object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
-    object SubscriptionPricing : Screen("subscription_pricing", R.string.nav_subscription_pricing, Icons.Filled.CreditCard)
+    object SubscriptionPricing : Screen("subscription_pricing", R.string.nav_audioscholar_pro, Icons.Filled.School)
     object PaymentMethodSelection : Screen("payment_method_selection", R.string.nav_payment_method_selection)
     object CardPaymentDetails : Screen("card_payment_details", R.string.nav_card_payment_details)
     object EWalletPaymentDetails : Screen("ewallet_payment_details", R.string.nav_ewallet_payment_details)
@@ -145,7 +145,8 @@ val screensWithDrawer = listOf(
     Screen.Settings.route,
     Screen.Profile.route,
     Screen.About.route,
-    Screen.ChangePassword.route
+    Screen.ChangePassword.route,
+    Screen.SubscriptionPricing.route
 )
 
 
@@ -484,9 +485,13 @@ fun MainAppScreen(
                                 scope.launch { drawerState.close() }
                                 if (currentRoute != screen.route) {
                                     navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.id) { saveState = true }
+                                        if (currentRoute == Screen.SubscriptionPricing.route) {
+                                            popUpTo(Screen.SubscriptionPricing.route) { inclusive = true }
+                                        } else {
+                                            popUpTo(navController.graph.id) { saveState = true }
+                                            restoreState = true
+                                        }
                                         launchSingleTop = true
-                                        restoreState = true
                                     }
                                 }
                             },

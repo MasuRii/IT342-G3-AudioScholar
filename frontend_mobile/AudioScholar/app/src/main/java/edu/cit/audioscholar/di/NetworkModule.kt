@@ -70,9 +70,9 @@ class TimeoutInterceptor @Inject constructor() : Interceptor {
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val PRIMARY_BASE_URL = "http://192.168.254.100:8080/"
-    private const val FALLBACK_URL_1 = "http://192.168.254.100:8080/"
-    private const val FALLBACK_URL_2 = "http://192.168.254.100:8080/"
+    private const val PRIMARY_BASE_URL = "https://it342-g3-audioscholar-onrender-com.onrender.com/"
+    private const val FALLBACK_URL_1 = "https://it342-g3-audioscholar-onrender-com.onrender.com/"
+    private const val FALLBACK_URL_2 = "https://it342-g3-audioscholar-onrender-com.onrender.com/"
 
     private const val PREFS_NAME = "AudioScholarPrefs"
     private const val TAG = "NetworkModule"

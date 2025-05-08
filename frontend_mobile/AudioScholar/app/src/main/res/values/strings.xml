@@ -92,7 +92,7 @@
     <string name="nav_logout">Logout</string>
     <string name="nav_registration">Register</string>
     <string name="nav_change_password">Change Password</string>
-    <string name="nav_subscription_pricing">Subscription</string>
+    <string name="nav_audioscholar_pro">AudioScholar Pro</string>
     <string name="nav_payment_method_selection">Select Payment Method</string>
     <string name="nav_card_payment_details">Card Payment</string>
     <string name="nav_ewallet_payment_details">E-Wallet Payment</string>

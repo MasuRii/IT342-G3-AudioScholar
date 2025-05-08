@@ -224,7 +224,7 @@ fun UserProfileScreen(
             ) {
                 Icon(Icons.Filled.CreditCard, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text(stringResource(R.string.nav_subscription_pricing))
+                Text(stringResource(R.string.nav_audioscholar_pro))
             }
 
             Spacer(modifier = Modifier.height(16.dp))

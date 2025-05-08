@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.domain.repository.AuthRepository
+import edu.cit.audioscholar.util.PremiumStatusManager
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +24,8 @@ data class PaymentUiState(
 @HiltViewModel
 class PaymentViewModel @Inject constructor(
     val authRepository: AuthRepository,
-    private val prefs: SharedPreferences
+    private val prefs: SharedPreferences,
+    val premiumStatusManager: PremiumStatusManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PaymentUiState())
@@ -37,46 +39,33 @@ class PaymentViewModel @Inject constructor(
 
     private fun loadUserData() {
         viewModelScope.launch {
-            Log.d(TAG, "Starting to collect user profile flow.")
             _uiState.update { it.copy(isLoading = true) }
             
-            authRepository.getUserProfile()
-                .collect { result ->
-                    when (result) {
-                        is Resource.Success -> {
-                            val profileData = result.data
-                            if (profileData != null) {
-                                Log.i(TAG, "Profile loaded/updated, userId: ${profileData.userId}")
-                                _uiState.update {
-                                    it.copy(
-                                        isLoading = false,
-                                        userId = profileData.userId,
-                                        errorMessage = null
-                                    )
-                                }
-                            } else {
-                                Log.w(TAG, "Profile fetch Resource.Success but data was null")
-                                _uiState.update {
-                                    it.copy(
-                                        isLoading = false,
-                                        errorMessage = "Failed to retrieve user data."
-                                    )
-                                }
-                            }
-                        }
-                        is Resource.Error -> {
-                            Log.e(TAG, "Error loading profile: ${result.message}")
-                            _uiState.update {
-                                it.copy(
-                                    isLoading = false,
-                                    errorMessage = result.message ?: "An unexpected error occurred."
-                                )
-                            }
-                        }
-                        is Resource.Loading -> {
+            authRepository.getUserProfile().collect { result ->
+                when (result) {
+                    is Resource.Success -> {
+                        Log.d(TAG, "User profile loaded successfully: ${result.data?.userId}")
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                userId = result.data?.userId,
+                                errorMessage = null
+                            )
                         }
                     }
+                    is Resource.Error -> {
+                        Log.e(TAG, "Error loading user profile: ${result.message}")
+                        _uiState.update { 
+                            it.copy(
+                                isLoading = false,
+                                errorMessage = "Failed to load user data: ${result.message}"
+                            )
+                        }
+                    }
+                    is Resource.Loading -> {
+                    }
                 }
+            }
         }
     }
 

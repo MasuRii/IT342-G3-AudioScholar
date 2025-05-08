@@ -2,12 +2,16 @@ package edu.cit.audioscholar.ui.main
 
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.data.remote.dto.UserProfileDto
 import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.auth.LoginViewModel
+import edu.cit.audioscholar.util.PremiumStatusManager
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -22,13 +26,32 @@ import javax.inject.Inject
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val prefs: SharedPreferences
+    private val prefs: SharedPreferences,
+    private val premiumStatusManager: PremiumStatusManager
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "MainViewModel"
+    }
+
+    var isPremiumUser by mutableStateOf(premiumStatusManager.isPremiumUser())
+        private set
+
+    init {
+        Log.d(TAG, "Initial premium status: $isPremiumUser")
+    }
 
     val userProfileState: StateFlow<Resource<UserProfileDto?>> = authRepository.getUserProfile()
         .map { resource ->
             when (resource) {
-                is Resource.Success -> Resource.Success<UserProfileDto?>(resource.data)
+                is Resource.Success -> {
+                    Log.d(TAG, "Profile success with roles: ${resource.data?.roles}")
+                    premiumStatusManager.updatePremiumStatus(resource.data)
+                    val newPremiumStatus = premiumStatusManager.isPremiumUser()
+                    Log.d(TAG, "Premium status after profile update: $newPremiumStatus (changed from $isPremiumUser)")
+                    isPremiumUser = newPremiumStatus
+                    Resource.Success<UserProfileDto?>(resource.data)
+                }
                 is Resource.Error -> Resource.Error<UserProfileDto?>(resource.message ?: "Unknown error", resource.data)
                 is Resource.Loading -> Resource.Loading<UserProfileDto?>(resource.data)
             }
@@ -44,26 +67,32 @@ class MainViewModel @Inject constructor(
 
     fun performLogout() {
         viewModelScope.launch {
-            Log.d("MainViewModel", "Performing logout: Calling API and clearing cache/prefs.")
+            Log.d(TAG, "Logout initiated by user. Calling API.")
+            
             val result = authRepository.logout()
             when (result) {
-                is Resource.Success -> Log.i("MainViewModel", "API logout successful.")
-                is Resource.Error -> Log.w("MainViewModel", "API logout failed: ${result.message}. Proceeding with local logout.")
+                is Resource.Success -> {
+                    Log.i(TAG, "API logout successful.")
+                }
+                is Resource.Error -> {
+                    Log.w(TAG, "API logout failed: ${result.message}. Proceeding with local logout.")
+                }
                 is Resource.Loading -> {}
             }
-
+            
+            Log.d(TAG, "Proceeding to clear local session data.")
             authRepository.clearLocalUserCache()
-            Log.d("MainViewModel", "Local user cache cleared.")
-
-            Log.d("MainViewModel", "Clearing SharedPreferences.")
+            
+            premiumStatusManager.clearPremiumStatus()
+            isPremiumUser = false
+            
             with(prefs.edit()) {
-                putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
                 remove(LoginViewModel.KEY_AUTH_TOKEN)
+                putBoolean(SplashActivity.KEY_IS_LOGGED_IN, false)
                 apply()
             }
-            Log.d("MainViewModel", "SharedPreferences cleared.")
-
-            Log.d("MainViewModel", "Sending logout complete event.")
+            
+            Log.d(TAG, "Auth token and login status cleared. Emitting logout event.")
             _logoutCompleteEventChannel.send(Unit)
         }
     }

@@ -410,4 +410,10 @@
     <string name="verification_error_incomplete">Please enter all 6 digits</string>
     <string name="verification_error_invalid">Invalid verification code</string>
 
+    <!-- Premium status related -->
+    <string name="premium_label">Premium</string>
+    <string name="premium_badge_description">Premium user badge</string>
+    <string name="premium_status_description">You have premium access to all features</string>
+    <string name="premium_upgrade_button">Upgrade to Premium</string>
+
 </resources>

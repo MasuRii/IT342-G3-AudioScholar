@@ -19,5 +19,8 @@ data class UserProfileDto(
     val firstName: String?,
 
     @SerializedName("lastName")
-    val lastName: String?
+    val lastName: String?,
+    
+    @SerializedName("roles")
+    val roles: List<String>? = null
 )

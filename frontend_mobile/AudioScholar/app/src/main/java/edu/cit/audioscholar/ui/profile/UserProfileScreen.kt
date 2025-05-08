@@ -3,6 +3,7 @@ package edu.cit.audioscholar.ui.profile
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
@@ -11,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -122,6 +124,26 @@ fun UserProfileScreen(
                         .background(MaterialTheme.colorScheme.secondaryContainer),
                     contentScale = ContentScale.Crop
                 )
+                
+                if (uiState.isPremium) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(32.dp)
+                            .offset(x = 6.dp, y = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = stringResource(R.string.premium_badge_description),
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .size(24.dp)
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -140,6 +162,32 @@ fun UserProfileScreen(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                
+                if (uiState.isPremium) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.premium_status_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
             } else {
                 Text(
                     text = stringResource(R.string.drawer_header_user_name),
@@ -189,11 +237,27 @@ fun UserProfileScreen(
                     launchSingleTop = true 
                 }},
                 modifier = Modifier.fillMaxWidth(0.8f),
-                enabled = true
+                enabled = !uiState.isPremium,
+                colors = if (!uiState.isPremium) 
+                    ButtonDefaults.buttonColors() 
+                else 
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
             ) {
-                Icon(Icons.Filled.School, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                Icon(
+                    Icons.Filled.School, 
+                    contentDescription = null, 
+                    modifier = Modifier.size(ButtonDefaults.IconSize)
+                )
                 Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text(stringResource(R.string.nav_audioscholar_pro))
+                Text(
+                    if (uiState.isPremium) 
+                        stringResource(R.string.premium_label) 
+                    else 
+                        stringResource(R.string.premium_upgrade_button)
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

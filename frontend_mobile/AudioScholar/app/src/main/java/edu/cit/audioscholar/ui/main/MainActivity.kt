@@ -61,6 +61,8 @@ import edu.cit.audioscholar.ui.subscription.CardPaymentDetailsScreen
 import edu.cit.audioscholar.ui.subscription.EWalletPaymentDetailsScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
+import androidx.hilt.navigation.compose.hiltViewModel
+import edu.cit.audioscholar.ui.subscription.PaymentViewModel
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
@@ -678,6 +680,7 @@ fun MainAppScreen(
                 val planId = backStackEntry.arguments?.getString(Screen.ARG_PLAN_ID) ?: ""
                 val formattedPrice = URLDecoder.decode(backStackEntry.arguments?.getString(Screen.ARG_FORMATTED_PRICE) ?: "", "UTF-8")
                 val priceAmount = backStackEntry.arguments?.getString(Screen.ARG_PRICE_AMOUNT)?.toDoubleOrNull() ?: 0.0
+                val viewModel: PaymentViewModel = hiltViewModel()
                 PaymentMethodSelectionScreen(
                     navController = navController,
                     planId = planId,
@@ -695,10 +698,12 @@ fun MainAppScreen(
             ) { backStackEntry ->
                 val formattedPrice = URLDecoder.decode(backStackEntry.arguments?.getString(Screen.ARG_FORMATTED_PRICE) ?: "", "UTF-8")
                 val priceAmount = backStackEntry.arguments?.getString(Screen.ARG_PRICE_AMOUNT)?.toDoubleOrNull() ?: 0.0
+                val viewModel: PaymentViewModel = hiltViewModel()
                 CardPaymentDetailsScreen(
                     navController = navController,
                     formattedPrice = formattedPrice,
-                    priceAmount = priceAmount
+                    priceAmount = priceAmount,
+                    authRepository = viewModel.authRepository
                 )
             }
             composable(
@@ -711,10 +716,12 @@ fun MainAppScreen(
             ) { backStackEntry ->
                 val formattedPrice = URLDecoder.decode(backStackEntry.arguments?.getString(Screen.ARG_FORMATTED_PRICE) ?: "", "UTF-8")
                 val priceAmount = backStackEntry.arguments?.getString(Screen.ARG_PRICE_AMOUNT)?.toDoubleOrNull() ?: 0.0
+                val viewModel: PaymentViewModel = hiltViewModel()
                 EWalletPaymentDetailsScreen(
                     navController = navController,
                     formattedPrice = formattedPrice,
-                    priceAmount = priceAmount
+                    priceAmount = priceAmount,
+                    authRepository = viewModel.authRepository
                 )
             }
         }

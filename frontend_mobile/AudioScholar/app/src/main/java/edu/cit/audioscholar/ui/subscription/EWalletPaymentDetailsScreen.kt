@@ -29,13 +29,17 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
+import androidx.compose.material3.HorizontalDivider
 
 class PhilippinePhoneNumberVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
@@ -72,8 +76,11 @@ class PhilippinePhoneNumberVisualTransformation : VisualTransformation {
 fun EWalletPaymentDetailsScreen(
     navController: NavController,
     formattedPrice: String,
-    priceAmount: Double
+    priceAmount: Double,
+    viewModel: PaymentViewModel = hiltViewModel(),
+    authRepository: AuthRepository
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val taxRate = 0.12
     val taxAmount = priceAmount * taxRate
     val totalAmount = priceAmount + taxAmount
@@ -98,6 +105,13 @@ fun EWalletPaymentDetailsScreen(
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearErrorMessage()
+        }
+    }
 
     fun handleSubmit() {
         contactNumberError = validateContactNumber(contactNumber)
@@ -130,7 +144,9 @@ fun EWalletPaymentDetailsScreen(
         paymentDetails = PaymentDetails(
             method = PaymentMethod.E_WALLET,
             contactNumber = if (contactNumber.startsWith("9")) "63$contactNumber" else contactNumber
-        )
+        ),
+        userId = uiState.userId,
+        authRepository = authRepository
     )
 
     Scaffold(
@@ -358,7 +374,7 @@ fun EWalletPaymentDetailsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -389,7 +405,7 @@ fun EWalletPaymentDetailsScreen(
                         )
                     }
                     
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -508,7 +524,9 @@ fun EWalletPaymentDetailsScreenPreview() {
         EWalletPaymentDetailsScreen(
             navController = rememberNavController(),
             formattedPrice = "₱1,440.00/year",
-            priceAmount = 1440.0
+            priceAmount = 1440.0,
+            authRepository = PreviewAuthRepository()
         )
     }
-} 
+}
+

@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.RingtoneManager
 import android.os.Build
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -31,13 +32,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.app.NotificationCompat
+import androidx.hilt.navigation.compose.hiltViewModel
 import edu.cit.audioscholar.R
+import edu.cit.audioscholar.domain.repository.AuthRepository
+import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 private const val NOTIFICATION_CHANNEL_ID = "verification_channel"
 private const val NOTIFICATION_ID = 1001
+private const val TAG = "VerificationCodeModal"
 
 enum class PaymentMethod {
     CARD,
@@ -56,7 +61,9 @@ fun VerificationCodeModal(
     isVisible: Boolean,
     onDismissRequest: () -> Unit,
     onVerificationComplete: () -> Unit,
-    paymentDetails: PaymentDetails = PaymentDetails(PaymentMethod.CARD)
+    paymentDetails: PaymentDetails = PaymentDetails(PaymentMethod.CARD),
+    userId: String? = null,
+    authRepository: AuthRepository = hiltViewModel<PaymentViewModel>().authRepository
 ) {
     val verificationCode = remember { generateVerificationCode() }
     var userInputCode by remember { mutableStateOf("") }
@@ -64,6 +71,7 @@ fun VerificationCodeModal(
     var isVerifying by remember { mutableStateOf(false) }
     var isError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
+    var isRoleUpdateSuccess by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -77,6 +85,7 @@ fun VerificationCodeModal(
             isCodeSent = false
             isVerifying = false
             isError = false
+            isRoleUpdateSuccess = false
             
             delay(2000)
             isCodeSent = true
@@ -181,6 +190,24 @@ fun VerificationCodeModal(
                                 } else {
                                     isVerifying = true
                                     scope.launch {
+                                        if (userId != null) {
+                                            Log.d(TAG, "Updating user role for userId: $userId")
+                                            val result = authRepository.updateUserRole(userId, "ROLE_PREMIUM")
+                                            when (result) {
+                                                is Resource.Success -> {
+                                                    Log.i(TAG, "User role updated successfully to ROLE_PREMIUM")
+                                                    isRoleUpdateSuccess = true
+                                                }
+                                                is Resource.Error -> {
+                                                    Log.e(TAG, "Failed to update user role: ${result.message}")
+                                                }
+                                                is Resource.Loading -> {
+                                                }
+                                            }
+                                        } else {
+                                            Log.w(TAG, "No userId provided, skipping role update")
+                                        }
+                                        
                                         delay(3000)
                                         onVerificationComplete()
                                     }

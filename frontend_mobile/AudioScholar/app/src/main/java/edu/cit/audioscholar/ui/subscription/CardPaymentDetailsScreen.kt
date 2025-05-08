@@ -36,6 +36,8 @@ import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.text.NumberFormat
+import java.util.Locale
 
 class CreditCardNumberVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
@@ -112,6 +114,14 @@ fun CardPaymentDetailsScreen(
     formattedPrice: String,
     priceAmount: Double
 ) {
+    val taxRate = 0.12
+    val taxAmount = priceAmount * taxRate
+    val totalAmount = priceAmount + taxAmount
+    
+    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "PH"))
+    val formattedTax = currencyFormat.format(taxAmount).replace("PHP", "₱")
+    val formattedTotal = currencyFormat.format(totalAmount).replace("PHP", "₱")
+
     var cardNumber by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
     var cvv by remember { mutableStateOf("") }
@@ -432,11 +442,11 @@ fun CardPaymentDetailsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Tax",
+                            text = "Tax (12%)",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            text = "₱0.00",
+                            text = formattedTax,
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -453,7 +463,7 @@ fun CardPaymentDetailsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = formattedPrice,
+                            text = formattedTotal,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary

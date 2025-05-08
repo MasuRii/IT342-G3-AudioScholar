@@ -34,6 +34,8 @@ import androidx.navigation.compose.rememberNavController
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
+import java.util.Locale
 
 class PhilippinePhoneNumberVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
@@ -72,6 +74,14 @@ fun EWalletPaymentDetailsScreen(
     formattedPrice: String,
     priceAmount: Double
 ) {
+    val taxRate = 0.12
+    val taxAmount = priceAmount * taxRate
+    val totalAmount = priceAmount + taxAmount
+    
+    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "PH"))
+    val formattedTax = currencyFormat.format(taxAmount).replace("PHP", "₱")
+    val formattedTotal = currencyFormat.format(totalAmount).replace("PHP", "₱")
+    
     var contactNumber by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var contactNumberError by remember { mutableStateOf<Int?>(null) }
@@ -353,11 +363,11 @@ fun EWalletPaymentDetailsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Tax",
+                            text = "Tax (12%)",
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            text = "₱0.00",
+                            text = formattedTax,
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -374,7 +384,7 @@ fun EWalletPaymentDetailsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = formattedPrice,
+                            text = formattedTotal,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary

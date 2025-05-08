@@ -35,6 +35,7 @@ import androidx.core.app.NotificationCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import edu.cit.audioscholar.R
 import edu.cit.audioscholar.domain.repository.AuthRepository
+import edu.cit.audioscholar.util.PremiumStatusManager
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -63,7 +64,8 @@ fun VerificationCodeModal(
     onVerificationComplete: () -> Unit,
     paymentDetails: PaymentDetails = PaymentDetails(PaymentMethod.CARD),
     userId: String? = null,
-    authRepository: AuthRepository = hiltViewModel<PaymentViewModel>().authRepository
+    authRepository: AuthRepository = hiltViewModel<PaymentViewModel>().authRepository,
+    premiumStatusManager: PremiumStatusManager = hiltViewModel<PaymentViewModel>().premiumStatusManager
 ) {
     val verificationCode = remember { generateVerificationCode() }
     var userInputCode by remember { mutableStateOf("") }
@@ -197,6 +199,9 @@ fun VerificationCodeModal(
                                                 is Resource.Success -> {
                                                     Log.i(TAG, "User role updated successfully to ROLE_PREMIUM")
                                                     isRoleUpdateSuccess = true
+                                                    
+                                                    premiumStatusManager.updatePremiumStatus(true)
+                                                    Log.d(TAG, "Updated premium status in local storage to true")
                                                 }
                                                 is Resource.Error -> {
                                                     Log.e(TAG, "Failed to update user role: ${result.message}")

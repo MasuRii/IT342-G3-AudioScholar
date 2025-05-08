@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.domain.repository.AuthRepository
+import edu.cit.audioscholar.util.PremiumStatusManager
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +16,7 @@ import java.text.NumberFormat
 import java.util.Currency
 import java.util.Locale
 import javax.inject.Inject
+import android.util.Log
 
 data class SubscriptionPlanUIModel(
     val id: String,
@@ -42,7 +44,8 @@ data class SubscriptionUiState(
     val plans: List<SubscriptionPlanUIModel> = emptyList(),
     val currentPlanId: String? = "basic",
     val error: String? = null,
-    val processingPurchase: Boolean = false
+    val processingPurchase: Boolean = false,
+    val isPremiumUser: Boolean = false
 )
 
 sealed class SubscriptionEvent {
@@ -57,8 +60,13 @@ sealed class SubscriptionEvent {
 
 @HiltViewModel
 class SubscriptionViewModel @Inject constructor(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val premiumStatusManager: PremiumStatusManager
 ) : ViewModel() {
+
+    companion object {
+        private const val TAG = "SubscriptionViewModel"
+    }
 
     private val _uiState = MutableStateFlow(SubscriptionUiState())
     val uiState: StateFlow<SubscriptionUiState> = _uiState.asStateFlow()
@@ -75,12 +83,18 @@ class SubscriptionViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true) }
             
             try {
+                val isPremium = premiumStatusManager.isPremiumUser()
+                Log.d(TAG, "Loading subscription plans. User premium status: $isPremium")
+                
                 val plans = createMockSubscriptionPlans()
+                
                 _uiState.update { 
                     it.copy(
                         isLoading = false,
                         plans = plans,
-                        error = null
+                        error = null,
+                        currentPlanId = if (isPremium) "premium" else "basic",
+                        isPremiumUser = isPremium
                     )
                 }
             } catch (e: Exception) {
@@ -99,6 +113,11 @@ class SubscriptionViewModel @Inject constructor(
         viewModelScope.launch {
             if (planId == _uiState.value.currentPlanId) {
                 _eventChannel.send(SubscriptionEvent.ShowMessage("You are already subscribed to this plan"))
+                return@launch
+            }
+            
+            if (_uiState.value.isPremiumUser && planId == "premium") {
+                _eventChannel.send(SubscriptionEvent.ShowMessage("You already have a premium subscription"))
                 return@launch
             }
 

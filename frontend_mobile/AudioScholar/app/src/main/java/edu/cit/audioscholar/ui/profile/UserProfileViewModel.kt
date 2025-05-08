@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import edu.cit.audioscholar.domain.repository.AuthRepository
 import edu.cit.audioscholar.ui.auth.LoginViewModel
 import edu.cit.audioscholar.ui.main.SplashActivity
+import edu.cit.audioscholar.util.PremiumStatusManager
 import edu.cit.audioscholar.util.Resource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ data class UserProfileUiState(
     val name: String = "",
     val email: String = "",
     val profileImageUrl: String? = null,
+    val isPremium: Boolean = false,
     val errorMessage: String? = null,
     val navigateToLogin: Boolean = false
 )
@@ -32,7 +34,8 @@ data class UserProfileUiState(
 @HiltViewModel
 class UserProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val prefs: SharedPreferences
+    private val prefs: SharedPreferences,
+    private val premiumStatusManager: PremiumStatusManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(UserProfileUiState())
@@ -74,6 +77,10 @@ class UserProfileViewModel @Inject constructor(
                             val profileData = result.data
                             if (profileData != null) {
                                 Log.i("UserProfileViewModel", "Profile loaded/updated: Name=${profileData.displayName}, Email=${profileData.email}")
+                                
+                                premiumStatusManager.updatePremiumStatus(profileData)
+                                val isPremium = premiumStatusManager.isPremiumUser()
+                                
                                 _uiState.update {
                                     it.copy(
                                         isLoading = false,
@@ -81,6 +88,7 @@ class UserProfileViewModel @Inject constructor(
                                         name = profileData.displayName ?: "",
                                         email = profileData.email ?: "",
                                         profileImageUrl = profileData.profileImageUrl,
+                                        isPremium = isPremium,
                                         errorMessage = null
                                     )
                                 }
@@ -95,18 +103,12 @@ class UserProfileViewModel @Inject constructor(
                             }
                         }
                         is Resource.Error -> {
-                            Log.e("UserProfileViewModel", "Error loading profile: ${result.message}")
+                            Log.e("UserProfileViewModel", "Error loading profile data: ${result.message}")
                             _uiState.update {
                                 it.copy(
                                     isLoading = false,
-                                    errorMessage = result.message ?: "An unexpected error occurred."
+                                    errorMessage = result.message ?: "Failed to retrieve profile details."
                                 )
-                            }
-                            if (result.message?.contains("Unauthorized", ignoreCase = true) == true ||
-                                result.message?.contains("401", ignoreCase = true) == true ||
-                                result.message?.contains("403", ignoreCase = true) == true) {
-                                Log.w("UserProfileViewModel", "Unauthorized error detected during profile load, clearing session and navigating to login.")
-                                clearSessionAndNavigateToLogin()
                             }
                         }
                         is Resource.Loading -> {
@@ -114,6 +116,13 @@ class UserProfileViewModel @Inject constructor(
                             val cachedData = result.data
                             if (cachedData != null && !_uiState.value.isDataAvailable) {
                                 Log.d("UserProfileViewModel", "Displaying cached data while loading network.")
+                                
+                                val isPremium = if (cachedData.roles?.contains("ROLE_PREMIUM") == true) {
+                                    true
+                                } else {
+                                    premiumStatusManager.isPremiumUser()
+                                }
+                                
                                 _uiState.update {
                                     it.copy(
                                         isLoading = true,
@@ -121,6 +130,7 @@ class UserProfileViewModel @Inject constructor(
                                         name = cachedData.displayName ?: "",
                                         email = cachedData.email ?: "",
                                         profileImageUrl = cachedData.profileImageUrl,
+                                        isPremium = isPremium,
                                         errorMessage = null
                                     )
                                 }
@@ -161,6 +171,8 @@ class UserProfileViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d("UserProfileViewModel", "Clearing local user cache (DataStore).")
             authRepository.clearLocalUserCache()
+
+            premiumStatusManager.clearPremiumStatus()
 
             Log.d("UserProfileViewModel", "Clearing local session data (Prefs).")
             with(prefs.edit()) {

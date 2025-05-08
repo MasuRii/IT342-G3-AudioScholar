@@ -11,6 +11,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -63,6 +64,7 @@ import java.net.URLDecoder
 import java.net.URLEncoder
 import androidx.hilt.navigation.compose.hiltViewModel
 import edu.cit.audioscholar.ui.subscription.PaymentViewModel
+import edu.cit.audioscholar.util.PremiumStatusManager
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
@@ -426,6 +428,8 @@ fun MainAppScreen(
     val gesturesEnabled = currentRoute in screensWithDrawer
 
     val userProfileState by mainViewModel.userProfileState.collectAsStateWithLifecycle()
+    
+    val isPremium = mainViewModel.isPremiumUser
 
     val userProfile: UserProfileDto? = if (userProfileState is Resource.Success) {
         userProfileState.data
@@ -476,22 +480,46 @@ fun MainAppScreen(
                             }
                             .padding(vertical = 8.dp)
                     ) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(userProfile?.profileImageUrl)
-                                .crossfade(true)
-                                .build(),
-                            contentDescription = stringResource(R.string.desc_user_avatar),
-                            placeholder = painterResource(id = R.drawable.avatar_placeholder),
-                            error = painterResource(id = R.drawable.avatar_placeholder),
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.secondaryContainer),
-                            contentScale = ContentScale.Crop
-                        )
+                        Box {
+                            AsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(userProfile?.profileImageUrl)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = stringResource(R.string.desc_user_avatar),
+                                placeholder = painterResource(id = R.drawable.avatar_placeholder),
+                                error = painterResource(id = R.drawable.avatar_placeholder),
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                                contentScale = ContentScale.Crop
+                            )
+                            
+                            if (isPremium) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(24.dp)
+                                        .offset(x = 4.dp, y = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Star,
+                                        contentDescription = stringResource(R.string.premium_badge_description),
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .padding(4.dp)
+                                            .size(16.dp)
+                                    )
+                                }
+                            }
+                        }
                         Spacer(Modifier.width(12.dp))
-                        Column {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
                             Text(
                                 text = userProfile?.displayName ?: stringResource(R.string.placeholder_username),
                                 style = MaterialTheme.typography.bodyLarge,
@@ -502,6 +530,21 @@ fun MainAppScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        
+                        if (isPremium) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.padding(start = 8.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.premium_label),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                 }

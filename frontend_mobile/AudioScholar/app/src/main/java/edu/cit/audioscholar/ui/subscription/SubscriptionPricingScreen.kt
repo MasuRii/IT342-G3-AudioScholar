@@ -107,45 +107,119 @@ fun SubscriptionPricingScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "Unlock Advanced Features",
+                    text = if (uiState.isPremiumUser) "Your Premium Subscription" else "Unlock Advanced Features",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
                 )
                 
-                Text(
-                    text = "Upgrade to AudioScholar Pro for AI-powered summaries, unlimited storage, and more.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-                
-                BillingPeriodSelector(
-                    selectedBillingPeriod = uiState.selectedBillingPeriod,
-                    onBillingPeriodSelected = { viewModel.toggleBillingPeriod() }
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.padding(top = 32.dp)
-                    )
-                } else if (uiState.plans.isEmpty()) {
-                    Text(
-                        text = "No subscription plans available",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(top = 32.dp)
-                    )
-                } else {
-                    uiState.plans.forEach { plan ->
-                        EnhancedSubscriptionPlanCard(
-                            plan = plan,
-                            isCurrentPlan = plan.id == uiState.currentPlanId,
-                            onSelectPlan = { viewModel.selectPlan(plan.id) },
-                            isProcessing = uiState.processingPurchase && uiState.currentPlanId != plan.id
+                if (uiState.isPremiumUser) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
                         )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = "Premium Status",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(64.dp)
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Text(
+                                text = "You're a Premium Member!",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            )
+                            
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Text(
+                                text = "Enjoy all premium features including AI-powered summaries, unlimited storage, and priority processing.",
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                    
+                    Text(
+                        text = "Premium Features You Enjoy:",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.align(Alignment.Start),
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    val premiumFeatures = uiState.plans.find { it.id == "premium" }?.features ?: emptyList()
+                    premiumFeatures.filter { it.isAvailableInPlan }.forEach { feature ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = "Included",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            Text(
+                                text = feature.text,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "Upgrade to AudioScholar Pro for AI-powered summaries, unlimited storage, and more.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                    
+                    BillingPeriodSelector(
+                        selectedBillingPeriod = uiState.selectedBillingPeriod,
+                        onBillingPeriodSelected = { viewModel.toggleBillingPeriod() }
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    if (uiState.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(top = 32.dp)
+                        )
+                    } else if (uiState.plans.isEmpty()) {
+                        Text(
+                            text = "No subscription plans available",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(top = 32.dp)
+                        )
+                    } else {
+                        uiState.plans.forEach { plan ->
+                            EnhancedSubscriptionPlanCard(
+                                plan = plan,
+                                isCurrentPlan = plan.id == uiState.currentPlanId,
+                                onSelectPlan = { viewModel.selectPlan(plan.id) },
+                                isProcessing = uiState.processingPurchase && uiState.currentPlanId != plan.id
+                            )
+                        }
                     }
                 }
                 

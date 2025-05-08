@@ -65,7 +65,8 @@ public class SecurityConfig {
                 configuration.setAllowedOrigins(List.of("http://localhost:8100",
                                 "https://localhost:8100", "capacitor://localhost",
                                 "http://localhost", "https://localhost", "http://localhost:5173",
-                                "https://localhost:5173", "http://localhost:8080",
+                                "https://localhost:5173", "http://localhost:5174",
+                                "https://localhost:5174", "http://localhost:8080",
                                 "https://localhost:8080",
                                 "https://it342-g3-audioscholar.onrender.com"));
                 configuration.setAllowedMethods(

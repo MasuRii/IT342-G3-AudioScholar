@@ -3,7 +3,7 @@ import AboutPage from '../../pages/About/AboutPage';
 import GithubAuthCallback from '../../pages/Auth/GithubCallback/GithubAuthCallback';
 import SignIn from '../../pages/Auth/SignIn/SignIn';
 import SignUp from '../../pages/Auth/SignUp/SignUp';
-import Dashboard from '../../pages/Dashboard/Dashboard';
+import Dashboard from '../../pages/Dashboard/DashBoard';
 import HomePage from '../../pages/Home/HomePage';
 import RecordingData from '../../pages/RecordingData/RecordingData';
 import RecordingList from '../../pages/RecordingList/RecordingList';

@@ -88,6 +88,7 @@ const UserProfile = () => {
                 src={user?.profileImageUrl || '/icon-512.png'}
                 alt="Profile"
                 className="w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover mb-5"
+                referrerPolicy="no-referrer"
               />
               <h1 className="text-3xl font-bold mb-1">{`${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'User Name'}</h1>
               <p className="text-indigo-200 mb-4 text-lg">{user?.email || 'email@example.com'}</p>

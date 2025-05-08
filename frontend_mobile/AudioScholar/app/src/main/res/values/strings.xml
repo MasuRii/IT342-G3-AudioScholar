@@ -93,7 +93,7 @@
     <string name="nav_registration">Register</string>
     <string name="nav_change_password">Change Password</string>
     <string name="nav_audioscholar_pro">AudioScholar Pro</string>
-    <string name="nav_payment_method_selection">Select Payment Method</string>
+    <string name="nav_payment_method_selection">Payment Method</string>
     <string name="nav_card_payment_details">Card Payment</string>
     <string name="nav_ewallet_payment_details">E-Wallet Payment</string>
     <string name="nav_recording_details">Recording Details</string>
@@ -374,9 +374,9 @@
     <string name="subscription_current_plan_button">Current Plan</string>
     <string name="subscription_upgrade_to_premium_button">Upgrade to Premium</string>
     <string name="subscription_choose_plan_button">Choose Plan</string>
-    <string name="payment_method_prompt">How would you like to pay?</string>
-    <string name="payment_method_cards">Cards</string>
-    <string name="payment_method_ewallets">E-Wallets</string>
+    <string name="payment_method_prompt">Select your preferred payment method</string>
+    <string name="payment_method_cards">Credit or Debit Cards</string>
+    <string name="payment_method_ewallets">E-Wallets (GCash)</string>
 
     <string name="payment_card_number_label">Card Number</string>
     <string name="payment_expiry_date_label">Expiry Date (MM/YY)</string>

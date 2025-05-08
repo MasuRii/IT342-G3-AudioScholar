@@ -93,7 +93,7 @@
     <string name="nav_registration">Register</string>
     <string name="nav_change_password">Change Password</string>
     <string name="nav_audioscholar_pro">AudioScholar Pro</string>
-    <string name="nav_payment_method_selection">Select Payment Method</string>
+    <string name="nav_payment_method_selection">Payment Method</string>
     <string name="nav_card_payment_details">Card Payment</string>
     <string name="nav_ewallet_payment_details">E-Wallet Payment</string>
     <string name="nav_recording_details">Recording Details</string>
@@ -374,9 +374,9 @@
     <string name="subscription_current_plan_button">Current Plan</string>
     <string name="subscription_upgrade_to_premium_button">Upgrade to Premium</string>
     <string name="subscription_choose_plan_button">Choose Plan</string>
-    <string name="payment_method_prompt">How would you like to pay?</string>
-    <string name="payment_method_cards">Cards</string>
-    <string name="payment_method_ewallets">E-Wallets</string>
+    <string name="payment_method_prompt">Select your preferred payment method</string>
+    <string name="payment_method_cards">Credit or Debit Cards</string>
+    <string name="payment_method_ewallets">E-Wallets (GCash)</string>
 
     <string name="payment_card_number_label">Card Number</string>
     <string name="payment_expiry_date_label">Expiry Date (MM/YY)</string>
@@ -397,5 +397,17 @@
     <string name="payment_error_phone_numeric">Phone number must be numeric</string>
     <string name="payment_error_phone_length_ph">Must be 10 digits after +63 (e.g., 9XXXXXXXXX)</string>
     <string name="payment_error_phone_prefix_ph">Philippine mobile number must start with 9</string>
+
+    <!-- Verification Modal Strings -->
+    <string name="verification_title">Verification Required</string>
+    <string name="verification_sending">Sending verification code to your device...</string>
+    <string name="verification_enter_code">Enter the verification code sent to your device notification</string>
+    <string name="verification_notification_title">Verification Code</string>
+    <string name="verification_notification_text">Your verification code is: %1$s</string>
+    <string name="verification_processing">Processing payment...</string>
+    <string name="verification_button_cancel">Cancel</string>
+    <string name="verification_button_verify">Verify</string>
+    <string name="verification_error_incomplete">Please enter all 6 digits</string>
+    <string name="verification_error_invalid">Invalid verification code</string>
 
 </resources>

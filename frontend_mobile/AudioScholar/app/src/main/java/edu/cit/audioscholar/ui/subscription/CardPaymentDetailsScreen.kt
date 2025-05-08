@@ -1,21 +1,33 @@
 package edu.cit.audioscholar.ui.subscription
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -24,6 +36,41 @@ import edu.cit.audioscholar.R
 import edu.cit.audioscholar.ui.theme.AudioScholarTheme
 import kotlinx.coroutines.launch
 import java.util.Calendar
+import java.text.NumberFormat
+import java.util.Locale
+
+class CreditCardNumberVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val trimmed = if (text.text.length > 16) text.text.substring(0..15) else text.text
+        var out = ""
+        for (i in trimmed.indices) {
+            out += trimmed[i]
+            if ((i + 1) % 4 == 0 && i != trimmed.length - 1) {
+                out += " "
+            }
+        }
+
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                if (offset <= 0) return 0
+                if (offset > trimmed.length) return out.length
+                
+                val spaces = kotlin.math.max(0, (offset - 1) / 4)
+                return offset + spaces
+            }
+
+            override fun transformedToOriginal(offset: Int): Int {
+                if (offset <= 0) return 0
+                if (offset > out.length) return trimmed.length
+                
+                val spaces = kotlin.math.max(0, offset / 5)
+                return offset - spaces
+            }
+        }
+
+        return TransformedText(AnnotatedString(out), offsetMapping)
+    }
+}
 
 class ExpiryDateVisualTransformation : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
@@ -64,12 +111,24 @@ class ExpiryDateVisualTransformation : VisualTransformation {
 @Composable
 fun CardPaymentDetailsScreen(
     navController: NavController,
+    formattedPrice: String,
+    priceAmount: Double
 ) {
+    val taxRate = 0.12
+    val taxAmount = priceAmount * taxRate
+    val totalAmount = priceAmount + taxAmount
+    
+    val currencyFormat = NumberFormat.getCurrencyInstance(Locale("en", "PH"))
+    val formattedTax = currencyFormat.format(taxAmount).replace("PHP", "₱")
+    val formattedTotal = currencyFormat.format(totalAmount).replace("PHP", "₱")
+
     var cardNumber by remember { mutableStateOf("") }
     var expiryDate by remember { mutableStateOf("") }
     var cvv by remember { mutableStateOf("") }
     var cardholderName by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    
+    var showVerificationModal by remember { mutableStateOf(false) }
 
     var cardNumberError by remember { mutableStateOf<Int?>(null) }
     var expiryDateError by remember { mutableStateOf<Int?>(null) }
@@ -118,6 +177,7 @@ fun CardPaymentDetailsScreen(
     }
 
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     fun handleSubmit() {
         cardNumberError = validateCardNumber(cardNumber)
@@ -128,15 +188,35 @@ fun CardPaymentDetailsScreen(
         if (cardNumberError == null && expiryDateError == null && cvvError == null && cardholderNameError == null) {
             isLoading = true
             scope.launch {
-                kotlinx.coroutines.delay(2000)
+                kotlinx.coroutines.delay(1500)
                 isLoading = false
-                 navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
-                    popUpTo(navController.graph.id) { inclusive = false }
-                    launchSingleTop = true
-                }
+                showVerificationModal = true
+            }
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar("Please fix the errors in the form")
             }
         }
     }
+    
+    fun onVerificationComplete() {
+        showVerificationModal = false
+        navController.navigate(edu.cit.audioscholar.ui.main.Screen.Record.route) { 
+            popUpTo(navController.graph.id) { inclusive = false }
+            launchSingleTop = true
+        }
+    }
+
+    VerificationCodeModal(
+        isVisible = showVerificationModal,
+        onDismissRequest = { showVerificationModal = false },
+        onVerificationComplete = { onVerificationComplete() },
+        paymentDetails = PaymentDetails(
+            method = PaymentMethod.CARD,
+            cardholderName = cardholderName,
+            cardLastFour = if (cardNumber.length >= 4) cardNumber.takeLast(4) else ""
+        )
+    )
 
     Scaffold(
         topBar = {
@@ -151,96 +231,313 @@ fun CardPaymentDetailsScreen(
                     }
                 }
             )
+        },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState)
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
-                .imePadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            OutlinedTextField(
-                value = cardNumber,
-                onValueChange = { cardNumber = it.filter { char -> char.isDigit() }.take(19); cardNumberError = null },
-                label = { Text(stringResource(R.string.payment_card_number_label)) },
-                leadingIcon = { Icon(Icons.Filled.CreditCard, contentDescription = null) },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Next
-                ),
-                singleLine = true,
-                isError = cardNumberError != null,
-                supportingText = { cardNumberError?.let { Text(stringResource(id = it)) } },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFF5D647F),
+                                Color(0xFF7D8299)
+                            )
+                        )
+                    )
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_credit_card),
+                        contentDescription = null,
+                        modifier = Modifier.size(40.dp)
+                    )
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = expiryDate,
-                    onValueChange = {
-                        val newText = it.filter { char -> char.isDigit() }
-                        if (newText.length <= 4) {
-                            expiryDate = newText
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = if (cardNumber.isEmpty()) "•••• •••• •••• ••••" else {
+                            if (cardNumber.length < 16) {
+                                cardNumber.padEnd(16, '•').chunked(4).joinToString(" ")
+                            } else {
+                                cardNumber.take(16).chunked(4).joinToString(" ")
+                            }
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "CARDHOLDER NAME",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = if (cardholderName.isEmpty()) "YOUR NAME" else cardholderName.uppercase(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White
+                            )
                         }
-                        expiryDateError = null
-                    },
-                    label = { Text(stringResource(R.string.payment_expiry_date_label)) },
-                    placeholder = { Text("MM/YY") },
-                    visualTransformation = ExpiryDateVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next
-                    ),
-                    singleLine = true,
-                    isError = expiryDateError != null,
-                    supportingText = { expiryDateError?.let { Text(stringResource(id = it)) } },
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = cvv,
-                    onValueChange = { cvv = it.filter { char -> char.isDigit() }.take(4); cvvError = null },
-                    label = { Text(stringResource(R.string.payment_cvv_label)) },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next
-                    ),
-                    singleLine = true,
-                    isError = cvvError != null,
-                    supportingText = { cvvError?.let { Text(stringResource(id = it)) } },
-                    modifier = Modifier.weight(1f)
-                )
+
+                        Column {
+                            Text(
+                                text = "EXPIRES",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = if (expiryDate.isEmpty()) "MM/YY" else {
+                                    if (expiryDate.length < 2) "${expiryDate.padEnd(2, '•')}/••"
+                                    else "${expiryDate.take(2)}/${if (expiryDate.length > 2) expiryDate.substring(2) else "••"}"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
             }
 
-            OutlinedTextField(
-                value = cardholderName,
-                onValueChange = { cardholderName = it; cardholderNameError = null },
-                label = { Text(stringResource(R.string.payment_cardholder_name_label)) },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Done
-                ),
-                singleLine = true,
-                isError = cardholderNameError != null,
-                supportingText = { cardholderNameError?.let { Text(stringResource(id = it)) } },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Card Information",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    OutlinedTextField(
+                        value = cardNumber,
+                        onValueChange = { cardNumber = it.filter { char -> char.isDigit() }.take(19); cardNumberError = null },
+                        label = { Text(stringResource(R.string.payment_card_number_label)) },
+                        leadingIcon = { Icon(Icons.Filled.CreditCard, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        visualTransformation = CreditCardNumberVisualTransformation(),
+                        singleLine = true,
+                        isError = cardNumberError != null,
+                        supportingText = { cardNumberError?.let { Text(stringResource(id = it)) } },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = expiryDate,
+                            onValueChange = {
+                                val newText = it.filter { char -> char.isDigit() }
+                                if (newText.length <= 4) {
+                                    expiryDate = newText
+                                }
+                                expiryDateError = null
+                            },
+                            label = { Text(stringResource(R.string.payment_expiry_date_label)) },
+                            placeholder = { Text("MM/YY") },
+                            leadingIcon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) },
+                            visualTransformation = ExpiryDateVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            singleLine = true,
+                            isError = expiryDateError != null,
+                            supportingText = { expiryDateError?.let { Text(stringResource(id = it)) } },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = cvv,
+                            onValueChange = { cvv = it.filter { char -> char.isDigit() }.take(4); cvvError = null },
+                            label = { Text(stringResource(R.string.payment_cvv_label)) },
+                            placeholder = { Text("123") },
+                            leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            singleLine = true,
+                            isError = cvvError != null,
+                            supportingText = { cvvError?.let { Text(stringResource(id = it)) } },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = cardholderName,
+                        onValueChange = { cardholderName = it; cardholderNameError = null },
+                        label = { Text(stringResource(R.string.payment_cardholder_name_label)) },
+                        leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Done
+                        ),
+                        singleLine = true,
+                        isError = cardholderNameError != null,
+                        supportingText = { cardholderNameError?.let { Text(stringResource(id = it)) } },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Order Summary",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Premium Subscription",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = formattedPrice,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Tax (12%)",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = formattedTax,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Total",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = formattedTotal,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = { handleSubmit() },
                 enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth(0.8f)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(12.dp)
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
                 } else {
-                    Text(stringResource(R.string.payment_submit_button_php, 150))
+                    Text(
+                        "Complete Payment",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Secure Payment",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -249,6 +546,10 @@ fun CardPaymentDetailsScreen(
 @Composable
 fun CardPaymentDetailsScreenPreview() {
     AudioScholarTheme {
-        CardPaymentDetailsScreen(navController = rememberNavController())
+        CardPaymentDetailsScreen(
+            navController = rememberNavController(),
+            formattedPrice = "₱1,440.00/year",
+            priceAmount = 1440.0
+        )
     }
 } 

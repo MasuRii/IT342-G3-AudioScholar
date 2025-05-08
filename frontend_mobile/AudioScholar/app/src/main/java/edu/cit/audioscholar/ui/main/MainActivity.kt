@@ -59,6 +59,8 @@ import edu.cit.audioscholar.ui.subscription.SubscriptionPricingScreen
 import edu.cit.audioscholar.ui.subscription.PaymentMethodSelectionScreen
 import edu.cit.audioscholar.ui.subscription.CardPaymentDetailsScreen
 import edu.cit.audioscholar.ui.subscription.EWalletPaymentDetailsScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVector? = null) {
     object Onboarding : Screen("onboarding", R.string.nav_onboarding, Icons.Filled.Info)
@@ -75,9 +77,42 @@ sealed class Screen(val route: String, val labelResId: Int, val icon: ImageVecto
     object Registration : Screen("registration", R.string.nav_registration, Icons.Filled.PersonAdd)
     object ChangePassword : Screen("change_password", R.string.nav_change_password, Icons.Filled.Password)
     object SubscriptionPricing : Screen("subscription_pricing", R.string.nav_audioscholar_pro, Icons.Filled.School)
-    object PaymentMethodSelection : Screen("payment_method_selection", R.string.nav_payment_method_selection)
-    object CardPaymentDetails : Screen("card_payment_details", R.string.nav_card_payment_details)
-    object EWalletPaymentDetails : Screen("ewallet_payment_details", R.string.nav_ewallet_payment_details)
+
+    companion object {
+        const val ARG_PLAN_ID = "planId"
+        const val ARG_FORMATTED_PRICE = "formattedPrice"
+        const val ARG_PRICE_AMOUNT = "priceAmount"
+    }
+
+    object PaymentMethodSelection : Screen(
+        route = "payment_method_selection/{$ARG_PLAN_ID}/{$ARG_FORMATTED_PRICE}/{$ARG_PRICE_AMOUNT}",
+        labelResId = R.string.nav_payment_method_selection
+    ) {
+        fun createRoute(planId: String, formattedPrice: String, priceAmount: String): String {
+            val encodedFormattedPrice = URLEncoder.encode(formattedPrice, "UTF-8")
+            return "payment_method_selection/$planId/$encodedFormattedPrice/$priceAmount"
+        }
+    }
+
+    object CardPaymentDetails : Screen(
+        route = "card_payment_details/{$ARG_PLAN_ID}/{$ARG_FORMATTED_PRICE}/{$ARG_PRICE_AMOUNT}",
+        labelResId = R.string.nav_card_payment_details
+    ) {
+        fun createRoute(planId: String, formattedPrice: String, priceAmount: String): String {
+            val encodedFormattedPrice = URLEncoder.encode(formattedPrice, "UTF-8")
+            return "card_payment_details/$planId/$encodedFormattedPrice/$priceAmount"
+        }
+    }
+
+    object EWalletPaymentDetails : Screen(
+        route = "ewallet_payment_details/{$ARG_PLAN_ID}/{$ARG_FORMATTED_PRICE}/{$ARG_PRICE_AMOUNT}",
+        labelResId = R.string.nav_ewallet_payment_details
+    ) {
+        fun createRoute(planId: String, formattedPrice: String, priceAmount: String): String {
+            val encodedFormattedPrice = URLEncoder.encode(formattedPrice, "UTF-8")
+            return "ewallet_payment_details/$planId/$encodedFormattedPrice/$priceAmount"
+        }
+    }
 
     object RecordingDetails : Screen("recording_details", R.string.nav_recording_details) {
         const val ARG_LOCAL_FILE_PATH = "localFilePath"
@@ -632,14 +667,55 @@ fun MainAppScreen(
             composable(Screen.SubscriptionPricing.route) {
                 SubscriptionPricingScreen(navController = navController, drawerState = drawerState, scope = scope)
             }
-            composable(Screen.PaymentMethodSelection.route) {
-                PaymentMethodSelectionScreen(navController = navController)
+            composable(
+                route = Screen.PaymentMethodSelection.route,
+                arguments = listOf(
+                    navArgument(Screen.ARG_PLAN_ID) { type = NavType.StringType },
+                    navArgument(Screen.ARG_FORMATTED_PRICE) { type = NavType.StringType },
+                    navArgument(Screen.ARG_PRICE_AMOUNT) { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val planId = backStackEntry.arguments?.getString(Screen.ARG_PLAN_ID) ?: ""
+                val formattedPrice = URLDecoder.decode(backStackEntry.arguments?.getString(Screen.ARG_FORMATTED_PRICE) ?: "", "UTF-8")
+                val priceAmount = backStackEntry.arguments?.getString(Screen.ARG_PRICE_AMOUNT)?.toDoubleOrNull() ?: 0.0
+                PaymentMethodSelectionScreen(
+                    navController = navController,
+                    planId = planId,
+                    formattedPrice = formattedPrice,
+                    priceAmount = priceAmount
+                )
             }
-            composable(Screen.CardPaymentDetails.route) {
-                CardPaymentDetailsScreen(navController = navController)
+            composable(
+                route = Screen.CardPaymentDetails.route,
+                arguments = listOf(
+                    navArgument(Screen.ARG_PLAN_ID) { type = NavType.StringType },
+                    navArgument(Screen.ARG_FORMATTED_PRICE) { type = NavType.StringType },
+                    navArgument(Screen.ARG_PRICE_AMOUNT) { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val formattedPrice = URLDecoder.decode(backStackEntry.arguments?.getString(Screen.ARG_FORMATTED_PRICE) ?: "", "UTF-8")
+                val priceAmount = backStackEntry.arguments?.getString(Screen.ARG_PRICE_AMOUNT)?.toDoubleOrNull() ?: 0.0
+                CardPaymentDetailsScreen(
+                    navController = navController,
+                    formattedPrice = formattedPrice,
+                    priceAmount = priceAmount
+                )
             }
-            composable(Screen.EWalletPaymentDetails.route) {
-                EWalletPaymentDetailsScreen(navController = navController)
+            composable(
+                route = Screen.EWalletPaymentDetails.route,
+                arguments = listOf(
+                    navArgument(Screen.ARG_PLAN_ID) { type = NavType.StringType },
+                    navArgument(Screen.ARG_FORMATTED_PRICE) { type = NavType.StringType },
+                    navArgument(Screen.ARG_PRICE_AMOUNT) { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val formattedPrice = URLDecoder.decode(backStackEntry.arguments?.getString(Screen.ARG_FORMATTED_PRICE) ?: "", "UTF-8")
+                val priceAmount = backStackEntry.arguments?.getString(Screen.ARG_PRICE_AMOUNT)?.toDoubleOrNull() ?: 0.0
+                EWalletPaymentDetailsScreen(
+                    navController = navController,
+                    formattedPrice = formattedPrice,
+                    priceAmount = priceAmount
+                )
             }
         }
     }

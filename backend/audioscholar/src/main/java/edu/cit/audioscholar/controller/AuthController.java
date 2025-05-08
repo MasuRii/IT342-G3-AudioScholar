@@ -22,14 +22,26 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 import com.google.api.client.googleapis.auth.oauth2.GoogleIdToken;
-import com.google.firebase.auth.*;
-import edu.cit.audioscholar.dto.*;
+import com.google.firebase.auth.AuthErrorCode;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
+import com.google.firebase.auth.FirebaseToken;
+import com.google.firebase.auth.UserRecord;
+import edu.cit.audioscholar.dto.AuthResponse;
+import edu.cit.audioscholar.dto.ChangePasswordRequest;
+import edu.cit.audioscholar.dto.FirebaseTokenRequest;
+import edu.cit.audioscholar.dto.GitHubCodeRequest;
+import edu.cit.audioscholar.dto.RegistrationRequest;
 import edu.cit.audioscholar.exception.FirestoreInteractionException;
 import edu.cit.audioscholar.model.User;
 import edu.cit.audioscholar.security.JwtTokenProvider;
@@ -346,9 +358,13 @@ public class AuthController {
                                                                         .setEmail(email)
                                                                         .setEmailVerified(
                                                                                         emailVerified)
-                                                                        .setDisplayName(name)
-                                                                        .setPhotoUrl(pictureUrl)
+                                                                        .setDisplayName(name != null
+                                                                                        ? name
+                                                                                        : "")
                                                                         .setDisabled(false);
+                                        if (pictureUrl != null && !pictureUrl.isEmpty()) {
+                                                createRequest.setPhotoUrl(pictureUrl);
+                                        }
                                         firebaseUserRecord = FirebaseAuth
                                                         .getInstance(firebaseService
                                                                         .getFirebaseApp())
@@ -686,9 +702,13 @@ public class AuthController {
                                                         new UserRecord.CreateRequest()
                                                                         .setEmail(email)
                                                                         .setEmailVerified(true)
-                                                                        .setDisplayName(name)
-                                                                        .setPhotoUrl(pictureUrl)
+                                                                        .setDisplayName(name != null
+                                                                                        ? name
+                                                                                        : "")
                                                                         .setDisabled(false);
+                                        if (pictureUrl != null && !pictureUrl.isEmpty()) {
+                                                createRequest.setPhotoUrl(pictureUrl);
+                                        }
                                         try {
                                                 UserRecord newUser = FirebaseAuth
                                                                 .getInstance(firebaseService

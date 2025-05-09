@@ -1,15 +1,8 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { FiUpload } from 'react-icons/fi';
+import { Link } from 'react-router-dom';
 import { Header } from '../Home/HomePage';
 
 const Dashboard = () => {
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    localStorage.removeItem('AuthToken');
-    localStorage.removeItem('userId');
-    navigate('/');
-  };
-
   return (
     <div className="min-h-screen flex flex-col">
       <title>AudioScholar - Dashboard</title>
@@ -26,11 +19,9 @@ const Dashboard = () => {
                 className="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition-all duration-300 ease-in-out transform hover:-translate-y-1 cursor-pointer border border-gray-200"
               >
                 <div className="flex items-center mb-4">
-                  <img 
-                    src="/uploadAudiologo.png"
-                    alt="Upload Icon" 
-                    className="h-10 w-10 mr-4"
-                  />
+                  <div className="bg-teal-100 p-3 rounded-full mr-4">
+                    <FiUpload className="h-6 w-6 text-teal-600" />
+                  </div>
                   <h2 className="text-xl font-semibold text-gray-800">Upload Audio</h2>
                 </div>
                 <p className="text-gray-600">Upload new audio files to generate summaries and notes.</p>

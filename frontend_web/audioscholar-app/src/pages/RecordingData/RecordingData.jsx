@@ -1,15 +1,16 @@
 import axios from 'axios';
 import React, { useEffect, useState } from 'react';
+import { FiAlertTriangle, FiCheckCircle, FiClock, FiHeadphones, FiLoader, FiUploadCloud } from 'react-icons/fi';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate, useParams } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
 import { Header } from '../Home/HomePage';
-import { FiAlertTriangle, FiCheckCircle, FiClock, FiHeadphones, FiLoader, FiUploadCloud } from 'react-icons/fi';
 
 const DownloadIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>;
 
-const UPLOADING_STATUSES = ['UPLOADING_TO_STORAGE', 'UPLOAD_IN_PROGRESS'];
+const UPLOADING_STATUSES = ['UPLOADING_TO_STORAGE', 'UPLOAD_IN_PROGRESS', 'UPLOAD_PENDING'];
 const UPLOAD_TIMEOUT_SECONDS = 10 * 60;
+const TERMINAL_STATUSES = ['COMPLETED', 'COMPLETE', 'FAILED', 'PROCESSING_HALTED_UNSUITABLE_CONTENT', 'PROCESSING_HALTED_NO_SPEECH'];
 
 const formatDuration = (seconds) => {
   if (seconds === null || typeof seconds !== 'number' || seconds < 0) return 'N/A';
@@ -19,127 +20,120 @@ const formatDuration = (seconds) => {
 };
 
 const StatusBadge = ({ recording }) => {
-    const { status, failureReason, uploadTimestamp } = recording;
-    const originalStatus = status;
-    const statusUpper = status?.toUpperCase() ?? 'UNKNOWN';
-    let bgColor = 'bg-gray-100';
-    let textColor = 'text-gray-800';
-    let Icon = FiClock;
-    let displayStatus = 'Unknown';
-    let isSpinning = false;
-    let titleText = '';
+  const { status, failureReason, uploadTimestamp } = recording;
+  const originalStatus = status;
+  const statusUpper = status?.toUpperCase() ?? 'UNKNOWN';
+  let bgColor = 'bg-gray-100';
+  let textColor = 'text-gray-800';
+  let Icon = FiClock;
+  let displayStatus = 'Unknown';
+  let isSpinning = false;
+  let titleText = '';
 
-    const isUploading = UPLOADING_STATUSES.includes(statusUpper);
-    const elapsedSeconds = uploadTimestamp?.seconds
-        ? (Date.now() / 1000) - uploadTimestamp.seconds
-        : 0;
-    const isTimedOutUpload = isUploading && elapsedSeconds > UPLOAD_TIMEOUT_SECONDS;
+  const isUploadingOrPending = UPLOADING_STATUSES.includes(statusUpper);
+  const elapsedSeconds = uploadTimestamp?.seconds
+    ? (Date.now() / 1000) - uploadTimestamp.seconds
+    : 0;
+  const isTimedOutUploadDisplay = isUploadingOrPending && elapsedSeconds > UPLOAD_TIMEOUT_SECONDS;
 
-    if (isTimedOutUpload) {
-        bgColor = 'bg-gray-100';
-        textColor = 'text-gray-700';
-        Icon = FiClock;
-        displayStatus = 'Processing Upload';
-        isSpinning = false;
-        titleText = `Upload received ${Math.round(elapsedSeconds / 60)} mins ago, processing initiated.`;
-        console.log(`[Details Badge Timeout - ${recording.id}] Displaying timed-out upload status.`);
-    } else {
-        switch (statusUpper) {
-            case 'COMPLETED':
-            case 'PROCESSED':
-                bgColor = 'bg-green-100';
-                textColor = 'text-green-800';
-                Icon = FiCheckCircle;
-                displayStatus = 'Completed';
-                break;
-            case 'UPLOADING_TO_STORAGE':
-            case 'UPLOAD_IN_PROGRESS':
-                bgColor = 'bg-blue-100';
-                textColor = 'text-blue-800';
-                Icon = FiUploadCloud;
-                displayStatus = 'Uploading';
-                isSpinning = true;
-                break;
-            case 'PROCESSING':
-            case 'PROCESSING_QUEUED':
-            case 'TRANSCRIBING':
-            case 'SUMMARIZING':
-            case 'PDF_CONVERTING':
-            case 'TRANSCRIPTION_COMPLETE':
-            case 'PDF_CONVERSION_COMPLETE':
-                bgColor = 'bg-yellow-100';
-                textColor = 'text-yellow-800';
-                Icon = FiLoader;
-                displayStatus = 'Processing';
-                isSpinning = true;
-                break;
-            case 'FAILED':
-            case 'PROCESSING_HALTED_UNSUITABLE_CONTENT':
-            case 'PROCESSING_HALTED_NO_SPEECH':
-                bgColor = 'bg-red-100';
-                textColor = 'text-red-800';
-                Icon = FiAlertTriangle;
-                displayStatus = 'Failed';
-                break;
-            default:
-                displayStatus = 'Unknown';
-                if (statusUpper !== 'UNKNOWN') {
-                    console.warn('[Details Badge] Unknown recording status received:', originalStatus);
-                }
-                break;
+  if (isTimedOutUploadDisplay) {
+    bgColor = 'bg-gray-100';
+    textColor = 'text-gray-700';
+    Icon = FiClock;
+    displayStatus = 'Processing Upload';
+    isSpinning = false;
+    titleText = `Upload received ${Math.round(elapsedSeconds / 60)} mins ago, processing initiated. Status: ${originalStatus}`;
+  } else {
+    switch (statusUpper) {
+      case 'COMPLETE':
+      case 'COMPLETED':
+        bgColor = 'bg-green-100';
+        textColor = 'text-green-800';
+        Icon = FiCheckCircle;
+        displayStatus = 'Completed';
+        break;
+      case 'UPLOAD_PENDING':
+      case 'UPLOAD_IN_PROGRESS':
+      case 'UPLOADING_TO_STORAGE':
+      case 'UPLOADED':
+        bgColor = 'bg-blue-100';
+        textColor = 'text-blue-800';
+        Icon = FiUploadCloud;
+        displayStatus = 'Uploading';
+        isSpinning = true;
+        break;
+      case 'PROCESSING_QUEUED':
+      case 'TRANSCRIBING':
+      case 'PDF_CONVERTING':
+      case 'PDF_CONVERTING_API':
+      case 'TRANSCRIPTION_COMPLETE':
+      case 'PDF_CONVERSION_COMPLETE':
+      case 'SUMMARIZATION_QUEUED':
+      case 'SUMMARIZING':
+      case 'SUMMARY_COMPLETE':
+      case 'RECOMMENDATIONS_QUEUED':
+      case 'GENERATING_RECOMMENDATIONS':
+      case 'PROCESSING':
+        bgColor = 'bg-yellow-100';
+        textColor = 'text-yellow-800';
+        Icon = FiLoader;
+        displayStatus = 'Processing';
+        isSpinning = true;
+        break;
+      case 'FAILED':
+      case 'PROCESSING_HALTED_NO_SPEECH':
+      case 'PROCESSING_HALTED_UNSUITABLE_CONTENT':
+        bgColor = 'bg-red-100';
+        textColor = 'text-red-800';
+        Icon = FiAlertTriangle;
+        displayStatus = 'Failed';
+        break;
+      default:
+        displayStatus = 'Unknown';
+        if (statusUpper !== 'UNKNOWN') {
+          console.warn('[Badge] Unknown recording status received:', originalStatus);
         }
-        titleText = (displayStatus === 'Failed' && failureReason)
-                    ? `${displayStatus}: ${failureReason}`
-                    : displayStatus;
+        break;
     }
+    titleText = (displayStatus === 'Failed' && failureReason)
+      ? `${displayStatus}: ${failureReason}`
+      : displayStatus;
+    if (displayStatus !== originalStatus && originalStatus) {
+      titleText += ` (Backend: ${originalStatus})`;
+    }
+  }
 
-    return (
-        <span
-            title={titleText}
-            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor} ${textColor}`}
-        >
-             <Icon className={`mr-1 h-3 w-3 ${isSpinning ? 'animate-spin' : ''}`} />
-            {displayStatus}
-        </span>
-    );
+  return (
+    <span
+      title={titleText}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${bgColor} ${textColor}`}
+    >
+      <Icon className={`mr-1 h-3 w-3 ${isSpinning ? 'animate-spin' : ''}`} />
+      {displayStatus}
+    </span>
+  );
 };
 
-// Define the new component for handling thumbnail logic
 const RecommendationCardImage = ({ thumbnailUrl, fallbackThumbnailUrl, title }) => {
-  // Prioritize fallbackThumbnailUrl if it exists, otherwise use thumbnailUrl.
   const [currentSrc, setCurrentSrc] = useState(fallbackThumbnailUrl || thumbnailUrl);
-  // Set initial error state: true if neither URL is provided.
   const [hasError, setHasError] = useState(!(fallbackThumbnailUrl || thumbnailUrl));
 
   useEffect(() => {
-    // This effect runs when thumbnailUrl or fallbackThumbnailUrl props change.
-    // It resets the currentSrc and error state based on the new props,
-    // prioritizing fallbackThumbnailUrl.
     const initialSrc = fallbackThumbnailUrl || thumbnailUrl;
     setCurrentSrc(initialSrc);
-    setHasError(!initialSrc); // True if no valid src can be determined
+    setHasError(!initialSrc);
   }, [thumbnailUrl, fallbackThumbnailUrl]);
 
   const handleError = () => {
-    // This function is called if the current 'currentSrc' fails to load.
 
-    // Check if the URL that just failed was 'fallbackThumbnailUrl' AND
-    // if 'thumbnailUrl' exists (as a potential next source to try).
     if (currentSrc === fallbackThumbnailUrl && thumbnailUrl) {
-      // If fallbackThumbnailUrl failed, try thumbnailUrl.
       setCurrentSrc(thumbnailUrl);
-      // 'hasError' remains false, allowing thumbnailUrl to attempt loading.
     } else {
-      // This block is reached if:
-      // 1. fallbackThumbnailUrl failed, and thumbnailUrl does not exist.
-      // 2. fallbackThumbnailUrl failed, then thumbnailUrl was tried (because currentSrc would be thumbnailUrl) and it also failed.
-      // 3. thumbnailUrl was the initial attempt (because fallbackThumbnailUrl was not provided) and it failed.
       setHasError(true);
     }
   };
 
   if (hasError || !currentSrc) {
-    // If there's a definitive error or no valid src to attempt, show a placeholder.
     return (
       <div className="w-full h-32 bg-gray-100 flex items-center justify-center text-gray-400 text-xs p-2">
         <span>(No Thumbnail)</span>
@@ -152,7 +146,7 @@ const RecommendationCardImage = ({ thumbnailUrl, fallbackThumbnailUrl, title }) 
       src={currentSrc}
       alt={title || 'Recommendation thumbnail'}
       className="w-full h-32 object-cover"
-      onError={handleError} // Call handleError on loading failure
+      onError={handleError}
     />
   );
 };
@@ -255,14 +249,14 @@ const RecordingData = () => {
         setSummaryData(summaryResponse.data);
         console.log("Fetched summary (200 OK):", summaryResponse.data);
       } else if (summaryResponse.status === 202) {
-          const message = summaryResponse.data?.message || "Processing is ongoing.";
-          console.log(`Summary status 202 Accepted: ${message}`);
-          setSummaryError(message);
-          setSummaryData(null);
+        const message = summaryResponse.data?.message || "Processing is ongoing.";
+        console.log(`Summary status 202 Accepted: ${message}`);
+        setSummaryError(message);
+        setSummaryData(null);
       } else {
-           console.warn(`Unexpected success status for summary: ${summaryResponse.status}`);
-          setSummaryError(`Unexpected status: ${summaryResponse.status}`);
-          setSummaryData(null);
+        console.warn(`Unexpected success status for summary: ${summaryResponse.status}`);
+        setSummaryError(`Unexpected status: ${summaryResponse.status}`);
+        setSummaryData(null);
       }
     } catch (err) {
       console.error('Error fetching summary:', err);
@@ -275,15 +269,15 @@ const RecordingData = () => {
         } else if (err.response.status === 403) {
           setSummaryError('Access denied to summary.');
         } else if (err.response.status === 401) {
-           setError("Session expired or not authorized. Please log in again.");
-           localStorage.removeItem('AuthToken');
-           navigate('/signin');
+          setError("Session expired or not authorized. Please log in again.");
+          localStorage.removeItem('AuthToken');
+          navigate('/signin');
         } else if (err.response.status === 500 && errorData?.status?.startsWith('PROCESSING_HALTED')) {
-            setSummaryError(`Processing halted: ${errorData.message || 'Content unsuitable or no speech detected.'}`);
+          setSummaryError(`Processing halted: ${errorData.message || 'Content unsuitable or no speech detected.'}`);
         } else if (err.response.status === 500 && errorData?.status === 'FAILED') {
-            setSummaryError(`Processing failed: ${errorData.message || 'An error occurred during processing.'}`);
+          setSummaryError(`Processing failed: ${errorData.message || 'An error occurred during processing.'}`);
         }
-         else {
+        else {
           setSummaryError(message);
         }
       } else if (err.request) {
@@ -299,48 +293,48 @@ const RecordingData = () => {
     const shouldFetchRecommendations = summaryStatus === 200 || summaryStatus === 202;
 
     if (shouldFetchRecommendations) {
-        const recommendationsUrl = `${API_BASE_URL}api/v1/recommendations/recording/${actualRecordingId}`;
-        try {
-          console.log(`Fetching recommendations from: ${recommendationsUrl}`);
-          const recommendationsResponse = await axios.get(recommendationsUrl, { headers });
+      const recommendationsUrl = `${API_BASE_URL}api/v1/recommendations/recording/${actualRecordingId}`;
+      try {
+        console.log(`Fetching recommendations from: ${recommendationsUrl}`);
+        const recommendationsResponse = await axios.get(recommendationsUrl, { headers });
 
-          if (recommendationsResponse.status === 200) {
-             setRecommendationsData(recommendationsResponse.data || []);
-             console.log("Fetched recommendations (200 OK):", recommendationsResponse.data);
-          } else {
-             console.warn(`Unexpected success status for recommendations: ${recommendationsResponse.status}`);
-             setRecommendationsError(`Unexpected status: ${recommendationsResponse.status}`);
-             setRecommendationsData([]);
-          }
-        } catch (err) {
-          console.error('Error fetching recommendations:', err);
-          if (err.response) {
-             const message = err.response.data?.message || `Failed to fetch recommendations (Status: ${err.response.status})`;
-             if (err.response.status === 404) {
-                setRecommendationsError('No recommendations found for this recording.');
-             } else if (err.response.status === 403) {
-                setRecommendationsError('Access denied to recommendations.');
-             } else if (err.response.status === 401) {
-                setError("Session expired or not authorized. Please log in again.");
-                localStorage.removeItem('AuthToken');
-                navigate('/signin');
-             } else {
-                setRecommendationsError(message);
-             }
-          } else if (err.request) {
-             setRecommendationsError("Network error fetching recommendations.");
-          } else {
-             setRecommendationsError("An unexpected error occurred fetching recommendations.");
-          }
+        if (recommendationsResponse.status === 200) {
+          setRecommendationsData(recommendationsResponse.data || []);
+          console.log("Fetched recommendations (200 OK):", recommendationsResponse.data);
+        } else {
+          console.warn(`Unexpected success status for recommendations: ${recommendationsResponse.status}`);
+          setRecommendationsError(`Unexpected status: ${recommendationsResponse.status}`);
           setRecommendationsData([]);
-        } finally {
-          setRecommendationsLoading(false);
         }
-    } else {
-         console.log("Skipping recommendations fetch because summary was not successful or processing.");
-        setRecommendationsError("Recommendations not available as processing did not complete successfully.");
-        setRecommendationsLoading(false);
+      } catch (err) {
+        console.error('Error fetching recommendations:', err);
+        if (err.response) {
+          const message = err.response.data?.message || `Failed to fetch recommendations (Status: ${err.response.status})`;
+          if (err.response.status === 404) {
+            setRecommendationsError('No recommendations found for this recording.');
+          } else if (err.response.status === 403) {
+            setRecommendationsError('Access denied to recommendations.');
+          } else if (err.response.status === 401) {
+            setError("Session expired or not authorized. Please log in again.");
+            localStorage.removeItem('AuthToken');
+            navigate('/signin');
+          } else {
+            setRecommendationsError(message);
+          }
+        } else if (err.request) {
+          setRecommendationsError("Network error fetching recommendations.");
+        } else {
+          setRecommendationsError("An unexpected error occurred fetching recommendations.");
+        }
         setRecommendationsData([]);
+      } finally {
+        setRecommendationsLoading(false);
+      }
+    } else {
+      console.log("Skipping recommendations fetch because summary was not successful or processing.");
+      setRecommendationsError("Recommendations not available as processing did not complete successfully.");
+      setRecommendationsLoading(false);
+      setRecommendationsData([]);
     }
   };
 
@@ -349,9 +343,9 @@ const RecordingData = () => {
       console.log(`RecordingData component mounted or id changed: ${id}`);
       fetchRecordingData();
     } else {
-        console.error("RecordingData: No ID found in params.");
-        setError("Recording ID is missing.");
-        setLoading(false);
+      console.error("RecordingData: No ID found in params.");
+      setError("Recording ID is missing.");
+      setLoading(false);
     }
   }, [id]);
 
@@ -360,9 +354,9 @@ const RecordingData = () => {
       console.log(`Metadata loaded, fetching details for recordingId: ${recordingData.recordingId}`);
       fetchDetails(recordingData.recordingId);
     } else if (recordingData && !recordingData.recordingId) {
-        console.error("Metadata found, but recordingId is missing:", recordingData);
-        setSummaryError("Cannot fetch details: Critical recording identifier is missing.");
-        setRecommendationsError("Cannot fetch details: Critical recording identifier is missing.");
+      console.error("Metadata found, but recordingId is missing:", recordingData);
+      setSummaryError("Cannot fetch details: Critical recording identifier is missing.");
+      setRecommendationsError("Cannot fetch details: Critical recording identifier is missing.");
     }
   }, [recordingData]);
 
@@ -388,15 +382,15 @@ const RecordingData = () => {
     if (summaryData.formattedSummaryText) {
       contentToCopy += "Summary Details:\n====================\n";
       let plainSummary = summaryData.formattedSummaryText
-          .replace(/### (.*)/g, '$1\n')
-          .replace(/## (.*)/g, '$1\n')
-          .replace(/# (.*)/g, '$1\n')
-          .replace(/\*\*(.*?)\*\*/g, '$1')
-          .replace(/__(.*?)__/g, '$1')
-          .replace(/\*(.*?)\*/g, '$1')
-          .replace(/_(.*?)_/g, '$1')
-          .replace(/^\* (.*)/gm, '- $1')
-          .replace(/^\- (.*)/gm, '- $1');
+        .replace(/### (.*)/g, '$1\n')
+        .replace(/## (.*)/g, '$1\n')
+        .replace(/# (.*)/g, '$1\n')
+        .replace(/\*\*(.*?)\*\*/g, '$1')
+        .replace(/__(.*?)__/g, '$1')
+        .replace(/\*(.*?)\*/g, '$1')
+        .replace(/_(.*?)_/g, '$1')
+        .replace(/^\* (.*)/gm, '- $1')
+        .replace(/^- (.*)/gm, '- $1');
       contentToCopy += plainSummary.trim() + "\n\n";
     }
 
@@ -405,7 +399,7 @@ const RecordingData = () => {
       summaryData.keyPoints.forEach(item => {
         contentToCopy += `- ${item}\n`;
       });
-       contentToCopy += "\n";
+      contentToCopy += "\n";
     }
 
 
@@ -414,13 +408,13 @@ const RecordingData = () => {
       summaryData.glossary.forEach(item => {
         contentToCopy += `${item.term}: ${item.definition}\n`;
       });
-       contentToCopy += "\n";
+      contentToCopy += "\n";
     }
 
-     if (summaryData.topics && summaryData.topics.length > 0) {
-        contentToCopy += "Topics:\n=======\n";
-        contentToCopy += summaryData.topics.join(', ') + "\n\n";
-     }
+    if (summaryData.topics && summaryData.topics.length > 0) {
+      contentToCopy += "Topics:\n=======\n";
+      contentToCopy += summaryData.topics.join(', ') + "\n\n";
+    }
 
 
     if (!contentToCopy) {
@@ -442,26 +436,26 @@ const RecordingData = () => {
   }
   if (error) {
     return (
-        <div className="min-h-screen flex flex-col bg-[#F0F4F8]">
-             <title>AudioScholar - Error</title>
-            <Header />
-             <main className="flex-grow py-8 flex items-center justify-center">
-                <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center bg-white p-10 rounded-lg shadow-md">
-                    <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Recording</h1>
-                    <p className="text-gray-700">{error}</p>
-                     <button
-                       onClick={() => navigate('/recordings')}
-                       className="mt-6 bg-[#2D8A8A] hover:bg-[#236b6b] text-white font-medium py-2 px-5 rounded-md transition"
-                     >
-                       Go to Recordings List
-                     </button>
-                </div>
-             </main>
-        </div>
+      <div className="min-h-screen flex flex-col bg-[#F0F4F8]">
+        <title>AudioScholar - Error</title>
+        <Header />
+        <main className="flex-grow py-8 flex items-center justify-center">
+          <div className="container mx-auto px-4 sm:px-6 lg:px-8 text-center bg-white p-10 rounded-lg shadow-md">
+            <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Recording</h1>
+            <p className="text-gray-700">{error}</p>
+            <button
+              onClick={() => navigate('/recordings')}
+              className="mt-6 bg-[#2D8A8A] hover:bg-[#236b6b] text-white font-medium py-2 px-5 rounded-md transition"
+            >
+              Go to Recordings List
+            </button>
+          </div>
+        </main>
+      </div>
     );
   }
   if (!recordingData) {
-     return <div className="min-h-screen flex items-center justify-center">Recording metadata could not be loaded.</div>;
+    return <div className="min-h-screen flex items-center justify-center">Recording metadata could not be loaded.</div>;
   }
 
   const audioSrcToPlay = recordingData.storageUrl || recordingData.audioUrl;
@@ -479,12 +473,23 @@ const RecordingData = () => {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold mb-2">{recordingData.title || 'Untitled Recording'}</h1>
-                 <p className="text-sm text-indigo-200 mb-3">{recordingData.description || 'No description provided.'}</p>
+                <p className="text-sm text-indigo-200 mb-3">{recordingData.description || 'No description provided.'}</p>
                 <div className="flex items-center flex-wrap gap-x-4 gap-y-2 text-sm text-indigo-100 mb-4">
                   <span>Uploaded: {formatDate(recordingData.uploadTimestamp)}</span>
-                   <span>Duration: {formatDuration(recordingData.durationSeconds)}</span>
-                   <StatusBadge recording={recordingData} />
+                  <span>Duration: {formatDuration(recordingData.durationSeconds)}</span>
+                  <StatusBadge recording={recordingData} />
                 </div>
+                {summaryData?.topics && summaryData.topics.length > 0 && (
+                  <div className="mt-2">
+                    <div className="flex flex-wrap gap-2">
+                      {summaryData.topics.map((topic, index) => (
+                        <span key={index} className="bg-teal-600 bg-opacity-30 text-teal-50 text-xs font-medium px-2.5 py-0.5 rounded border border-teal-400">
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex space-x-3 mt-4 md:mt-0 flex-shrink-0">
@@ -500,29 +505,126 @@ const RecordingData = () => {
           </div>
 
           {audioSrcToPlay ? (
-            <div className="mb-8 bg-white rounded-lg shadow p-6 border border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
-                <FiHeadphones className="mr-2 h-5 w-5 text-teal-600" /> Play Recording
-              </h2>
-              <audio
-                controls
-                src={audioSrcToPlay}
-                className="w-full h-14 rounded-md bg-gray-100 shadow-inner"
-                preload="metadata"
-              >
-                Your browser does not support the audio element.
-              </audio>
-               {!recordingData.transcriptText && recordingData.status !== 'failed' && recordingData.status !== 'processing_halted_unsuitable_content' &&
-                 <p className="text-xs text-yellow-600 mt-2">Transcript processing may still be in progress.</p>
-               }
+            <div className="mb-8 bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white p-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <FiHeadphones className="mr-2 h-5 w-5" /> Audio Player
+                </h2>
+                <StatusBadge recording={recordingData} />
+              </div>
+
+              <div className="p-6">
+                <div className="bg-gray-50 p-5 rounded-lg border border-gray-100 shadow-inner">
+                  <audio
+                    controls
+                    src={audioSrcToPlay}
+                    className="w-full h-14 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    preload="metadata"
+                  >
+                    Your browser does not support the audio element.
+                  </audio>
+
+                  <div className="mt-4 flex justify-center">
+                    <div className="bg-white p-2 rounded-md shadow-sm flex items-center justify-center">
+                      <a href={audioSrcToPlay} download className="text-sm text-gray-700 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download Audio
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                {!recordingData.transcriptText && recordingData.status !== 'failed' && recordingData.status !== 'processing_halted_unsuitable_content' && (
+                  <div className="flex items-center bg-yellow-50 text-yellow-700 p-3 rounded-md mt-4 text-sm">
+                    <FiClock className="mr-2 h-4 w-4" />
+                    <p>Transcript processing may still be in progress. Please check back later.</p>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
-             <div className="mb-8 bg-white rounded-lg shadow p-6 border border-gray-200">
-               <h2 className="text-xl font-semibold text-gray-700 mb-3 flex items-center">
-                  <FiHeadphones className="mr-2 h-5 w-5 text-gray-400" /> Play Recording
-               </h2>
-               <p className="text-gray-500 italic text-sm">Audio file not available for playback (missing storage URL or processing incomplete).</p>
-             </div>
+            <div className="mb-8 bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-gray-500 to-gray-600 text-white p-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <FiHeadphones className="mr-2 h-5 w-5" /> Audio Player
+                </h2>
+              </div>
+              <div className="p-8 text-center">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 text-gray-400 mb-4">
+                  <FiAlertTriangle className="h-6 w-6" />
+                </div>
+                <p className="text-gray-600 font-medium">Audio File Not Available</p>
+                <p className="text-gray-500 text-sm mt-2">The audio file is missing or still processing. Please check back later.</p>
+                <div className="mt-4">
+                  <StatusBadge recording={recordingData} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(recordingData.pptxNhostUrl || recordingData.generatedPdfUrl || recordingData.convertApiPdfUrl) && (
+            <div className="mb-8 bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Related Files
+                </h2>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(recordingData.convertApiPdfUrl || recordingData.generatedPdfUrl) && (
+                    <a
+                      href={recordingData.convertApiPdfUrl || recordingData.generatedPdfUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+                    >
+                      <div className="w-10 h-10 flex-shrink-0 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">Presentation PDF</div>
+                        <div className="text-sm text-gray-500">Download PDF document</div>
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+
+                  {recordingData.pptxNhostUrl && (
+                    <a
+                      href={recordingData.pptxNhostUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+                    >
+                      <div className="w-10 h-10 flex-shrink-0 bg-orange-100 rounded-full flex items-center justify-center mr-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">PowerPoint Presentation</div>
+                        <div className="text-sm text-gray-500">Download PPTX file {recordingData.originalPptxFileName ? `(${recordingData.originalPptxFileName})` : ''}</div>
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           <div className="mb-6 border-b border-gray-300">
@@ -543,42 +645,42 @@ const RecordingData = () => {
                   ? 'border-teal-500 text-teal-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'
                   }`}
-                 disabled={!recordingData.transcriptText}
+                disabled={!recordingData.transcriptText}
               >
                 Transcript
               </button>
             </nav>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6 md:p-8 min-h-[300px]">
+          <div className="bg-white rounded-lg shadow p-6 md:p-8 min-h-[300px] max-h-[700px] overflow-auto">
             {activeTab === 'summary' && (
               <div>
-                {summaryLoading && <p className="text-gray-600 flex items-center"><FiLoader className="animate-spin mr-2"/>Loading summary...</p>}
+                {summaryLoading && <p className="text-gray-600 flex items-center"><FiLoader className="animate-spin mr-2" />Loading summary...</p>}
                 {summaryError && !summaryLoading && (
-                    <div className="text-center py-10 px-4">
-                        <FiAlertTriangle className="mx-auto h-10 w-10 text-yellow-500 mb-3" />
-                        <p className="text-gray-600 font-medium">Could not load summary</p>
-                        <p className="text-sm text-gray-500 mt-1">{summaryError}</p>
-                    </div>
+                  <div className="text-center py-10 px-4">
+                    <FiAlertTriangle className="mx-auto h-10 w-10 text-yellow-500 mb-3" />
+                    <p className="text-gray-600 font-medium">Could not load summary</p>
+                    <p className="text-sm text-gray-500 mt-1">{summaryError}</p>
+                  </div>
                 )}
                 {!summaryLoading && !summaryError && summaryData && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="md:col-span-2 space-y-6">
+                    <div className="md:col-span-2 space-y-6 max-h-[600px] overflow-y-auto pr-2">
                       {summaryData.formattedSummaryText && (
-                         <div>
-                            <h3 className="font-semibold text-lg mb-2 text-gray-800">Summary Details</h3>
-                            <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
-                              <ReactMarkdown>
-                                {summaryData.formattedSummaryText}
-                              </ReactMarkdown>
-                            </div>
-                         </div>
+                        <div>
+                          <h3 className="font-semibold text-lg mb-2 text-gray-800">Summary Details</h3>
+                          <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed">
+                            <ReactMarkdown>
+                              {summaryData.formattedSummaryText}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
                       )}
-                       {!summaryData.formattedSummaryText && <p className="text-gray-500">Detailed summary is not available.</p>}
+                      {!summaryData.formattedSummaryText && <p className="text-gray-500">Detailed summary is not available.</p>}
                     </div>
 
-                    <div className="space-y-6 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0 md:pl-6">
-                       {summaryData.keyPoints && summaryData.keyPoints.length > 0 && (
+                    <div className="space-y-6 border-t md:border-t-0 md:border-l border-gray-200 pt-6 md:pt-0 md:pl-6 max-h-[600px] overflow-y-auto">
+                      {summaryData.keyPoints && summaryData.keyPoints.length > 0 && (
                         <div>
                           <h3 className="font-semibold text-lg mb-2 text-gray-800">Key Points</h3>
                           <ul className="list-disc list-inside text-gray-700 space-y-1 text-sm">
@@ -603,7 +705,7 @@ const RecordingData = () => {
                         </div>
                       )}
 
-                       {summaryData.topics && summaryData.topics.length > 0 && (
+                      {summaryData.topics && summaryData.topics.length > 0 && (
                         <div>
                           <h3 className="font-semibold text-lg mb-2 text-gray-800">Topics</h3>
                           <div className="flex flex-wrap gap-2">
@@ -618,9 +720,9 @@ const RecordingData = () => {
                     </div>
                   </div>
                 )}
-                 {!summaryLoading && !summaryError && !summaryData && (
-                    <p className="text-gray-500 text-center py-10">No summary data could be generated or retrieved for this recording.</p>
-                 )}
+                {!summaryLoading && !summaryError && !summaryData && (
+                  <p className="text-gray-500 text-center py-10">No summary data could be generated or retrieved for this recording.</p>
+                )}
               </div>
             )}
 
@@ -628,11 +730,11 @@ const RecordingData = () => {
               <div>
                 <h2 className="text-xl font-semibold text-gray-800 mb-4">Transcript</h2>
                 {recordingData?.transcriptText ? (
-                    <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-md overflow-x-auto max-h-[600px]">
-                      {recordingData.transcriptText}
-                    </pre>
+                  <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-md overflow-x-auto max-h-[550px] overflow-y-auto">
+                    {recordingData.transcriptText}
+                  </pre>
                 ) : (
-                     <p className="text-gray-500">Transcript not available or still processing.</p>
+                  <p className="text-gray-500">Transcript not available or still processing.</p>
                 )}
               </div>
             )}
@@ -640,13 +742,13 @@ const RecordingData = () => {
 
           <div className="mt-10">
             <h2 className="text-2xl font-semibold text-gray-800 mb-5">Learning Recommendations</h2>
-            {recommendationsLoading && <p className="text-gray-600 flex items-center"><FiLoader className="animate-spin mr-2"/>Loading recommendations...</p>}
-             {recommendationsError && !recommendationsLoading && (
-                 <div className="bg-white rounded-lg shadow p-6 text-center">
-                    <FiAlertTriangle className="mx-auto h-8 w-8 text-yellow-500 mb-2" />
-                    <p className="text-gray-600">{recommendationsError}</p>
-                </div>
-             )}
+            {recommendationsLoading && <p className="text-gray-600 flex items-center"><FiLoader className="animate-spin mr-2" />Loading recommendations...</p>}
+            {recommendationsError && !recommendationsLoading && (
+              <div className="bg-white rounded-lg shadow p-6 text-center">
+                <FiAlertTriangle className="mx-auto h-8 w-8 text-yellow-500 mb-2" />
+                <p className="text-gray-600">{recommendationsError}</p>
+              </div>
+            )}
             {!recommendationsLoading && !recommendationsError && recommendationsData.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {recommendationsData.map((rec, index) => {

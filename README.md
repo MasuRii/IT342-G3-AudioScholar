@@ -21,14 +21,14 @@ AudioScholar is an intelligent, multi-user platform designed to enhance lecture 
 - Automatically suggests relevant **YouTube** videos based on lecture content.
 
 ### 🔐 User Authentication & Account Management
-- Register/Login via **Email/Password**, **Google OAuth**, or **GitHub OAuth**
+- Register/Login via **Firebase Authentication** (Email/Password, Google OAuth, or GitHub OAuth).
 - Manage profiles and change passwords securely.
 - Feature access is controlled via a **freemium model**.
 
-### ☁️ Cloud Synchronization (Optional)
-- Sync recordings and summaries to **Nhost Storage**.
-- Choose between manual or automatic syncing.
-- Configure data types and frequency of sync.
+### ☁️ Cloud Synchronization
+- Sync recordings, summaries, and associated files to **Nhost Storage** (audio files) and **Firebase Firestore** (metadata, summaries).
+- Choose between manual or automatic syncing where applicable.
+- Data is accessible across authorized devices.
 
 ### 📊 PowerPoint Integration
 - Upload and associate **PowerPoint presentations** with lecture recordings.
@@ -46,14 +46,14 @@ AudioScholar is an intelligent, multi-user platform designed to enhance lecture 
 ### 📌 Prerequisites
 Ensure the following tools are installed on your system:
 
-- **Java Development Kit (JDK) 17**
+- **Java Development Kit (JDK) 21**
 - **Node.js** (v16+)
 - **npm** or **yarn**
 - **Git**
 - **Maven** (for backend)
 - **Android Studio** (Latest version)
-- **Nhost Account** (for authentication and cloud storage - [Nhost Cloud](https://nhost.io/))
-- **Firebase Account** (Potentially needed *only* if specific Firebase services *other* than Auth/Storage are used, e.g., Cloud Messaging. Check project specifics.)
+- **Nhost Account** (for cloud file storage - [Nhost Cloud](https://nhost.io/))
+- **Firebase Account** (for authentication and Firestore database - [Firebase Console](https://console.firebase.google.com/))
 
 ---
 
@@ -70,28 +70,39 @@ cd AudioScholar
    ```bash
    cd backend/audioscholar
    ```
-2. Set up environment variables:
-   Create a `.env` file with your Nhost project details and API keys:
+2. Set up environment variables and Firebase configuration:
+   Create a `.env` file in the `backend/audioscholar` directory for secrets:
    ```dotenv
-   # Nhost Configuration (Find these in your Nhost project dashboard)
-   NHOST_SUBDOMAIN=your-nhost-subdomain
-   NHOST_REGION=your-nhost-region
-   NHOST_ADMIN_SECRET=your-nhost-admin-secret
-   # NHOST_BACKEND_URL=https://<your-subdomain>.<your-region>.nhost.run (Often constructed or provided)
+   # Nhost Storage Configuration
+   NHOST_ADMIN_SECRET=your-nhost-admin-secret # Used by Spring Boot to access Nhost Storage
 
-   # Other API Keys
+   # API Keys
    GEMINI_API_KEY=your-gemini-api-key
    YOUTUBE_API_KEY=your-youtube-api-key
-
-   # Optional: If Firebase is still used for other services
-   # FIREBASE_CONFIG_PATH=/path/to/firebase-config.json
+   # Other secrets like JWT_SECRET, GOOGLE_CLIENT_ID/SECRET, GITHUB_CLIENT_ID/SECRET etc.
+   # CONVERTAPI_SECRET=your-convertapi-secret
+   # UPTIME_ROBOT_API=your-uptime-robot-api-key
    ```
-   *Note: Replace placeholders with your actual Nhost project details.*
+   In `backend/audioscholar/src/main/resources/application.properties`:
+   - Ensure `nhost.storage.url` is correctly set to your Nhost project's storage URL.
+     ```properties
+     # Example:
+     # nhost.storage.url=https://your-nhost-project-subdomain.storage.your-nhost-region.nhost.run/v1/files
+     ```
+   - Configure Firebase Admin SDK by placing your `firebase-service-account.json` (downloaded from Firebase Console > Project settings > Service accounts) into the `backend/audioscholar/src/main/resources/` directory.
+   - The `application.properties` should have the following configured:
+     ```properties
+     spring.cloud.gcp.project-id=your-firebase-project-id
+     firebase.service-account.file=firebase-service-account.json
+     # Ensure other Firebase related properties like firebase.database.url (if using Realtime DB alongside Firestore, though Firestore is primary)
+     # and collection names are correctly set.
+     ```
+   *Note: Replace placeholders with your actual details.*
 3. Run the backend:
    ```bash
    mvn spring-boot:run
    ```
-   Or run `AudioscholarApplication.java` from your IDE.
+   Or run `AudioscholarApplication.java` from your IDE. (Spring Boot version `3.4.5`)
 
 ---
 
@@ -104,21 +115,26 @@ cd AudioScholar
    ```bash
    npm install
    ```
-3. Create a `.env` file:
+3. Create a `.env` file in `frontend_web/audioscholar-app`:
    ```dotenv
    # Backend API URL
    VITE_API_URL=http://localhost:8080
 
-   # Nhost Frontend Configuration (Find these in your Nhost project dashboard)
-   VITE_NHOST_SUBDOMAIN=your-nhost-subdomain
-   VITE_NHOST_REGION=your-nhost-region
-   # VITE_NHOST_BACKEND_URL=https://<your-subdomain>.<your-region>.nhost.run (Often used directly by Nhost SDK)
+   # Firebase Frontend Configuration (Find these in your Firebase project dashboard > Project settings > General > Your apps)
+   VITE_FIREBASE_API_KEY=your-firebase-api-key
+   VITE_FIREBASE_AUTH_DOMAIN=your-firebase-auth-domain
+   VITE_FIREBASE_PROJECT_ID=your-firebase-project-id
+   VITE_FIREBASE_STORAGE_BUCKET=your-firebase-storage-bucket # Optional, if using Firebase Storage directly from frontend
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your-firebase-messaging-sender-id
+   VITE_FIREBASE_APP_ID=your-firebase-app-id
+   # VITE_FIREBASE_MEASUREMENT_ID=your-firebase-measurement-id # Optional
    ```
-   *Note: The Nhost React SDK typically uses subdomain and region to construct the necessary URLs.*
+   *Note: Ensure your React application is configured to use these Firebase environment variables.*
 4. Run the development server:
    ```bash
    npm run dev
    ```
+   (Uses Vite `~6.3.4`, React `^19.0.0`)
    Open at: `http://localhost:3000` (or the port specified by Vite)
 
 ---
@@ -130,35 +146,26 @@ cd AudioScholar
    frontend_mobile/AudioScholar
    ```
 3. Sync Gradle files (Android Studio will prompt).
-4. **Configure Nhost:** Add your Nhost project details to the `local.properties` file (create it if it doesn't exist in the project root or `app/` directory). This file is typically ignored by Git.
+4. **Configure Firebase:**
+   - Download your `google-services.json` file from the Firebase Console (Project settings > General > Your apps > Android app).
+   - Place the `google-services.json` file in the `frontend_mobile/AudioScholar/app/` directory.
+5. **Configure API Base URL:**
+   In `frontend_mobile/AudioScholar/local.properties` (create it if it doesn't exist in the project root or `app/` directory). This file is typically ignored by Git.
    ```properties
-   # Nhost Configuration
-   NHOST_SUBDOMAIN=your-nhost-subdomain
-   NHOST_REGION=your-nhost-region
-
-   # Backend API URL (Use your machine's local network IP, not localhost)
+   # Backend API URL (Use your machine's local network IP, not localhost, if running on a physical device)
    API_BASE_URL=http://your-local-network-ip:8080
    ```
-   *Note: Ensure the Nhost Kotlin SDK is configured in the project to read these properties.*
-5. **Remove Firebase Config (if applicable):** If you previously had `google-services.json`, ensure it's removed from the `app/` directory if Firebase Auth/Storage are no longer used.
+   *Note: Ensure your Android app (e.g., Ktor client configuration) reads this `API_BASE_URL`.*
 6. Run on an emulator or physical device. Ensure the device can reach your `API_BASE_URL`.
-
----
-
-## 🧪 Testing Credentials
-- Use test credentials configured within your **Nhost** project if available.
-- Alternatively, register a new test user through the application's sign-up flow.
-- **Email**: *[To be provided or use self-registered]*
-- **Password**: *[To be provided or use self-registered]*
 
 ---
 
 ## 🧭 Example Workflow
 
-1. Register or log in using Nhost authentication (Email/Password or OAuth).
-2. Record a lecture using the mobile app. Audio is uploaded to **Nhost Storage**.
-3. Wait for AI processing (backend fetches audio from Nhost, processes, stores results).
-4. View the summary on web or mobile under **My Lectures** (data fetched from your backend, which interacts with Nhost).
+1. Register or log in using **Firebase Authentication** (Email/Password or OAuth).
+2. Record a lecture using the mobile app. Audio is uploaded (typically via the backend) to **Nhost Storage**.
+3. Wait for AI processing (backend fetches audio from Nhost, processes, stores results and metadata in **Firebase Firestore**).
+4. View the summary on web or mobile under **My Lectures** (data fetched from your backend, which interacts with **Firebase Firestore** for metadata/summaries and Nhost for audio files).
 5. Access recommended YouTube videos for deeper learning.
 
 ---
@@ -166,35 +173,38 @@ cd AudioScholar
 ## 🧩 Dependencies
 
 ### Backend
-- **Spring Boot 3.4.2**
-- **Nhost Interaction:** Via REST APIs or potentially Nhost Java/Kotlin libraries (check `pom.xml`).
+- **Spring Boot 3.4.5**
+- **Nhost Interaction:** Via REST APIs to Nhost Storage (using URL configured in `application.properties` and `NHOST_ADMIN_SECRET`).
+- **Firebase Admin SDK:** For interacting with Firebase Firestore (database).
 - See full list in [`pom.xml`](./backend/audioscholar/pom.xml)
 
 ### Web Frontend
 - **React 19**
-- **Vite 6.2.0**
-- **Nhost React SDK** (`@nhost/react`, `@nhost/react-auth`, `@nhost/react-apollo` etc. - check `package.json`)
+- **Vite ~6.3.4**
+- **Firebase SDK** (`firebase` package) for authentication and Firestore database access.
+- Interaction with Nhost Storage is likely handled via the backend.
 - See full list in [`package.json`](./frontend_web/audioscholar-app/package.json)
 
 ### Mobile Frontend
 - **Kotlin + Jetpack Compose**
 - **AndroidX**
-- **Nhost Kotlin SDK** (Check `build.gradle.kts` for specific Nhost dependencies)
-- See configurations in [`build.gradle.kts`](./frontend_mobile/AudioScholar/build.gradle.kts)
+- **Firebase SDKs** (e.g., `firebase-auth-ktx`, potentially `firebase-firestore-ktx` or using the BOM for Firestore) for authentication and database access.
+- **Ktor client:** For network requests to the backend. The backend then interacts with Nhost Storage.
+- See configurations in [`build.gradle.kts`](./frontend_mobile/AudioScholar/build.gradle.kts) (app level) and ensure `google-services.json` is correctly set up.
 
 ---
 
 ## 🧪 Features Outside Initial Scope (Planned for Future Releases)
 
-| Feature | Status |
-|--------|--------|
-| Real-time Transcription | 🚫 Not yet implemented |
-| iOS Mobile Support | 🚫 Not yet supported |
-| Web Audio Recording | 🚫 Not yet supported |
-| Multi-language Support | 🚫 English only for v1.0 |
-| Background Recording (Free Users) | 🚫 Not supported |
-| Recommendation Engine beyond YouTube | 🚫 Future feature |
-| Premium Subscription Management | 🚫 Planned |
+| Feature                              | Status                  |
+| ------------------------------------ | ----------------------- |
+| Real-time Transcription              | 🚫 Not yet implemented   |
+| iOS Mobile Support                   | 🚫 Not yet supported     |
+| Web Audio Recording                  | 🚫 Not yet supported     |
+| Multi-language Support               | 🚫 English only for v1.0 |
+| Background Recording (Free Users)    | 🚫 Not supported         |
+| Recommendation Engine beyond YouTube | 🚫 Future feature        |
+| Premium Subscription Management      | 🚫 Planned               |
 
 ---
 

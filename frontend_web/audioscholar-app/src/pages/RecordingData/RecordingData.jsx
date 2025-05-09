@@ -514,27 +514,6 @@ const RecordingData = () => {
               </div>
 
               <div className="p-6">
-                <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-medium text-gray-800 mb-1">{recordingData.title || 'Untitled Recording'}</h3>
-                    <p className="text-sm text-gray-500">{recordingData.description || 'No description provided.'}</p>
-                  </div>
-                  <div className="flex items-center space-x-4 text-sm text-gray-600">
-                    <div className="flex items-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      {formatDate(recordingData.uploadTimestamp)}
-                    </div>
-                    <div className="flex items-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {formatDuration(recordingData.durationSeconds)}
-                    </div>
-                  </div>
-                </div>
-
                 <div className="bg-gray-50 p-5 rounded-lg border border-gray-100 shadow-inner">
                   <audio
                     controls

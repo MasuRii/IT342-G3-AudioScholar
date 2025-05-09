@@ -545,37 +545,7 @@ const RecordingData = () => {
                     Your browser does not support the audio element.
                   </audio>
 
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <div className="bg-white p-2 rounded-md shadow-sm flex items-center justify-center">
-                      <button className="text-sm text-gray-700 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.465a5 5 0 001.06-7.072m-2.829 9.9a9 9 0 011.06-12.728" />
-                        </svg>
-                        0.5x
-                      </button>
-                      <span className="mx-2 text-gray-300">|</span>
-                      <button className="text-sm text-gray-700 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.465a5 5 0 001.06-7.072m-2.829 9.9a9 9 0 011.06-12.728" />
-                        </svg>
-                        1.0x
-                      </button>
-                      <span className="mx-2 text-gray-300">|</span>
-                      <button className="text-sm text-gray-700 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.465a5 5 0 001.06-7.072m-2.829 9.9a9 9 0 011.06-12.728" />
-                        </svg>
-                        1.5x
-                      </button>
-                    </div>
-                    <div className="bg-white p-2 rounded-md shadow-sm flex items-center justify-center">
-                      <button className="text-sm text-gray-700 flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                        Bookmark Current Position
-                      </button>
-                    </div>
+                  <div className="mt-4 flex justify-center">
                     <div className="bg-white p-2 rounded-md shadow-sm flex items-center justify-center">
                       <a href={audioSrcToPlay} download className="text-sm text-gray-700 flex items-center">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-teal-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">

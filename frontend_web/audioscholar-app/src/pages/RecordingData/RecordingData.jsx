@@ -479,6 +479,17 @@ const RecordingData = () => {
                   <span>Duration: {formatDuration(recordingData.durationSeconds)}</span>
                   <StatusBadge recording={recordingData} />
                 </div>
+                {summaryData?.topics && summaryData.topics.length > 0 && (
+                  <div className="mt-2">
+                    <div className="flex flex-wrap gap-2">
+                      {summaryData.topics.map((topic, index) => (
+                        <span key={index} className="bg-teal-600 bg-opacity-30 text-teal-50 text-xs font-medium px-2.5 py-0.5 rounded border border-teal-400">
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex space-x-3 mt-4 md:mt-0 flex-shrink-0">

@@ -585,6 +585,69 @@ const RecordingData = () => {
             </div>
           )}
 
+          {(recordingData.pptxNhostUrl || recordingData.generatedPdfUrl || recordingData.convertApiPdfUrl) && (
+            <div className="mb-8 bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 flex items-center justify-between">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Related Files
+                </h2>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(recordingData.convertApiPdfUrl || recordingData.generatedPdfUrl) && (
+                    <a
+                      href={recordingData.convertApiPdfUrl || recordingData.generatedPdfUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+                    >
+                      <div className="w-10 h-10 flex-shrink-0 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">Presentation PDF</div>
+                        <div className="text-sm text-gray-500">Download PDF document</div>
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+
+                  {recordingData.pptxNhostUrl && (
+                    <a
+                      href={recordingData.pptxNhostUrl}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+                    >
+                      <div className="w-10 h-10 flex-shrink-0 bg-orange-100 rounded-full flex items-center justify-center mr-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-gray-900">PowerPoint Presentation</div>
+                        <div className="text-sm text-gray-500">Download PPTX file {recordingData.originalPptxFileName ? `(${recordingData.originalPptxFileName})` : ''}</div>
+                      </div>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mb-6 border-b border-gray-300">
             <nav className="-mb-px flex space-x-8" aria-label="Tabs">
               <button

@@ -5,8 +5,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../services/authService';
 import { Header } from '../Home/HomePage';
 
-const TERMINAL_STATUSES = ['COMPLETED', 'FAILED', 'PROCESSING_HALTED_UNSUITABLE_CONTENT', 'PROCESSING_HALTED_NO_SPEECH'];
-const UPLOADING_STATUSES = ['UPLOADING_TO_STORAGE', 'UPLOAD_IN_PROGRESS'];
+const TERMINAL_STATUSES = ['COMPLETE', 'COMPLETED', 'FAILED', 'PROCESSING_HALTED_UNSUITABLE_CONTENT', 'PROCESSING_HALTED_NO_SPEECH'];
+const UPLOADING_STATUSES = ['UPLOAD_PENDING', 'UPLOAD_IN_PROGRESS', 'UPLOADING_TO_STORAGE', 'UPLOADED'];
 const UPLOAD_TIMEOUT_SECONDS = 10 * 60;
 
 const RecordingList = () => {
@@ -201,14 +201,13 @@ const RecordingList = () => {
             return;
         }
 
-        // Take a snapshot of current recordings to avoid issues with state changing during iteration
         const recordingsToDelete = [...recordings];
         if (recordingsToDelete.length === 0) {
-            setError("No recordings to delete."); // Should ideally not happen if button is shown correctly
+            setError("No recordings to delete.");
             return;
         }
 
-        setLoading(true); // Show a loading state for the batch operation
+        setLoading(true);
         setError(null);
 
         const deletePromises = recordingsToDelete.map(recording => {
@@ -238,22 +237,17 @@ const RecordingList = () => {
             if (failedDeletions > 0) {
                 setError(`${successfulDeletions} recordings deleted. ${failedDeletions} deletions failed. Please check console for details and try again if necessary.`);
             } else if (successfulDeletions > 0) {
-                setError(null); // Clear any previous errors
-                // Optionally show a success message, though fetchRecordings will update the list
+                setError(null);
                 console.log(`All ${successfulDeletions} targeted recordings deleted successfully.`);
             }
-            // No specific message if no recordings were there to begin with, or if all failed but error is already set
 
         } catch (err) {
-            // This catch block is for errors in Promise.allSettled itself, which is unlikely for its typical usage.
             console.error('Error processing batch deletion results:', err);
             setError('An unexpected error occurred while processing deletions. Please refresh.');
         } finally {
-            // Always refresh the list from the server to reflect the actual state
             fetchRecordings().then(updatedData => {
                 if (updatedData && isMountedRef.current) {
                     setRecordings(updatedData);
-                    // Decide if polling needs to continue based on new data
                     const stillNeedsPolling = updatedData.some(rec => {
                         const statusUpper = rec.status?.toUpperCase();
                         const isTerminal = TERMINAL_STATUSES.includes(statusUpper);
@@ -275,7 +269,7 @@ const RecordingList = () => {
                         console.log("Polling stopped after deletions as no items require it.");
                     }
                 }
-                if(isMountedRef.current) setLoading(false);
+                if (isMountedRef.current) setLoading(false);
             });
         }
     };
@@ -296,7 +290,7 @@ const RecordingList = () => {
         let isSpinning = false;
         let titleText = '';
 
-        const isUploadingOrPending = ['UPLOAD_PENDING', 'UPLOAD_IN_PROGRESS', 'UPLOADING_TO_STORAGE', 'UPLOADED'].includes(statusUpper);
+        const isUploadingOrPending = UPLOADING_STATUSES.includes(statusUpper);
         const elapsedSeconds = uploadTimestamp?.seconds
             ? (Date.now() / 1000) - uploadTimestamp.seconds
             : 0;
@@ -312,6 +306,7 @@ const RecordingList = () => {
         } else {
             switch (statusUpper) {
                 case 'COMPLETE':
+                case 'COMPLETED':
                     bgColor = 'bg-green-100';
                     textColor = 'text-green-800';
                     Icon = FiCheckCircle;
@@ -330,6 +325,7 @@ const RecordingList = () => {
                 case 'PROCESSING_QUEUED':
                 case 'TRANSCRIBING':
                 case 'PDF_CONVERTING':
+                case 'PDF_CONVERTING_API':
                 case 'TRANSCRIPTION_COMPLETE':
                 case 'PDF_CONVERSION_COMPLETE':
                 case 'SUMMARIZATION_QUEUED':

@@ -1,16 +1,25 @@
 {
     "configurations": [
         {
-            "type": "java",
+            "type": "PowerShell",
             "name": "Spring Boot-AudioscholarApplication",
             "request": "launch",
-            "cwd": "${workspaceFolder}",
-            "mainClass": "edu.cit.audioscholar.AudioscholarApplication",
-            "projectName": "audioscholar",
+            "cwd": "${workspaceFolder}/audioscholar",
+            "script": "run.ps1",
             "args": [],
             "env": {
                 "NHOST_ADMIN_SECRET": "N8than#1"
             }
+        },
+        {
+            "type": "java",
+            "name": "Spring Boot-AudioscholarApplication<audioscholar>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "edu.cit.audioscholar.AudioscholarApplication",
+            "projectName": "audioscholar",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
         }
     ]
 }

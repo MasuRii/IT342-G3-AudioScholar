@@ -45,7 +45,7 @@ public class GeminiService {
         private static final String FILES_API_UPLOAD_PATH = "/upload/v1beta/files";
         private static final String FILES_API_BASE_URL = API_BASE_URL;
         private static final String TRANSCRIPTION_MODEL_NAME = "gemini-2.0-flash";
-        private static final String SUMMARIZATION_MODEL_NAME = "gemini-2.5-flash-preview-04-17";
+        private static final String SUMMARIZATION_MODEL_NAME = "gemini-2.5-flash";
         private static final String GENERATE_CONTENT_PATH =
                         "/v1beta/models/{modelName}:generateContent";
 

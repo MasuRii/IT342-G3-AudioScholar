@@ -1,4 +1,4 @@
-export const API_BASE_URL = 'https://it342-g3-audioscholar.onrender.com';
+export const API_BASE_URL = 'https://it342-g3-audioscholar.onrender.com/';
 
 /**
  * Sends the Firebase ID token obtained from frontend Firebase authentication
